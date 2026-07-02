@@ -18,6 +18,11 @@
 // Hokkaido Language — Code Generator
 // =========================================================================
 
+inline bool is_unsigned_type(TypeKind kind) {
+  return kind == TypeKind::Uint8 || kind == TypeKind::Uint16 ||
+         kind == TypeKind::Uint32 || kind == TypeKind::Uint64;
+}
+
 class CodeGen {
   llvm::LLVMContext &Context;
   llvm::Module &M;

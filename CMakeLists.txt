@@ -40,6 +40,13 @@ set(HOKKAIDO_SOURCES
     src-cpp/lexer.cpp
     src-cpp/parser.cpp
     src-cpp/codegen.cpp
+    src-cpp/codegen_types.cpp
+    src-cpp/codegen_expr.cpp
+    src-cpp/codegen_top.cpp
+    src-cpp/codegen_init.cpp
+    src-cpp/codegen_decl.cpp
+    src-cpp/codegen_stmt.cpp
+    src-cpp/codegen_pattern.cpp
 )
 
 add_executable(hokkaido ${HOKKAIDO_SOURCES})

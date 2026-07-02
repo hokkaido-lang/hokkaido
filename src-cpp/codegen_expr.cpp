@@ -1,0 +1,884 @@
+#include "codegen.h"
+
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/InlineAsm.h"
+#include "llvm/Support/raw_ostream.h"
+
+using namespace llvm;
+
+// -------------------------------------------------------------------------
+// Expression type resolution
+// -------------------------------------------------------------------------
+
+TypeAnnotation CodeGen::resolve_expr_type(Expr *expr) {
+  if (auto *id = dynamic_cast<IdentExpr *>(expr)) {
+    auto it = named_type_anns.find(id->name);
+    if (it != named_type_anns.end())
+      return it->second;
+    auto kt = named_types.find(id->name);
+    if (kt != named_types.end())
+      return {kt->second};
+    auto gi = global_values.find(id->name);
+    if (gi != global_values.end()) {
+      return {TypeKind::Int64};
+    }
+    return {TypeKind::Void};
+  }
+  if (auto *field = dynamic_cast<FieldAccessExpr *>(expr)) {
+    TypeAnnotation base = resolve_expr_type(field->object.get());
+    if (base.kind == TypeKind::Void || base.kind == TypeKind::Struct)
+      return get_struct_field_type(base.struct_name, field->field);
+    return {TypeKind::Void};
+  }
+  if (auto *addr = dynamic_cast<AddressOfExpr *>(expr)) {
+    TypeAnnotation base = resolve_expr_type(addr->operand.get());
+    base.pointer_depth++;
+    return base;
+  }
+  if (auto *deref = dynamic_cast<DerefExpr *>(expr)) {
+    TypeAnnotation base = resolve_expr_type(deref->operand.get());
+    if (base.pointer_depth > 0) {
+      base.pointer_depth--;
+      return base;
+    }
+    return {TypeKind::Void};
+  }
+  if (auto *sub = dynamic_cast<SubscriptExpr *>(expr)) {
+    TypeAnnotation base = resolve_expr_type(sub->array.get());
+    if (base.array_size > 0) {
+      base.array_size = 0;
+      return base;
+    }
+    if (base.pointer_depth > 0) {
+      base.pointer_depth--;
+      return base;
+    }
+    return {base.kind};
+  }
+  if (auto *bin = dynamic_cast<BinaryExpr *>(expr)) {
+    TypeAnnotation l = resolve_expr_type(bin->left.get());
+    TypeAnnotation r = resolve_expr_type(bin->right.get());
+    if (l.pointer_depth > 0) return l;
+    if (r.pointer_depth > 0) return r;
+    switch (bin->op) {
+      case BinOp::Eq: case BinOp::Ne:
+      case BinOp::Less: case BinOp::Greater: case BinOp::Le: case BinOp::Ge:
+      case BinOp::And: case BinOp::Or:
+        return {TypeKind::Bool};
+      default:
+        if (l.kind != TypeKind::Void) return l;
+        return {TypeKind::Int64};
+    }
+  }
+  if (dynamic_cast<NumberExpr *>(expr))
+    return {TypeKind::Int64};
+  if (auto *ctor = dynamic_cast<ConstructorExpr *>(expr)) {
+    for (auto &[ename, _] : enum_types) {
+      int vi = get_enum_variant_index(ename, ctor->variant_name);
+      if (vi >= 0)
+        return {TypeKind::Enum, 0, 0, ename};
+    }
+    if (struct_types.count(ctor->variant_name) > 0)
+      return {TypeKind::Struct, 0, 0, ctor->variant_name};
+    return {TypeKind::Void};
+  }
+  if (auto *atm = dynamic_cast<AtomicExpr *>(expr)) {
+    if (atm->op == AtomicOp::Fence)
+      return {TypeKind::Void};
+    if (!atm->args.empty()) {
+      TypeAnnotation ptr_ann = resolve_expr_type(atm->args[0].get());
+      if (ptr_ann.pointer_depth > 0) {
+        ptr_ann.pointer_depth--;
+        return ptr_ann;
+      }
+    }
+    return {TypeKind::Int64};
+  }
+  if (auto *tup = dynamic_cast<TupleExpr *>(expr)) {
+    TypeAnnotation ann = {TypeKind::Tuple};
+    for (auto &el : tup->elements)
+      ann.tuple_types.push_back(resolve_expr_type(el.get()));
+    return ann;
+  }
+  if (auto *call = dynamic_cast<CallExpr *>(expr)) {
+    if (!call->type_args.empty()) {
+      auto it = generic_templates.find(call->callee);
+      if (it != generic_templates.end()) {
+        TypeAnnotation ret = it->second->return_type;
+        for (size_t i = 0; i < it->second->type_params.size() && i < call->type_args.size(); i++) {
+          if (ret.kind == TypeKind::TypeParam && ret.struct_name == it->second->type_params[i]) {
+            ret = call->type_args[i];
+            break;
+          }
+        }
+        return ret;
+      }
+      return {TypeKind::Void};
+    }
+    Function *f = M.getFunction(call->callee);
+    if (f) {
+      Type *ret_type = f->getReturnType();
+      if (ret_type->isIntegerTy(1)) return {TypeKind::Bool};
+      if (ret_type->isIntegerTy(8)) return {TypeKind::Int8};
+      if (ret_type->isIntegerTy(16)) return {TypeKind::Int16};
+      if (ret_type->isIntegerTy(32)) return {TypeKind::Int32};
+      if (ret_type->isIntegerTy(64)) return {TypeKind::Int64};
+      if (ret_type->isHalfTy()) return {TypeKind::Float16};
+      if (ret_type->isFloatTy()) return {TypeKind::Float32};
+      if (ret_type->isDoubleTy()) return {TypeKind::Float64};
+      if (ret_type->isPointerTy()) return {TypeKind::String};
+      if (ret_type->isStructTy()) {
+        if (auto *st = dyn_cast<StructType>(ret_type)) {
+          if (st->hasName())
+            return {TypeKind::Struct, 0, 0, std::string(st->getName())};
+        }
+        return {TypeKind::Void};
+      }
+    }
+    return {TypeKind::Void};
+  }
+  return {TypeKind::Void};
+}
+
+// -------------------------------------------------------------------------
+// Lvalue pointer resolution
+// -------------------------------------------------------------------------
+
+Value *CodeGen::get_lvalue_ptr(Expr *expr, Type **out_type) {
+  if (auto *id = dynamic_cast<IdentExpr *>(expr)) {
+    auto it = named_values.find(id->name);
+    if (it == named_values.end()) {
+      auto gi = global_values.find(id->name);
+      if (gi != global_values.end()) {
+        if (out_type) *out_type = gi->second->getValueType();
+        return gi->second;
+      }
+      errs() << "Error: undefined variable '" << id->name << "'\n";
+      return nullptr;
+    }
+    if (out_type) *out_type = it->second->getAllocatedType();
+    return it->second;
+  }
+  if (auto *deref = dynamic_cast<DerefExpr *>(expr)) {
+    Value *ptr = eval_expr(deref->operand.get(), PointerType::getUnqual(Context));
+    if (!ptr) return nullptr;
+    if (out_type) {
+      TypeAnnotation ann = resolve_expr_type(deref);
+      *out_type = get_llvm_type(ann);
+    }
+    return ptr;
+  }
+  if (auto *sub = dynamic_cast<SubscriptExpr *>(expr)) {
+    TypeAnnotation base_ann = resolve_expr_type(sub->array.get());
+    Value *index = eval_expr(sub->index.get(), Type::getInt64Ty(Context));
+    if (!index) return nullptr;
+
+    if (base_ann.array_size > 0) {
+      Type *arr_llvm_type = nullptr;
+      Value *arr_ptr = get_lvalue_ptr(sub->array.get(), &arr_llvm_type);
+      if (!arr_ptr) return nullptr;
+      Value *indices[] = {
+        ConstantInt::get(Type::getInt64Ty(Context), 0),
+        index
+      };
+      Value *gep = Builder.CreateGEP(arr_llvm_type, arr_ptr, indices, "elem_ptr");
+      if (out_type) {
+        if (auto *arr = dyn_cast_or_null<ArrayType>(arr_llvm_type))
+          *out_type = arr->getElementType();
+      }
+      return gep;
+    }
+
+    if (base_ann.pointer_depth > 0) {
+      Type *base_llvm = get_llvm_type(base_ann);
+      if (!base_llvm) return nullptr;
+      Value *arr_ptr = eval_expr(sub->array.get(), base_llvm);
+      if (!arr_ptr) return nullptr;
+      base_ann.pointer_depth--;
+      Type *pointee = get_llvm_type(base_ann);
+      if (!pointee) pointee = Type::getInt8Ty(Context);
+      Value *gep = Builder.CreateGEP(pointee, arr_ptr, index, "elem_ptr");
+      if (out_type) *out_type = pointee;
+      return gep;
+    }
+
+    errs() << "Error: subscript requires an array or pointer\n";
+    return nullptr;
+  }
+  if (auto *field = dynamic_cast<FieldAccessExpr *>(expr)) {
+    TypeAnnotation base_ann = resolve_expr_type(field->object.get());
+
+    if (base_ann.kind == TypeKind::Tuple) {
+      int idx = std::stoi(field->field);
+      Type *tup_type = nullptr;
+      Value *tup_ptr = get_lvalue_ptr(field->object.get(), &tup_type);
+      if (!tup_ptr) return nullptr;
+      Value *field_ptr = Builder.CreateStructGEP(tup_type, tup_ptr, idx, field->field);
+      if (out_type) {
+        if (idx < (int)base_ann.tuple_types.size())
+          *out_type = get_llvm_type(base_ann.tuple_types[idx]);
+      }
+      return field_ptr;
+    }
+
+    Type *struct_type = nullptr;
+    Value *struct_ptr = get_lvalue_ptr(field->object.get(), &struct_type);
+    if (!struct_ptr) return nullptr;
+
+    StructType *st = dyn_cast<StructType>(struct_type);
+    if (!st) {
+      errs() << "Error: field access on non-struct type\n";
+      return nullptr;
+    }
+
+    std::string struct_name = st->getName().str();
+    int field_idx = get_struct_field_index(struct_name, field->field);
+    if (field_idx < 0) {
+      errs() << "Error: struct '" << struct_name << "' has no field named '"
+             << field->field << "'\n";
+      return nullptr;
+    }
+
+    Value *field_ptr = Builder.CreateStructGEP(
+        struct_type, struct_ptr, field_idx, field->field);
+    if (out_type) {
+      TypeAnnotation field_ann = get_struct_field_type(struct_name, field->field);
+      *out_type = get_llvm_type(field_ann);
+    }
+    return field_ptr;
+  }
+  return nullptr;
+}
+
+// -------------------------------------------------------------------------
+// Expression evaluation
+// -------------------------------------------------------------------------
+
+Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
+  if (auto *num = dynamic_cast<NumberExpr *>(expr)) {
+    if (expected_type && expected_type->isFPOrFPVectorTy())
+      return ConstantFP::get(expected_type, num->value);
+    Type *t = expected_type ? expected_type : Type::getInt64Ty(Context);
+    return ConstantInt::get(t, (int64_t)num->value);
+  }
+
+  if (auto *ch = dynamic_cast<CharExpr *>(expr)) {
+    Type *t = expected_type ? expected_type : Type::getInt8Ty(Context);
+    return ConstantInt::get(t, ch->value);
+  }
+
+  if (auto *str = dynamic_cast<StringExpr *>(expr)) {
+    return Builder.CreateGlobalString(str->value, "str");
+  }
+
+  if (auto *id = dynamic_cast<IdentExpr *>(expr)) {
+    auto it = named_values.find(id->name);
+    if (it == named_values.end()) {
+      auto gi = global_values.find(id->name);
+      if (gi != global_values.end()) {
+        Type *gv_type = gi->second->getValueType();
+        return Builder.CreateLoad(gv_type, gi->second, id->name);
+      }
+      errs() << "Error: undefined variable '" << id->name << "'\n";
+      return nullptr;
+    }
+    Type *alloc_type = it->second->getAllocatedType();
+    if (auto *arr_type = dyn_cast<ArrayType>(alloc_type)) {
+      if (expected_type && expected_type->isPointerTy()) {
+        Value *indices[] = {
+          ConstantInt::get(Type::getInt64Ty(Context), 0),
+          ConstantInt::get(Type::getInt64Ty(Context), 0)
+        };
+        return Builder.CreateGEP(arr_type, it->second, indices, id->name);
+      }
+    }
+    if (expected_type)
+      return Builder.CreateLoad(expected_type, it->second, id->name);
+    return Builder.CreateLoad(alloc_type, it->second, id->name);
+  }
+
+  if (auto *null_expr = dynamic_cast<NullExpr *>(expr)) {
+    return ConstantPointerNull::get(cast<PointerType>(expected_type));
+  }
+
+  if (auto *ctor = dynamic_cast<ConstructorExpr *>(expr)) {
+    StructType *enum_st = nullptr;
+    std::string enum_name;
+    int variant_idx = -1;
+    for (auto &[ename, st] : enum_types) {
+      int idx = get_enum_variant_index(ename, ctor->variant_name);
+      if (idx >= 0) {
+        enum_st = st;
+        enum_name = ename;
+        variant_idx = idx;
+        break;
+      }
+    }
+    if (enum_st) {
+      Value *result = UndefValue::get(enum_st);
+      Type *tag_type = enum_st->getElementType(0);
+      result = Builder.CreateInsertValue(result,
+          ConstantInt::get(tag_type, variant_idx), {0});
+      StructType *var_type = cast<StructType>(enum_st->getElementType(1 + variant_idx));
+      Value *var_data = UndefValue::get(var_type);
+      for (size_t fi = 0; fi < ctor->fields.size(); fi++) {
+        auto &[field_name, field_expr] = ctor->fields[fi];
+        TypeAnnotation field_ann = get_struct_field_type(
+            enum_name + "::" + ctor->variant_name, field_name);
+        Type *field_type = get_llvm_type(field_ann);
+        if (!field_type) field_type = Type::getInt64Ty(Context);
+        int actual_idx = get_struct_field_index(
+            enum_name + "::" + ctor->variant_name, field_name);
+        if (actual_idx < 0) {
+          errs() << "Error: variant '" << ctor->variant_name
+                 << "' has no field '" << field_name << "'\n";
+          return nullptr;
+        }
+        Value *fv = eval_expr(field_expr.get(), field_type);
+        if (!fv) return nullptr;
+        var_data = Builder.CreateInsertValue(var_data, fv,
+            {(unsigned)actual_idx});
+      }
+      result = Builder.CreateInsertValue(result, var_data, {1 + (unsigned)variant_idx});
+      return result;
+    }
+
+    auto st_it = struct_types.find(ctor->variant_name);
+    if (st_it != struct_types.end()) {
+      StructType *st = st_it->second;
+      Value *result = UndefValue::get(st);
+      for (size_t fi = 0; fi < ctor->fields.size(); fi++) {
+        auto &[field_name, field_expr] = ctor->fields[fi];
+        TypeAnnotation field_ann = get_struct_field_type(
+            ctor->variant_name, field_name);
+        Type *field_type = get_llvm_type(field_ann);
+        if (!field_type) field_type = Type::getInt64Ty(Context);
+        int actual_idx = get_struct_field_index(
+            ctor->variant_name, field_name);
+        if (actual_idx < 0) {
+          errs() << "Error: struct '" << ctor->variant_name
+                 << "' has no field '" << field_name << "'\n";
+          return nullptr;
+        }
+        Value *fv = eval_expr(field_expr.get(), field_type);
+        if (!fv) return nullptr;
+        result = Builder.CreateInsertValue(result, fv,
+            {(unsigned)actual_idx});
+      }
+      return result;
+    }
+
+    errs() << "Error: unknown variant '" << ctor->variant_name
+           << "' in constructor expression\n";
+    return nullptr;
+  }
+
+  if (auto *tup = dynamic_cast<TupleExpr *>(expr)) {
+    StructType *st = expected_type ? dyn_cast<StructType>(expected_type) : nullptr;
+    if (!st) {
+      TypeAnnotation ann = resolve_expr_type(tup);
+      st = dyn_cast<StructType>(get_llvm_type(ann));
+    }
+    if (!st) {
+      errs() << "Error: cannot determine tuple type\n";
+      return nullptr;
+    }
+    Value *result = UndefValue::get(st);
+    for (size_t i = 0; i < tup->elements.size(); i++) {
+      Type *elem_type = st->getElementType(i);
+      Value *ev = eval_expr(tup->elements[i].get(), elem_type);
+      if (!ev) return nullptr;
+      result = Builder.CreateInsertValue(result, ev, {(unsigned)i}, "tup.el");
+    }
+    return result;
+  }
+
+  if (auto *addr = dynamic_cast<AddressOfExpr *>(expr)) {
+    Type *ptr_type = nullptr;
+    Value *lvalue_ptr = get_lvalue_ptr(addr->operand.get(), &ptr_type);
+    if (!lvalue_ptr) {
+      errs() << "Error: address-of requires an lvalue expression\n";
+      return nullptr;
+    }
+    if (!ptr_type)
+      ptr_type = lvalue_ptr->getType();
+    return lvalue_ptr;
+  }
+
+  if (auto *deref = dynamic_cast<DerefExpr *>(expr)) {
+    Value *ptr = nullptr;
+    if (auto *id = dynamic_cast<IdentExpr *>(deref->operand.get())) {
+      auto it = named_values.find(id->name);
+      if (it == named_values.end()) {
+        auto gi = global_values.find(id->name);
+        if (gi != global_values.end()) {
+          ptr = Builder.CreateLoad(gi->second->getValueType(), gi->second, id->name);
+        } else {
+          errs() << "Error: undefined variable '" << id->name << "'\n";
+          return nullptr;
+        }
+      } else {
+        ptr = Builder.CreateLoad(it->second->getAllocatedType(), it->second, id->name);
+      }
+    } else {
+      ptr = eval_expr(deref->operand.get(), PointerType::getUnqual(Context));
+    }
+    if (!ptr) return nullptr;
+    return Builder.CreateLoad(expected_type, ptr);
+  }
+
+  if (auto *sub = dynamic_cast<SubscriptExpr *>(expr)) {
+    TypeAnnotation base_ann = resolve_expr_type(sub->array.get());
+    bool is_array_sub = base_ann.array_size > 0;
+    bool is_ptr_sub = !is_array_sub && base_ann.pointer_depth > 0;
+    Value *elem_ptr = nullptr;
+
+    if (is_array_sub) {
+      Type *arr_llvm_type = nullptr;
+      Value *arr_ptr = get_lvalue_ptr(sub->array.get(), &arr_llvm_type);
+      if (!arr_ptr) return nullptr;
+      Value *index = eval_expr(sub->index.get(), Type::getInt64Ty(Context));
+      if (!index) return nullptr;
+      Value *indices[] = {
+        ConstantInt::get(Type::getInt64Ty(Context), 0),
+        index
+      };
+      elem_ptr = Builder.CreateGEP(arr_llvm_type, arr_ptr, indices, "elem_ptr");
+    } else if (is_ptr_sub) {
+      Type *base_llvm = get_llvm_type(base_ann);
+      if (!base_llvm) return nullptr;
+      Value *arr_ptr = eval_expr(sub->array.get(), base_llvm);
+      if (!arr_ptr) return nullptr;
+      Value *index = eval_expr(sub->index.get(), Type::getInt64Ty(Context));
+      if (!index) return nullptr;
+      TypeAnnotation pointee_ann = base_ann;
+      pointee_ann.pointer_depth--;
+      Type *pointee = get_llvm_type(pointee_ann);
+      if (!pointee) pointee = Type::getInt8Ty(Context);
+      elem_ptr = Builder.CreateGEP(pointee, arr_ptr, index, "elem_ptr");
+    } else {
+      errs() << "Error: subscript requires an array or pointer\n";
+      return nullptr;
+    }
+    Type *load_type = expected_type;
+    if (is_array_sub)
+      load_type = get_llvm_type(TypeAnnotation{base_ann.kind, 0, 0, base_ann.struct_name});
+    else if (is_ptr_sub) {
+      TypeAnnotation elem_ann = base_ann;
+      elem_ann.pointer_depth--;
+      load_type = get_llvm_type(elem_ann);
+    }
+    if (!load_type) load_type = expected_type;
+    return Builder.CreateLoad(load_type, elem_ptr);
+  }
+
+  if (auto *field = dynamic_cast<FieldAccessExpr *>(expr)) {
+    TypeAnnotation base_ann = resolve_expr_type(field->object.get());
+
+    if (base_ann.kind == TypeKind::Tuple) {
+      int idx = std::stoi(field->field);
+      Type *base_llvm_type = get_llvm_type(base_ann);
+      if (!base_llvm_type) return nullptr;
+      Value *obj_val = eval_expr(field->object.get(), base_llvm_type);
+      if (!obj_val) return nullptr;
+      return Builder.CreateExtractValue(obj_val, {(unsigned)idx}, field->field);
+    }
+
+    if (base_ann.kind != TypeKind::Struct) {
+      errs() << "Error: field access on non-struct expression\n";
+      return nullptr;
+    }
+
+    Type *base_llvm_type = get_llvm_type(base_ann);
+    if (!base_llvm_type) return nullptr;
+    Value *obj_val = eval_expr(field->object.get(), base_llvm_type);
+    if (!obj_val) return nullptr;
+
+    int field_idx = get_struct_field_index(base_ann.struct_name, field->field);
+    if (field_idx < 0) {
+      errs() << "Error: struct '" << base_ann.struct_name << "' has no field named '"
+             << field->field << "'\n";
+      return nullptr;
+    }
+
+    Type *obj_type = obj_val->getType();
+    StructType *st = dyn_cast<StructType>(obj_type);
+    if (!st) {
+      errs() << "Error: field access target is not a struct type\n";
+      return nullptr;
+    }
+
+    return Builder.CreateExtractValue(obj_val, {(unsigned)field_idx}, field->field);
+  }
+
+  if (auto *match = dynamic_cast<MatchExpr *>(expr)) {
+    TypeAnnotation val_ann = resolve_expr_type(match->value.get());
+    Type *val_type = get_llvm_type(val_ann);
+    if (!val_type) val_type = expected_type;
+
+    Value *val = eval_expr(match->value.get(), val_type);
+    if (!val) return nullptr;
+
+    auto saved_named_values = named_values;
+    Function *fn = Builder.GetInsertBlock()->getParent();
+
+    AllocaInst *result_alloca = Builder.CreateAlloca(expected_type, nullptr, "match_result");
+
+    BasicBlock *merge_bb = BasicBlock::Create(Context, "match_merge", fn);
+    BasicBlock *else_bb = BasicBlock::Create(Context, "match_else", fn);
+    BasicBlock *current_bb = Builder.GetInsertBlock();
+
+    for (size_t i = 0; i < match->arms.size(); i++) {
+      auto &arm = match->arms[i];
+      bool is_last = (i == match->arms.size() - 1);
+
+      BasicBlock *body_bb = BasicBlock::Create(Context, "arm_body", fn);
+      BasicBlock *next_bb = is_last ? else_bb
+                                     : BasicBlock::Create(Context, "arm_check", fn);
+
+      Builder.SetInsertPoint(current_bb);
+      Value *cond = gen_pattern_check(arm.pattern.get(), val, val_ann);
+      if (!cond) return nullptr;
+
+      Builder.CreateCondBr(cond, body_bb, next_bb);
+
+      Builder.SetInsertPoint(body_bb);
+      named_values = saved_named_values;
+      if (!gen_pattern_bind(arm.pattern.get(), val, val_ann)) return nullptr;
+
+      Value *arm_val = eval_expr(arm.expr.get(), expected_type);
+      if (!arm_val) return nullptr;
+      Builder.CreateStore(arm_val, result_alloca);
+      Builder.CreateBr(merge_bb);
+
+      current_bb = next_bb;
+    }
+
+    Builder.SetInsertPoint(else_bb);
+    Builder.CreateStore(Constant::getNullValue(expected_type), result_alloca);
+    Builder.CreateBr(merge_bb);
+
+    Builder.SetInsertPoint(merge_bb);
+    named_values = std::move(saved_named_values);
+    return Builder.CreateLoad(expected_type, result_alloca);
+  }
+
+  if (auto *arr_lit = dynamic_cast<ArrayLitExpr *>(expr)) {
+    if (auto *arr_type = dyn_cast<ArrayType>(expected_type)) {
+      return eval_array_literal(arr_lit, arr_type);
+    }
+    return ConstantPointerNull::get(cast<PointerType>(expected_type));
+  }
+
+  if (auto *un = dynamic_cast<UnaryExpr *>(expr)) {
+    Value *op = eval_expr(un->operand.get(), expected_type);
+    if (!op) return nullptr;
+    switch (un->op) {
+      case UnaryOp::BitNot:
+        return Builder.CreateNot(op);
+      case UnaryOp::Neg:
+      default:
+        if (expected_type && expected_type->isFPOrFPVectorTy())
+          return Builder.CreateFNeg(op);
+        return Builder.CreateNeg(op);
+    }
+  }
+
+  if (auto *bin = dynamic_cast<BinaryExpr *>(expr)) {
+    Value *l = eval_expr(bin->left.get(), expected_type);
+    Value *r = eval_expr(bin->right.get(), expected_type);
+    if (!l || !r) return nullptr;
+
+    bool is_float = expected_type && expected_type->isFPOrFPVectorTy();
+
+    if ((bin->op == BinOp::Add || bin->op == BinOp::Sub) &&
+        (l->getType()->isPointerTy() || r->getType()->isPointerTy())) {
+      Type *pointee = nullptr;
+      Value *ptr_val = nullptr;
+      Value *idx_val = nullptr;
+      if (l->getType()->isPointerTy() && !r->getType()->isPointerTy()) {
+        ptr_val = l; idx_val = r;
+        if (bin->op == BinOp::Sub) idx_val = Builder.CreateNeg(r);
+        TypeAnnotation ann = resolve_expr_type(bin->left.get());
+        if (ann.pointer_depth > 0) {
+          ann.pointer_depth--;
+          pointee = get_llvm_type(ann);
+        }
+      } else if (r->getType()->isPointerTy() && !l->getType()->isPointerTy()) {
+        ptr_val = r; idx_val = l;
+        TypeAnnotation ann = resolve_expr_type(bin->right.get());
+        if (ann.pointer_depth > 0) {
+          ann.pointer_depth--;
+          pointee = get_llvm_type(ann);
+        }
+      }
+      if (pointee && ptr_val && idx_val)
+        return Builder.CreateGEP(pointee, ptr_val, idx_val, "ptr.offset");
+      if (!pointee && ptr_val && idx_val)
+        return Builder.CreateGEP(Type::getInt8Ty(Context), ptr_val, idx_val, "ptr.offset");
+    }
+
+    TypeAnnotation l_ann = resolve_expr_type(bin->left.get());
+    bool is_unsigned = is_unsigned_type(l_ann.kind);
+
+    switch (bin->op) {
+      case BinOp::Add: return is_float ? Builder.CreateFAdd(l, r) : Builder.CreateAdd(l, r);
+      case BinOp::Sub: return is_float ? Builder.CreateFSub(l, r) : Builder.CreateSub(l, r);
+      case BinOp::Mul: return is_float ? Builder.CreateFMul(l, r) : Builder.CreateMul(l, r);
+      case BinOp::Div: return is_float ? Builder.CreateFDiv(l, r) : (is_unsigned ? Builder.CreateUDiv(l, r) : Builder.CreateSDiv(l, r));
+      case BinOp::Mod: return is_unsigned ? Builder.CreateURem(l, r) : Builder.CreateSRem(l, r);
+      case BinOp::Eq: {
+        Value *cmp = Builder.CreateICmpEQ(l, r);
+        if (expected_type && !expected_type->isIntegerTy(1))
+          return Builder.CreateZExt(cmp, expected_type);
+        return cmp;
+      }
+      case BinOp::Ne: {
+        Value *cmp = Builder.CreateICmpNE(l, r);
+        if (expected_type && !expected_type->isIntegerTy(1))
+          return Builder.CreateZExt(cmp, expected_type);
+        return cmp;
+      }
+      case BinOp::Less: {
+        Value *cmp = is_unsigned ? Builder.CreateICmpULT(l, r) : Builder.CreateICmpSLT(l, r);
+        if (expected_type && !expected_type->isIntegerTy(1))
+          return Builder.CreateZExt(cmp, expected_type);
+        return cmp;
+      }
+      case BinOp::Greater: {
+        Value *cmp = is_unsigned ? Builder.CreateICmpUGT(l, r) : Builder.CreateICmpSGT(l, r);
+        if (expected_type && !expected_type->isIntegerTy(1))
+          return Builder.CreateZExt(cmp, expected_type);
+        return cmp;
+      }
+      case BinOp::Le: {
+        Value *cmp = is_unsigned ? Builder.CreateICmpULE(l, r) : Builder.CreateICmpSLE(l, r);
+        if (expected_type && !expected_type->isIntegerTy(1))
+          return Builder.CreateZExt(cmp, expected_type);
+        return cmp;
+      }
+      case BinOp::Ge: {
+        Value *cmp = is_unsigned ? Builder.CreateICmpUGE(l, r) : Builder.CreateICmpSGE(l, r);
+        if (expected_type && !expected_type->isIntegerTy(1))
+          return Builder.CreateZExt(cmp, expected_type);
+        return cmp;
+      }
+      case BinOp::And: {
+        Function *fn = Builder.GetInsertBlock()->getParent();
+        BasicBlock *rhs_bb = BasicBlock::Create(Context, "and.rhs", fn);
+        BasicBlock *merge_bb = BasicBlock::Create(Context, "and.merge", fn);
+
+        AllocaInst *result_alloca = Builder.CreateAlloca(Type::getInt1Ty(Context), nullptr, "and.result");
+        Builder.CreateStore(ConstantInt::getFalse(Context), result_alloca);
+
+        Value *l_bool = Builder.CreateICmpNE(l, ConstantInt::get(l->getType(), 0));
+        Builder.CreateCondBr(l_bool, rhs_bb, merge_bb);
+
+        Builder.SetInsertPoint(rhs_bb);
+        Value *r_val = eval_expr(bin->right.get(), expected_type);
+        if (!r_val) return nullptr;
+        Value *r_bool = Builder.CreateICmpNE(r_val, ConstantInt::get(r_val->getType(), 0));
+        Builder.CreateStore(r_bool, result_alloca);
+        Builder.CreateBr(merge_bb);
+
+        Builder.SetInsertPoint(merge_bb);
+        Value *result = Builder.CreateLoad(Type::getInt1Ty(Context), result_alloca);
+        if (expected_type && !expected_type->isIntegerTy(1))
+          return Builder.CreateZExt(result, expected_type);
+        return result;
+      }
+      case BinOp::Or: {
+        Value *lb = Builder.CreateICmpNE(l, ConstantInt::get(l->getType(), 0));
+        Value *rb = Builder.CreateICmpNE(r, ConstantInt::get(r->getType(), 0));
+        Value *cmp = Builder.CreateOr(lb, rb);
+        if (expected_type && !expected_type->isIntegerTy(1))
+          return Builder.CreateZExt(cmp, expected_type);
+        return cmp;
+      }
+      case BinOp::Shr:
+        return is_unsigned ? Builder.CreateLShr(l, r) : Builder.CreateAShr(l, r);
+      case BinOp::Shl:
+        return Builder.CreateShl(l, r);
+      case BinOp::BitAnd:
+        return Builder.CreateAnd(l, r);
+      case BinOp::BitOr:
+        return Builder.CreateOr(l, r);
+      case BinOp::Xor:
+        return Builder.CreateXor(l, r);
+    }
+  }
+
+  if (auto *call = dynamic_cast<CallExpr *>(expr)) {
+    std::string actual_callee = call->callee;
+    if (!call->type_args.empty()) {
+      actual_callee = mangle_name(call->callee, call->type_args);
+      if (!M.getFunction(actual_callee)) {
+        auto it = generic_templates.find(call->callee);
+        if (it == generic_templates.end()) {
+          errs() << "Error: '" << call->callee << "' is not a generic function\n";
+          return nullptr;
+        }
+        if (call->type_args.size() != it->second->type_params.size()) {
+          errs() << "Error: wrong number of type arguments for '" << call->callee << "'\n";
+          return nullptr;
+        }
+        if (!monomorphize_and_codegen(it->second, call->type_args, actual_callee))
+          return nullptr;
+      }
+    }
+
+    Function *callee = M.getFunction(actual_callee);
+    if (!callee) {
+      errs() << "Error: undefined function '" << call->callee << "'\n";
+      return nullptr;
+    }
+    size_t fixed_params = callee->arg_size();
+    if (callee->isVarArg()) {
+      if (call->args.size() < fixed_params) {
+        errs() << "Error: too few arguments to '" << call->callee << "'\n";
+        return nullptr;
+      }
+    } else if (fixed_params != call->args.size()) {
+      errs() << "Error: wrong number of arguments to '" << call->callee << "'\n";
+      return nullptr;
+    }
+    std::vector<Value *> args;
+    for (size_t i = 0; i < call->args.size(); i++) {
+      Type *param_type;
+      if (i < fixed_params) {
+        param_type = callee->getArg(i)->getType();
+      } else {
+        if (dynamic_cast<StringExpr *>(call->args[i].get())) {
+          param_type = PointerType::getUnqual(Context);
+        } else {
+          param_type = Type::getInt64Ty(Context);
+        }
+      }
+      Value *arg = eval_expr(call->args[i].get(), param_type);
+      if (!arg) return nullptr;
+      args.push_back(arg);
+    }
+    return Builder.CreateCall(callee, args);
+  }
+
+  if (auto *atm = dynamic_cast<AtomicExpr *>(expr)) {
+    if (atm->op == AtomicOp::Fence) {
+      Builder.CreateFence(AtomicOrdering::SequentiallyConsistent);
+      return ConstantInt::get(Type::getInt64Ty(Context), 0);
+    }
+
+    if (atm->args.empty()) {
+      errs() << "Error: atomic operation needs at least a pointer argument\n";
+      return nullptr;
+    }
+    TypeAnnotation ptr_ann = resolve_expr_type(atm->args[0].get());
+    if (ptr_ann.pointer_depth < 1) {
+      errs() << "Error: first argument of atomic must be a pointer (&var or ptr)\n";
+      return nullptr;
+    }
+    ptr_ann.pointer_depth--;
+    Type *val_type = get_llvm_type(ptr_ann);
+    if (!val_type || (!val_type->isIntegerTy() && atm->op != AtomicOp::Xchg)) {
+      errs() << "Error: atomic operations require integer pointer types\n";
+      return nullptr;
+    }
+
+    Value *ptr = eval_expr(atm->args[0].get(), PointerType::getUnqual(Context));
+    if (!ptr) return nullptr;
+
+    if (atm->op == AtomicOp::CmpXchg) {
+      if (atm->args.size() < 3) {
+        errs() << "Error: atomic cas needs 3 arguments (ptr, expected, desired)\n";
+        return nullptr;
+      }
+      Value *expected = eval_expr(atm->args[1].get(), val_type);
+      Value *desired = eval_expr(atm->args[2].get(), val_type);
+      if (!expected || !desired) return nullptr;
+      Value *pair = Builder.CreateAtomicCmpXchg(
+          ptr, expected, desired, MaybeAlign(),
+          AtomicOrdering::SequentiallyConsistent,
+          AtomicOrdering::SequentiallyConsistent);
+      return Builder.CreateExtractValue(pair, {0}, "cmpxchg.old");
+    }
+
+    if (atm->args.size() < 2) {
+      errs() << "Error: atomic " << (atm->op == AtomicOp::Xchg ? "xchg" : "rmw")
+             << " needs 2 arguments (ptr, value)\n";
+      return nullptr;
+    }
+    Value *val = eval_expr(atm->args[1].get(), val_type);
+    if (!val) return nullptr;
+
+    AtomicRMWInst::BinOp rmw_op;
+    switch (atm->op) {
+      case AtomicOp::Xchg: rmw_op = AtomicRMWInst::Xchg; break;
+      case AtomicOp::Add:  rmw_op = AtomicRMWInst::Add; break;
+      case AtomicOp::Sub:  rmw_op = AtomicRMWInst::Sub; break;
+      case AtomicOp::And:  rmw_op = AtomicRMWInst::And; break;
+      case AtomicOp::Or:   rmw_op = AtomicRMWInst::Or; break;
+      case AtomicOp::Xor:  rmw_op = AtomicRMWInst::Xor; break;
+      default:
+        errs() << "Error: unsupported atomic operation\n";
+        return nullptr;
+    }
+    return Builder.CreateAtomicRMW(rmw_op, ptr, val, MaybeAlign(),
+                                    AtomicOrdering::SequentiallyConsistent);
+  }
+
+  if (auto *asm_ = dynamic_cast<AsmExpr *>(expr)) {
+    FunctionType *FT = FunctionType::get(Type::getVoidTy(Context), false);
+    InlineAsm *IA = InlineAsm::get(FT, asm_->asm_code, "", true, false);
+    Builder.CreateCall(IA);
+    return ConstantInt::get(Type::getInt64Ty(Context), 0);
+  }
+
+  if (auto *assign = dynamic_cast<AssignExpr *>(expr)) {
+    Value *val = eval_expr(assign->value.get(), expected_type);
+    if (!val) return nullptr;
+
+    Type *target_type = nullptr;
+    Value *target_ptr = get_lvalue_ptr(assign->target.get(), &target_type);
+    if (!target_ptr) {
+      errs() << "Error: invalid assignment target\n";
+      return nullptr;
+    }
+    Builder.CreateStore(val, target_ptr);
+    return val;
+  }
+
+  if (auto *compound = dynamic_cast<CompoundAssignExpr *>(expr)) {
+    Type *target_type = nullptr;
+    Value *target_ptr = get_lvalue_ptr(compound->target.get(), &target_type);
+    if (!target_ptr) {
+      errs() << "Error: invalid compound assignment target\n";
+      return nullptr;
+    }
+    Value *current = Builder.CreateLoad(target_type, target_ptr);
+    Value *rhs = eval_expr(compound->value.get(), target_type);
+    if (!rhs) return nullptr;
+    TypeAnnotation target_ann = resolve_expr_type(compound->target.get());
+    bool is_unsigned = is_unsigned_type(target_ann.kind);
+    Value *result;
+    switch (compound->op) {
+      case BinOp::Add: result = Builder.CreateAdd(current, rhs); break;
+      case BinOp::Sub: result = Builder.CreateSub(current, rhs); break;
+      case BinOp::Mul: result = Builder.CreateMul(current, rhs); break;
+      case BinOp::Div: result = is_unsigned ? Builder.CreateUDiv(current, rhs) : Builder.CreateSDiv(current, rhs); break;
+      case BinOp::Mod: result = is_unsigned ? Builder.CreateURem(current, rhs) : Builder.CreateSRem(current, rhs); break;
+      case BinOp::BitAnd: result = Builder.CreateAnd(current, rhs); break;
+      case BinOp::BitOr: result = Builder.CreateOr(current, rhs); break;
+      case BinOp::Xor: result = Builder.CreateXor(current, rhs); break;
+      case BinOp::Shl: result = Builder.CreateShl(current, rhs); break;
+      case BinOp::Shr: result = is_unsigned ? Builder.CreateLShr(current, rhs) : Builder.CreateAShr(current, rhs); break;
+      default:
+        errs() << "Error: unsupported operator for compound assignment\n";
+        return nullptr;
+    }
+    Builder.CreateStore(result, target_ptr);
+    return result;
+  }
+
+  errs() << "Error: unknown expression type\n";
+  return nullptr;
+}
