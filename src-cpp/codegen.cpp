@@ -143,6 +143,11 @@ TypeAnnotation CodeGen::resolve_expr_type(Expr *expr) {
       return get_struct_field_type(base.struct_name, field->field);
     return {TypeKind::Void};
   }
+  if (auto *addr = dynamic_cast<AddressOfExpr *>(expr)) {
+    TypeAnnotation base = resolve_expr_type(addr->operand.get());
+    base.pointer_depth++;
+    return base;
+  }
   if (auto *deref = dynamic_cast<DerefExpr *>(expr)) {
     TypeAnnotation base = resolve_expr_type(deref->operand.get());
     if (base.pointer_depth > 0) {
@@ -193,6 +198,18 @@ TypeAnnotation CodeGen::resolve_expr_type(Expr *expr) {
     if (struct_types.count(ctor->variant_name) > 0)
       return {TypeKind::Struct, 0, 0, ctor->variant_name};
     return {TypeKind::Void};
+  }
+  if (auto *atm = dynamic_cast<AtomicExpr *>(expr)) {
+    if (atm->op == AtomicOp::Fence)
+      return {TypeKind::Void};
+    if (!atm->args.empty()) {
+      TypeAnnotation ptr_ann = resolve_expr_type(atm->args[0].get());
+      if (ptr_ann.pointer_depth > 0) {
+        ptr_ann.pointer_depth--;
+        return ptr_ann;
+      }
+    }
+    return {TypeKind::Int64};
   }
   if (auto *call = dynamic_cast<CallExpr *>(expr)) {
     // For generic calls, check the template's return type
@@ -640,6 +657,11 @@ bool CodeGen::monomorphize_and_codegen(FnDecl *template_decl,
   std::function<void(Expr*)> walk_expr;
   walk_expr = [&](Expr *expr) {
     if (!expr) return;
+    if (auto *atm = dynamic_cast<AtomicExpr *>(expr)) {
+      for (auto &arg : atm->args)
+        walk_expr(arg.get());
+      return;
+    }
     if (auto *call = dynamic_cast<CallExpr *>(expr)) {
       for (auto &ta : call->type_args)
         substitute_in(ta);
@@ -671,6 +693,9 @@ bool CodeGen::monomorphize_and_codegen(FnDecl *template_decl,
     } else if (auto *ctor = dynamic_cast<ConstructorExpr *>(expr)) {
       for (auto &[_, fexpr] : ctor->fields)
         walk_expr(fexpr.get());
+    } else if (auto *atm = dynamic_cast<AtomicExpr *>(expr)) {
+      for (auto &arg : atm->args)
+        walk_expr(arg.get());
     } else if (auto *match = dynamic_cast<MatchExpr *>(expr)) {
       walk_expr(match->value.get());
     } else if (auto *ret = dynamic_cast<ReturnStmt *>(expr)) {
@@ -1233,6 +1258,73 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
       args.push_back(arg);
     }
     return Builder.CreateCall(callee, args);
+  }
+
+  if (auto *atm = dynamic_cast<AtomicExpr *>(expr)) {
+    if (atm->op == AtomicOp::Fence) {
+      Builder.CreateFence(AtomicOrdering::SequentiallyConsistent);
+      return ConstantInt::get(Type::getInt64Ty(Context), 0);
+    }
+
+    // The first argument must evaluate to a pointer (the memory location).
+    if (atm->args.empty()) {
+      errs() << "Error: atomic operation needs at least a pointer argument\n";
+      return nullptr;
+    }
+    TypeAnnotation ptr_ann = resolve_expr_type(atm->args[0].get());
+    if (ptr_ann.pointer_depth < 1) {
+      errs() << "Error: first argument of atomic must be a pointer (&var or ptr)\n";
+      return nullptr;
+    }
+    ptr_ann.pointer_depth--;
+    Type *val_type = get_llvm_type(ptr_ann);
+    if (!val_type || (!val_type->isIntegerTy() && atm->op != AtomicOp::Xchg)) {
+      errs() << "Error: atomic operations require integer pointer types\n";
+      return nullptr;
+    }
+
+    Value *ptr = eval_expr(atm->args[0].get(), PointerType::getUnqual(Context));
+    if (!ptr) return nullptr;
+
+    if (atm->op == AtomicOp::CmpXchg) {
+      if (atm->args.size() < 3) {
+        errs() << "Error: atomic cas needs 3 arguments (ptr, expected, desired)\n";
+        return nullptr;
+      }
+      Value *expected = eval_expr(atm->args[1].get(), val_type);
+      Value *desired = eval_expr(atm->args[2].get(), val_type);
+      if (!expected || !desired) return nullptr;
+      Value *pair = Builder.CreateAtomicCmpXchg(
+          ptr, expected, desired, MaybeAlign(),
+          AtomicOrdering::SequentiallyConsistent,
+          AtomicOrdering::SequentiallyConsistent);
+      // Extract the old value from the cmpxchg result {type, i1}
+      return Builder.CreateExtractValue(pair, {0}, "cmpxchg.old");
+    }
+
+    // Remaining ops (Xchg, Add, Sub, And, Or, Xor)
+    if (atm->args.size() < 2) {
+      errs() << "Error: atomic " << (atm->op == AtomicOp::Xchg ? "xchg" : "rmw")
+             << " needs 2 arguments (ptr, value)\n";
+      return nullptr;
+    }
+    Value *val = eval_expr(atm->args[1].get(), val_type);
+    if (!val) return nullptr;
+
+    AtomicRMWInst::BinOp rmw_op;
+    switch (atm->op) {
+      case AtomicOp::Xchg: rmw_op = AtomicRMWInst::Xchg; break;
+      case AtomicOp::Add:  rmw_op = AtomicRMWInst::Add; break;
+      case AtomicOp::Sub:  rmw_op = AtomicRMWInst::Sub; break;
+      case AtomicOp::And:  rmw_op = AtomicRMWInst::And; break;
+      case AtomicOp::Or:   rmw_op = AtomicRMWInst::Or; break;
+      case AtomicOp::Xor:  rmw_op = AtomicRMWInst::Xor; break;
+      default:
+        errs() << "Error: unsupported atomic operation\n";
+        return nullptr;
+    }
+    return Builder.CreateAtomicRMW(rmw_op, ptr, val, MaybeAlign(),
+                                    AtomicOrdering::SequentiallyConsistent);
   }
 
   if (auto *asm_ = dynamic_cast<AsmExpr *>(expr)) {

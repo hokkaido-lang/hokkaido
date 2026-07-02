@@ -1,0 +1,47 @@
+extern fn printf(fmt: string, ...) -> int
+
+fn main() -> int {
+    // Test atomic exchange
+    let val: int = 42
+    let old: int = atomic(xchg, &val, 100)
+    printf("xchg: old=%ld, new=%ld\n", old, val)       // expect old=42, new=100
+
+    // Test atomic add
+    let counter: int = 10
+    let prev: int = atomic(add, &counter, 5)
+    printf("add: prev=%ld, now=%ld\n", prev, counter)   // expect prev=10, now=15
+
+    // Test atomic sub
+    let x: int = 20
+    let s: int = atomic(sub, &x, 7)
+    printf("sub: prev=%ld, now=%ld\n", s, x)             // expect prev=20, now=13
+
+    // Test atomic and/or/xor
+    let flags: int = 255
+    let a: int = atomic(and, &flags, 15)
+    printf("and: prev=%ld, now=%ld\n", a, flags)         // expect prev=255, now=15
+
+    let flags2: int = 240
+    let o: int = atomic(or, &flags2, 15)
+    printf("or: prev=%ld, now=%ld\n", o, flags2)         // expect prev=240, now=255
+
+    let flags3: int = 255
+    let xr: int = atomic(xor, &flags3, 240)
+    printf("xor: prev=%ld, now=%ld\n", xr, flags3)        // expect prev=255, now=15
+
+    // Test compare-and-swap
+    let target: int = 50
+    // cas succeeds (target == 50, swap to 99)
+    let old2: int = atomic(cas, &target, 50, 99)
+    printf("cas(success): old=%ld, now=%ld\n", old2, target)  // expect old=50, now=99
+
+    // cas fails (target != 10, no swap)
+    let old3: int = atomic(cas, &target, 10, 200)
+    printf("cas(fail): old=%ld, now=%ld\n", old3, target)     // expect old=99, now=99
+
+    // Test fence
+    atomic(fence)
+
+    printf("all atomics passed!\n")
+    return 0
+}

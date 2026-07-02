@@ -1253,6 +1253,9 @@ std::unique_ptr<Expr> Parser::parse_primary() {
   if (cur_tok.type == TokenType::Match) {
     return parse_match_expr();
   }
+  if (cur_tok.type == TokenType::Atomic) {
+    return parse_atomic_expr();
+  }
   set_error("expected expression");
   return nullptr;
 }
@@ -1394,6 +1397,67 @@ std::unique_ptr<Expr> Parser::parse_match_expr() {
   }
   next_token(); // consume '}'
   return mexpr;
+}
+
+std::unique_ptr<Expr> Parser::parse_atomic_expr() {
+  next_token(); // consume 'atomic'
+
+  if (cur_tok.type != TokenType::LParen) {
+    set_error("expected '(' in atomic expression");
+    return nullptr;
+  }
+  next_token(); // consume '('
+
+  if (cur_tok.type != TokenType::Identifier) {
+    set_error("expected atomic operation name (xchg, add, sub, and, or, xor, cas, fence)");
+    return nullptr;
+  }
+  std::string op_name = cur_tok.text;
+  next_token();
+
+  AtomicOp op;
+  if (op_name == "xchg") op = AtomicOp::Xchg;
+  else if (op_name == "add") op = AtomicOp::Add;
+  else if (op_name == "sub") op = AtomicOp::Sub;
+  else if (op_name == "and") op = AtomicOp::And;
+  else if (op_name == "or") op = AtomicOp::Or;
+  else if (op_name == "xor") op = AtomicOp::Xor;
+  else if (op_name == "cas") op = AtomicOp::CmpXchg;
+  else if (op_name == "fence") op = AtomicOp::Fence;
+  else {
+    set_error("unknown atomic operation '" + op_name + "'");
+    return nullptr;
+  }
+
+  // Expect comma before first argument (separates op name from args)
+  if (cur_tok.type == TokenType::Comma) {
+    next_token(); // consume comma
+  }
+
+  std::vector<std::unique_ptr<Expr>> args;
+  while (cur_tok.type != TokenType::RParen && cur_tok.type != TokenType::Eof) {
+    if (!args.empty()) {
+      if (cur_tok.type != TokenType::Comma) {
+        set_error("expected ',' or ')' in atomic args");
+        return nullptr;
+      }
+      next_token();
+    }
+    auto arg = parse_expr();
+    if (!arg) return nullptr;
+    args.push_back(std::move(arg));
+  }
+
+  if (cur_tok.type != TokenType::RParen) {
+    set_error("expected ')' after atomic arguments");
+    return nullptr;
+  }
+  next_token(); // consume ')'
+
+  auto expr = std::make_unique<AtomicExpr>();
+  expr->op = op;
+  expr->args = std::move(args);
+  return expr;
 }
 
 std::unique_ptr<Pattern> Parser::parse_pattern() {

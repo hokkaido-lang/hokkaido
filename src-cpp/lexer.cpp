@@ -290,6 +290,7 @@ Token Lexer::lex_identifier(int l, int c) {
   if (id == "fn") return {TokenType::Fn, id, 0, l, c};
   if (id == "return") return {TokenType::Return, id, 0, l, c};
   if (id == "asm") return {TokenType::Asm, id, 0, l, c};
+  if (id == "atomic") return {TokenType::Atomic, id, 0, l, c};
   if (id == "if") return {TokenType::If, id, 0, l, c};
   if (id == "else") return {TokenType::Else, id, 0, l, c};
   if (id == "for") return {TokenType::For, id, 0, l, c};

@@ -84,6 +84,7 @@ private:
   std::unique_ptr<Expr> parse_turbofish_call(const std::string &name);
   std::unique_ptr<Expr> parse_array_literal();
   std::unique_ptr<Expr> parse_match_expr();
+  std::unique_ptr<Expr> parse_atomic_expr();
 
   // Patterns
   std::unique_ptr<Pattern> parse_pattern();

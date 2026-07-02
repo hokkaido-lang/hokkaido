@@ -240,6 +240,37 @@ let b: int = *(p + 8)        // 20 — advances 8 bytes (one int64)
 let c: int = *(p + 16)       // 30
 ```
 
+## Atomic operations
+
+Atomic operations provide lock-free concurrent memory access. The `atomic(operation, ...)` expression
+generates LLVM atomic instructions (all with `seq_cst` ordering).
+
+```
+atomic(xchg,  ptr, val)      // atomic exchange: *ptr = val; return old *ptr
+atomic(add,   ptr, val)      // atomic add: *ptr += val; return old *ptr
+atomic(sub,   ptr, val)      // atomic subtract: *ptr -= val; return old *ptr
+atomic(and,   ptr, val)      // atomic bitwise AND: *ptr &= val; return old *ptr
+atomic(or,    ptr, val)      // atomic bitwise OR:  *ptr |= val; return old *ptr
+atomic(xor,   ptr, val)      // atomic bitwise XOR: *ptr ^= val; return old *ptr
+atomic(cas,   ptr, cmp, val) // compare-and-swap: if *ptr == cmp, *ptr = val; return old *ptr
+atomic(fence)                 // memory fence (no args, returns void)
+```
+
+The first argument after the operation name must be a pointer (`&var`, `ptr`, or `*` dereference).
+Integer pointer types (int8*, int32*, int64*) are supported. The result type is the pointee type
+(or `void` for `fence`).
+
+```
+let counter: int = 0
+let old: int = atomic(xchg, &counter, 100)    // old=0, counter=100
+let prev: int = atomic(add, &counter, 5)       // prev=100, counter=105
+let ok: int = atomic(cas, &counter, 105, 200)   // CAS succeeds: counter=200
+let no: int = atomic(cas, &counter, 0, 999)     // CAS fails: counter stays 200
+atomic(fence)                                   // memory fence
+```
+
+`atomic(...)` is a primary expression (precedence level 1).
+
 ## Function calls
 
 A function call evaluates the argument expressions left to right, then transfers control

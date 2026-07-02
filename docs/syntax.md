@@ -30,6 +30,7 @@ deliberately minimal.
 - [Shift operators](/docs/syntax-expressions#shift-operators)
 - [Assignment](/docs/syntax-expressions#assignment)
 - [Pointers](/docs/syntax-expressions#pointers)
+- [Atomic operations](/docs/syntax-expressions#atomic-operations)
 - [Function calls](/docs/syntax-expressions#function-calls)
 - [Arrays](/docs/syntax-data-structures#arrays)
 - [Structs](/docs/syntax-data-structures#structs)

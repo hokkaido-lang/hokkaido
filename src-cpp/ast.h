@@ -42,6 +42,10 @@ enum class UnaryOp {
   Neg, BitNot
 };
 
+enum class AtomicOp {
+  Xchg, Add, Sub, And, Or, Xor, CmpXchg, Fence
+};
+
 struct Expr {
   virtual ~Expr() = default;
 };
@@ -83,6 +87,11 @@ struct CallExpr : Expr {
 
 struct AsmExpr : Expr {
   std::string asm_code;
+};
+
+struct AtomicExpr : Expr {
+  AtomicOp op;
+  std::vector<std::unique_ptr<Expr>> args;
 };
 
 struct AssignExpr : Expr {
