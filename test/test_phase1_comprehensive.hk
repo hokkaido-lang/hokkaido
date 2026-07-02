@@ -1,0 +1,75 @@
+extern fn printf(str: int8*) -> int32
+
+fn identity_i16(x: int16) -> int16 {
+  return x
+}
+
+fn add_uint32(a: uint32, b: uint32) -> uint32 {
+  return a + b
+}
+
+fn get_char() -> char {
+  return 'Z'
+}
+
+fn make_tuple(a: int64, b: int64) -> (int64, int64) {
+  return (a, b)
+}
+
+fn main() -> int {
+  // ---- int16 ----
+  let a: int16 = 1000
+  let b: int16 = 3
+  let div_i16: int16 = a / b   // sdiv: 1000/3 = 333
+
+  // ---- unsigned types ----
+  let ua: uint8 = 200
+  let ub: uint8 = 2
+  let udiv_u8: uint8 = ua / ub  // udiv: 200/2 = 100
+  let umod_u8: uint8 = ua % ub  // urem: 0
+
+  // uint32 division with large value
+  let uc: uint32 = 3000000000
+  let ud: uint32 = 3
+  let udiv_u32: uint32 = uc / ud  // udiv
+
+  // uint64 shift (lshr)
+  let ue: uint64 = 100
+  let uf: uint64 = ue >> 1       // lshr → 50
+
+  // unsigned comparison
+  let ug: uint32 = 1
+  let uh: uint32 = 40000
+  let cmp_ult: uint32 = ug < uh   // icmp ult → 1
+
+  // ---- char ----
+  let ca: char = 'A'          // 65
+  let cb: char = '\t'         // 9
+  let cc: char = '\\'         // 92
+  let cd: char = '\''         // 39
+  let ce: char = get_char()   // 90 ('Z')
+  let cf: char = 65           // numeric literal
+
+  // ---- tuples ----
+  let t1: (int64, int64) = (100, 200)
+  let t1_0: int64 = t1.0
+  let t1_1: int64 = t1.1
+
+  let t2: (int32, int32, int32) = (10, 20, 30)
+  let t2_0: int32 = t2.0
+  let t2_1: int32 = t2.1
+  let t2_2: int32 = t2.2
+
+  // tuple from function
+  let t3: (int64, int64) = make_tuple(42, 99)
+  let t3_0: int64 = t3.0
+  let t3_1: int64 = t3.1
+
+  // ---- function calls with new types ----
+  let fi: int16 = identity_i16(42)
+  let fu: uint32 = add_uint32(1000, 2000)
+
+  // compute final result without mixing widths
+  let result: int64 = t1_0 + t3_1
+  return result
+}

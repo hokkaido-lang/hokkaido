@@ -33,6 +33,8 @@ class CodeGen {
 
   // Registered struct types (name -> LLVM struct type)
   std::map<std::string, llvm::StructType *> struct_types;
+  // Cached tuple types (mangled key -> LLVM struct type)
+  std::map<std::string, llvm::StructType *> tuple_type_cache;
   // Struct field types (name -> vector of (field_name, annotation))
   std::map<std::string, std::vector<std::pair<std::string, TypeAnnotation>>> struct_fields;
 
@@ -120,6 +122,8 @@ private:
   // LLVM type helpers
   llvm::Type *get_llvm_type(TypeKind kind);
   llvm::Type *get_llvm_type(const TypeAnnotation &ann);
+  llvm::StructType *get_tuple_type(const std::vector<TypeAnnotation> &elem_types);
+  static std::string tuple_type_key(const std::vector<TypeAnnotation> &elem_types);
 
   // Pattern matching helpers
   llvm::Value *gen_pattern_check(Pattern *pat, llvm::Value *val,

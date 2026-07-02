@@ -305,3 +305,57 @@ namespace point {
 }
 let d = point::distance(p, q)
 ```
+
+## Char literals
+
+A char literal represents a single 8-bit character. It is written with single quotes and
+has type `char` (equivalent to `uint8`).
+
+```
+'a'
+'\n'    // newline
+'\t'    // tab
+'\\'    // backslash
+'\''    // single quote
+```
+
+```
+let c: char = 'A'
+let nl: char = '\n'
+```
+
+Char literals are distinct from integer literals. They are a primary expression
+(precedence level 1) and can be used anywhere an expression is expected.
+
+## Tuple expressions
+
+A tuple expression constructs a tuple value. It is written as a comma-separated list of
+expressions inside parentheses:
+
+```
+(expr1, expr2, ...)
+```
+
+```
+let pair: (int, bool) = (42, true)
+let triple: (int8, float32, int) = (1, 3.14, 100)
+```
+
+A tuple with a single element `(expr)` is treated as a parenthesized expression, not a
+1-tuple. Only tuples of two or more elements create a tuple type.
+
+Tuple expressions are primary expressions (precedence level 1).
+
+### Tuple field access
+
+Individual fields of a tuple are accessed using `.0`, `.1`, `.2`, etc. — the `.`
+followed by the zero-based field index:
+
+```
+let pair: (int, bool) = (42, true)
+let first: int = pair.0     // 42
+let second: bool = pair.1   // true
+```
+
+Tuple field access reuses the field-access codegen path and compiles to LLVM
+`extractvalue` / GEP, producing the same efficient code as struct field access.

@@ -28,27 +28,26 @@ phase can cite. → See [`docs/design-decisions.md`](docs/design-decisions.md).
 
 ---
 
-## Phase 1 — Core Type System Gaps
+## Phase 1 — Core Type System Gaps ✅ Complete
 
 Low-risk, high-value, mostly additive to the type checker and codegen; unblocks
 correctness issues elsewhere.
 
-1. **`int16` type**
-   - Add to lexer/type table alongside existing `int8/32/64`.
+1. ✅ **`int16` type**
+   - Added to lexer/type table alongside existing `int8/32/64`.
    - Extend truncation/coercion rules in the type-equivalence section.
-2. **Unsigned integer types (`uint8/16/32/64`)**
-   - Add signedness to the type representation.
-   - Update arithmetic codegen to select signed vs. unsigned LLVM instructions
+2. ✅ **Unsigned integer types (`uint8/16/32/64`)**
+   - Added signedness to the type representation.
+   - Updated arithmetic codegen to select signed vs. unsigned LLVM instructions
      (`sdiv`/`udiv`, `srem`/`urem`, `ashr`/`lshr`).
-   - Update comparison operators to use unsigned predicates for unsigned operands.
-3. **`char` type**
-   - Introduce as a distinct 1-byte type (or explicit alias of `int8` with its own
-     literal syntax, e.g. `'a'`).
-   - Add character literal lexing.
-4. **Tuple types**
+   - Updated comparison operators to use unsigned predicates for unsigned operands.
+3. ✅ **`char` type**
+   - Introduced as a distinct 1-byte type with its own literal syntax (`'a'`).
+   - Added character literal lexing (`'a'`, `'\n'`, `'\t'`, `'\\'`, `'\''`).
+4. ✅ **Tuple types**
    - Grammar: `(T1, T2, ...)` as a type; `(a, b, c)` as a value.
-   - Represent as an anonymous struct in codegen (mirrors existing struct layout rules).
-   - Add positional access (`.0`, `.1`, ...) reusing the field-access codegen path.
+   - Represented as an anonymous struct in codegen (mirrors existing struct layout rules).
+   - Added positional access (`.0`, `.1`, ...) reusing the field-access codegen path.
 
 **Exit criteria:** all four land with tests; no changes required to control flow or
 functions yet.

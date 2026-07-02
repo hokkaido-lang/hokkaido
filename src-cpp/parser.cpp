@@ -249,11 +249,26 @@ TypeAnnotation Parser::parse_type_annotation() {
   } else if (cur_tok.type == TokenType::Int8) {
     ann = {TypeKind::Int8};
     next_token();
+  } else if (cur_tok.type == TokenType::Int16) {
+    ann = {TypeKind::Int16};
+    next_token();
   } else if (cur_tok.type == TokenType::Int32) {
     ann = {TypeKind::Int32};
     next_token();
   } else if (cur_tok.type == TokenType::Int64) {
     ann = {TypeKind::Int64};
+    next_token();
+  } else if (cur_tok.type == TokenType::Uint8) {
+    ann = {TypeKind::Uint8};
+    next_token();
+  } else if (cur_tok.type == TokenType::Uint16) {
+    ann = {TypeKind::Uint16};
+    next_token();
+  } else if (cur_tok.type == TokenType::Uint32) {
+    ann = {TypeKind::Uint32};
+    next_token();
+  } else if (cur_tok.type == TokenType::Uint64) {
+    ann = {TypeKind::Uint64};
     next_token();
   } else if (cur_tok.type == TokenType::Float16) {
     ann = {TypeKind::Float16};
@@ -270,9 +285,42 @@ TypeAnnotation Parser::parse_type_annotation() {
   } else if (cur_tok.type == TokenType::String) {
     ann = {TypeKind::String};
     next_token();
+  } else if (cur_tok.type == TokenType::Char) {
+    ann = {TypeKind::Char};
+    next_token();
   } else if (cur_tok.type == TokenType::Cubical) {
     ann = {TypeKind::Cubical};
     next_token();
+  } else if (cur_tok.type == TokenType::LParen) {
+    // Tuple type: (T1, T2, ...)
+    next_token(); // consume '('
+    skip_newlines();
+    std::vector<TypeAnnotation> elem_types;
+    while (cur_tok.type != TokenType::RParen && cur_tok.type != TokenType::Eof) {
+      if (!elem_types.empty()) {
+        if (cur_tok.type != TokenType::Comma) {
+          set_error("expected ',' or ')' in tuple type");
+          return ann;
+        }
+        next_token();
+        skip_newlines();
+      }
+      elem_types.push_back(parse_type_annotation());
+      if (has_error) return ann;
+      skip_newlines();
+    }
+    if (cur_tok.type != TokenType::RParen) {
+      set_error("expected ')' to close tuple type");
+      return ann;
+    }
+    next_token(); // consume ')'
+    // A 1-tuple (T) is just T, not a tuple
+    if (elem_types.size() == 1) {
+      ann = elem_types[0];
+    } else {
+      ann = {TypeKind::Tuple};
+      ann.tuple_types = std::move(elem_types);
+    }
   } else if (cur_tok.type == TokenType::Identifier) {
     // Check if this is a type parameter name
     if (type_param_names.find(cur_tok.text) != type_param_names.end()) {
@@ -296,7 +344,7 @@ TypeAnnotation Parser::parse_type_annotation() {
       }
     }
   } else {
-    set_error("expected type (void, int8, int32, int64, float, bool, string, cubical, or struct name)");
+    set_error("expected type (void, int8, int16, int32, int64, uint8, uint16, uint32, uint64, float, bool, string, char, cubical, tuple, or struct name)");
     ann = {TypeKind::Int64};
     has_error = true;
     return ann;
@@ -946,6 +994,7 @@ std::unique_ptr<ReturnStmt> Parser::parse_return_stmt() {
   if (cur_tok.type == TokenType::Number ||
       cur_tok.type == TokenType::True ||
       cur_tok.type == TokenType::False ||
+      cur_tok.type == TokenType::CharLiteral ||
       cur_tok.type == TokenType::StringLiteral ||
       cur_tok.type == TokenType::Identifier ||
       cur_tok.type == TokenType::Asm ||
@@ -1297,16 +1346,22 @@ std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
     next_token(); // consume ']'
     left = std::make_unique<SubscriptExpr>(std::move(left), std::move(index));
   }
-  // Handle field access: obj.field
+  // Handle field access: obj.field or obj.0 (tuple positional access)
   while (cur_tok.type == TokenType::Dot) {
     next_token(); // consume '.'
-    if (cur_tok.type != TokenType::Identifier) {
-      set_error("expected field name after '.'");
+    if (cur_tok.type == TokenType::Number) {
+      // Tuple positional access: .0, .1, etc.
+      std::string field = std::to_string((int)cur_tok.num_val);
+      next_token();
+      left = std::make_unique<FieldAccessExpr>(std::move(left), field);
+    } else if (cur_tok.type == TokenType::Identifier) {
+      std::string field = cur_tok.text;
+      next_token();
+      left = std::make_unique<FieldAccessExpr>(std::move(left), field);
+    } else {
+      set_error("expected field name or index after '.'");
       return nullptr;
     }
-    std::string field = cur_tok.text;
-    next_token();
-    left = std::make_unique<FieldAccessExpr>(std::move(left), field);
   }
   // Handle constructor expression: VariantName { field: expr, ... }
   if (cur_tok.type == TokenType::LBrace) {
@@ -1364,6 +1419,11 @@ std::unique_ptr<Expr> Parser::parse_primary() {
   }
   if (cur_tok.type == TokenType::Number) {
     auto expr = std::make_unique<NumberExpr>(cur_tok.num_val);
+    next_token();
+    return expr;
+  }
+  if (cur_tok.type == TokenType::CharLiteral) {
+    auto expr = std::make_unique<CharExpr>((uint8_t)cur_tok.num_val);
     next_token();
     return expr;
   }
@@ -1429,13 +1489,36 @@ std::unique_ptr<Expr> Parser::parse_primary() {
   }
   if (cur_tok.type == TokenType::LParen) {
     next_token();
-    auto expr = parse_expr();
+    skip_newlines();
+    auto first = parse_expr();
+    if (!first) return nullptr;
+    skip_newlines();
+    // If followed by a comma, this is a tuple expression
+    if (cur_tok.type == TokenType::Comma) {
+      auto tup = std::make_unique<TupleExpr>();
+      tup->elements.push_back(std::move(first));
+      while (cur_tok.type == TokenType::Comma) {
+        next_token(); // consume ','
+        skip_newlines();
+        auto el = parse_expr();
+        if (!el) return nullptr;
+        tup->elements.push_back(std::move(el));
+        skip_newlines();
+      }
+      if (cur_tok.type != TokenType::RParen) {
+        set_error("expected ')' to close tuple expression");
+        return nullptr;
+      }
+      next_token(); // consume ')'
+      return tup;
+    }
+    // Single expression in parens
     if (cur_tok.type != TokenType::RParen) {
       set_error("expected ')'");
       return nullptr;
     }
     next_token();
-    return expr;
+    return first;
   }
   if (cur_tok.type == TokenType::Match) {
     return parse_match_expr();

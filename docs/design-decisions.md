@@ -55,8 +55,8 @@ entire class of subtle bugs (e.g., comparing a "signed flag int" with a
 
 ### Impact on later phases
 
-- Phase 1 (type system gaps): unsigned types are the largest item; they
-  touch lexer, parser, type checker, and codegen.
+- Phase 1 (type system gaps): unsigned types were the largest item; they
+  touched lexer, parser, type checker, and codegen.
 - Phase 3 (slices): slice length should be `uint64` (or `int`? decided
   below).
 - Phase 4 (closures): no impact.
@@ -234,7 +234,7 @@ base_type  ::= "int8" | "int16" | "int32" | "int64" | "int"
              | "bool" | "string" | "void" | "char"
              | "cubical"
              | ident                          // struct/enum/type-param name
-             | "(" type ("," type)* ")"       // tuple type (Phase 1)
+              | "(" type ("," type)* ")"       // tuple type
 ```
 
 Notes:
@@ -343,7 +343,7 @@ atomic_op  ::= "xchg" | "add" | "sub" | "and" | "or" | "xor"
 
 | # | Decision | Choice | Impacts |
 |---|----------|--------|---------|
-| 1 | Unsigned integer types | New distinct types (`uint8/16/32/64`) | Phase 1 (largest item), LLVM instruction selection |
+| 1 | Unsigned integer types | New distinct types (`uint8/16/32/64`) | Phase 1 (completed), LLVM instruction selection |
 | 2 | Dynamic memory | Built-in `alloc<T>` / `free` intrinsics | Phases 3, 6 |
 | 3 | Generic trait bounds | Deferred to future major version | Phase 5 scope reduced; operator overloading deferred |
 | 4 | `if` expression | New `IfExpr` node (coexists with `IfStmt`) | Phase 2 stretch goal |

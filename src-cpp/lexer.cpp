@@ -218,6 +218,11 @@ Token Lexer::next_token() {
     return lex_string(l, c);
   }
 
+  // Character literals: 'a', '\n', etc.
+  if (ch == '\'') {
+    return lex_char_literal(l, c);
+  }
+
   // Numbers (including negative literals)
   if (std::isdigit(ch) || (ch == '-' && pos + 1 < input.size() && std::isdigit(input[pos + 1]))) {
     return lex_number(l, c);
@@ -305,8 +310,13 @@ Token Lexer::lex_identifier(int l, int c) {
   if (id == "cubical") return {TokenType::Cubical, id, 0, l, c};
   if (id == "int") return {TokenType::Int64, id, 0, l, c};
   if (id == "int8") return {TokenType::Int8, id, 0, l, c};
+  if (id == "int16") return {TokenType::Int16, id, 0, l, c};
   if (id == "int32") return {TokenType::Int32, id, 0, l, c};
   if (id == "int64") return {TokenType::Int64, id, 0, l, c};
+  if (id == "uint8") return {TokenType::Uint8, id, 0, l, c};
+  if (id == "uint16") return {TokenType::Uint16, id, 0, l, c};
+  if (id == "uint32") return {TokenType::Uint32, id, 0, l, c};
+  if (id == "uint64") return {TokenType::Uint64, id, 0, l, c};
   if (id == "float") return {TokenType::Float64, id, 0, l, c};
   if (id == "float16") return {TokenType::Float16, id, 0, l, c};
   if (id == "float32") return {TokenType::Float32, id, 0, l, c};
@@ -314,9 +324,36 @@ Token Lexer::lex_identifier(int l, int c) {
   if (id == "bool") return {TokenType::Bool, id, 0, l, c};
   if (id == "string") return {TokenType::String, id, 0, l, c};
   if (id == "void") return {TokenType::Void, id, 0, l, c};
+  if (id == "char") return {TokenType::Char, id, 0, l, c};
   if (id == "struct") return {TokenType::Struct, id, 0, l, c};
   if (id == "true") return {TokenType::True, id, 1.0, l, c};
   if (id == "false") return {TokenType::False, id, 0.0, l, c};
 
   return {TokenType::Identifier, id, 0, l, c};
+}
+
+Token Lexer::lex_char_literal(int l, int c) {
+  advance(); // skip opening '
+  char val;
+  if (peek() == '\\') {
+    advance();
+    switch (peek()) {
+      case 'n': val = '\n'; break;
+      case 't': val = '\t'; break;
+      case '\\': val = '\\'; break;
+      case '\'': val = '\''; break;
+      default: val = peek(); break;
+    }
+    advance();
+  } else {
+    if (peek() == '\'') {
+      return {TokenType::Eof, "empty char literal", 0, l, c};
+    }
+    val = advance();
+  }
+  if (peek() != '\'') {
+    return {TokenType::Eof, "unterminated char literal", 0, l, c};
+  }
+  advance(); // skip closing '
+  return {TokenType::CharLiteral, std::string(1, val), (double)(unsigned char)val, l, c};
 }

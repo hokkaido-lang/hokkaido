@@ -15,27 +15,38 @@ Every value in Hokkaido has a type, specified with a type annotation using colon
 | Type      | Description                          | Size      |
 |-----------|--------------------------------------|-----------|
 | `int8`    | 8-bit signed integer                 | 1 byte    |
+| `int16`   | 16-bit signed integer                | 2 bytes   |
 | `int32`   | 32-bit signed integer                | 4 bytes   |
 | `int64`   | 64-bit signed integer                | 8 bytes   |
 | `int`     | Shorthand for `int64`                | 8 bytes   |
+| `uint8`   | 8-bit unsigned integer               | 1 byte    |
+| `uint16`  | 16-bit unsigned integer              | 2 bytes   |
+| `uint32`  | 32-bit unsigned integer              | 4 bytes   |
+| `uint64`  | 64-bit unsigned integer              | 8 bytes   |
 | `float16` | 16-bit floating point (half-precision) | 2 bytes |
 | `float32` | 32-bit floating point                | 4 bytes   |
 | `float64` | 64-bit floating point (double)       | 8 bytes   |
 | `float`   | Shorthand for `float64`              | 8 bytes   |
 | `bool`    | Boolean — `true` or `false`          | 1 byte    |
+| `char`    | 8-bit character (alias for `uint8` with distinct literal syntax `'a'`) | 1 byte |
 | `string`  | Opaque string type (internally a pointer) | 8 bytes |
 | `void`    | No value (function returns only)     | 0 bytes   |
 | `cubical` | Compile-time cubical expression (see [Cubical](/docs/syntax-ffi-cubical#cubical)) | 8 bytes |
 
 ```
 let a: int8 = -128
-let b: int32 = 2000000
-let c: int64 = 9000000000000000000
-let d: int = 42                    // same as int64
-let e: float16 = 1.0              // half-precision
-let f: float32 = 2.0              // single-precision
-let g: float64 = 3.14159265358979
-let h: float = 2.71828            // same as float64
+let b: int16 = -32000
+let c: int32 = 2000000
+let d: int64 = 9000000000000000000
+let e: int = 42                    // same as int64
+let f: uint8 = 255
+let g: uint16 = 65535
+let h: uint32 = 4000000000
+let i: uint64 = 18000000000000000000
+let j: float16 = 1.0              // half-precision
+let k: float32 = 2.0              // single-precision
+let l: float64 = 3.14159265358979
+let m: float = 2.71828            // same as float64
 let flag: bool = true
 let msg: string = "hello"
 ```
@@ -87,6 +98,35 @@ Point[10]  Array of 10 Point structs
 
 Array size must be a literal integer (compile-time constant). See [Arrays](/docs/syntax-data-structures#arrays).
 
+### Tuple types
+
+A tuple type is written as a comma-separated list of types inside parentheses:
+
+```
+(T1, T2, ...)
+```
+
+- `(int, bool)` — a 2-element tuple of an int and a bool.
+- `(int8, float32, int)` — a 3-element tuple.
+
+Tuples of two or more elements are distinct from parenthesized grouping:
+`(int32)` is just `int32`, not a 1-tuple.
+
+Tuple values are constructed using the same syntax:
+
+```
+let pair: (int, bool) = (42, true)
+```
+
+Positional access uses `.0`, `.1`, etc.:
+
+```
+let first: int = pair.0     // 42
+let second: bool = pair.1   // true
+```
+
+Tuples are represented as anonymous structs in codegen.
+
 ### Type equivalence
 
 Two types are considered the same only when they have the same kind, the same pointer depth,
@@ -96,6 +136,7 @@ There are no implicit conversions except:
 - Integer literals coerce to the expected type when the target type is unambiguous.
 - `bool` (`i1`) is zero-extended to wider integer types when needed (e.g. in arithmetic).
 - `int64` values are silently truncated to `int32` when assigned to an `int32` variable.
+- There are no implicit conversions between signed and unsigned types of different signedness.
 
 ## Variables
 

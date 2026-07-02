@@ -16,6 +16,11 @@
 
 using namespace llvm;
 
+static bool is_unsigned_type(TypeKind kind) {
+  return kind == TypeKind::Uint8 || kind == TypeKind::Uint16 ||
+         kind == TypeKind::Uint32 || kind == TypeKind::Uint64;
+}
+
 // -------------------------------------------------------------------------
 // LLVM type mapping
 // -------------------------------------------------------------------------
@@ -24,14 +29,21 @@ Type *CodeGen::get_llvm_type(TypeKind kind) {
   switch (kind) {
     case TypeKind::Void:    return Type::getVoidTy(Context);
     case TypeKind::Int8:    return Type::getInt8Ty(Context);
+    case TypeKind::Int16:   return Type::getInt16Ty(Context);
     case TypeKind::Int32:   return Type::getInt32Ty(Context);
     case TypeKind::Int64:   return Type::getInt64Ty(Context);
+    case TypeKind::Uint8:   return Type::getInt8Ty(Context);
+    case TypeKind::Uint16:  return Type::getInt16Ty(Context);
+    case TypeKind::Uint32:  return Type::getInt32Ty(Context);
+    case TypeKind::Uint64:  return Type::getInt64Ty(Context);
     case TypeKind::Float16: return Type::getHalfTy(Context);
     case TypeKind::Float32: return Type::getFloatTy(Context);
     case TypeKind::Float64: return Type::getDoubleTy(Context);
     case TypeKind::Bool:    return Type::getInt1Ty(Context);
     case TypeKind::String:  return PointerType::getUnqual(Context);
+    case TypeKind::Char:    return Type::getInt8Ty(Context);
     case TypeKind::Cubical: return Type::getInt64Ty(Context);
+    case TypeKind::Tuple:   return nullptr; // must use annotation overload
     case TypeKind::Struct:  return nullptr; // must use annotation overload
     case TypeKind::TypeParam:
       // TypeParams should be substituted before codegen; if we reach here
@@ -44,6 +56,12 @@ Type *CodeGen::get_llvm_type(TypeKind kind) {
 
 Type *CodeGen::get_llvm_type(const TypeAnnotation &ann) {
   Type *base = nullptr;
+  if (ann.kind == TypeKind::Tuple) {
+    base = get_tuple_type(ann.tuple_types);
+    for (int i = 0; i < ann.pointer_depth; i++)
+      base = PointerType::getUnqual(Context);
+    return base;
+  }
   if (ann.kind == TypeKind::Struct) {
     auto it = struct_types.find(ann.struct_name);
     if (it != struct_types.end()) {
@@ -186,6 +204,8 @@ TypeAnnotation CodeGen::resolve_expr_type(Expr *expr) {
       case BinOp::And: case BinOp::Or:
         return {TypeKind::Bool};
       default:
+        // Return the type of the left operand if available
+        if (l.kind != TypeKind::Void) return l;
         return {TypeKind::Int64};
     }
   }
@@ -215,6 +235,12 @@ TypeAnnotation CodeGen::resolve_expr_type(Expr *expr) {
     }
     return {TypeKind::Int64};
   }
+  if (auto *tup = dynamic_cast<TupleExpr *>(expr)) {
+    TypeAnnotation ann = {TypeKind::Tuple};
+    for (auto &el : tup->elements)
+      ann.tuple_types.push_back(resolve_expr_type(el.get()));
+    return ann;
+  }
   if (auto *call = dynamic_cast<CallExpr *>(expr)) {
     // For generic calls, check the template's return type
     if (!call->type_args.empty()) {
@@ -239,6 +265,7 @@ TypeAnnotation CodeGen::resolve_expr_type(Expr *expr) {
       // Map LLVM type back to TypeKind (best-effort)
       if (ret_type->isIntegerTy(1)) return {TypeKind::Bool};
       if (ret_type->isIntegerTy(8)) return {TypeKind::Int8};
+      if (ret_type->isIntegerTy(16)) return {TypeKind::Int16};
       if (ret_type->isIntegerTy(32)) return {TypeKind::Int32};
       if (ret_type->isIntegerTy(64)) return {TypeKind::Int64};
       if (ret_type->isHalfTy()) return {TypeKind::Float16};
@@ -323,6 +350,22 @@ Value *CodeGen::get_lvalue_ptr(Expr *expr, Type **out_type) {
     return nullptr;
   }
   if (auto *field = dynamic_cast<FieldAccessExpr *>(expr)) {
+    TypeAnnotation base_ann = resolve_expr_type(field->object.get());
+
+    // Handle tuple positional access: .0, .1, ...
+    if (base_ann.kind == TypeKind::Tuple) {
+      int idx = std::stoi(field->field);
+      Type *tup_type = nullptr;
+      Value *tup_ptr = get_lvalue_ptr(field->object.get(), &tup_type);
+      if (!tup_ptr) return nullptr;
+      Value *field_ptr = Builder.CreateStructGEP(tup_type, tup_ptr, idx, field->field);
+      if (out_type) {
+        if (idx < (int)base_ann.tuple_types.size())
+          *out_type = get_llvm_type(base_ann.tuple_types[idx]);
+      }
+      return field_ptr;
+    }
+
     Type *struct_type = nullptr;
     Value *struct_ptr = get_lvalue_ptr(field->object.get(), &struct_type);
     if (!struct_ptr) return nullptr;
@@ -588,13 +631,19 @@ static std::string type_ann_to_string(const TypeAnnotation &ann) {
   switch (ann.kind) {
     case TypeKind::Void:    return "void";
     case TypeKind::Int8:    return "i8";
+    case TypeKind::Int16:   return "i16";
     case TypeKind::Int32:   return "i32";
     case TypeKind::Int64:   return "i64";
+    case TypeKind::Uint8:   return "u8";
+    case TypeKind::Uint16:  return "u16";
+    case TypeKind::Uint32:  return "u32";
+    case TypeKind::Uint64:  return "u64";
     case TypeKind::Float16: return "f16";
     case TypeKind::Float32: return "f32";
     case TypeKind::Float64: return "f64";
     case TypeKind::Bool:    return "bool";
     case TypeKind::String:  return "str";
+    case TypeKind::Char:    return "char";
     case TypeKind::Cubical: return "cub";
     case TypeKind::Struct:
     case TypeKind::TypeParam: {
@@ -602,8 +651,38 @@ static std::string type_ann_to_string(const TypeAnnotation &ann) {
       for (auto &c : s) if (c == ':') c = '_';
       return s;
     }
+    case TypeKind::Tuple: {
+      std::string s = "tup";
+      for (auto &et : ann.tuple_types)
+        s += "_" + type_ann_to_string(et);
+      return s;
+    }
   }
   return "?";
+}
+
+std::string CodeGen::tuple_type_key(const std::vector<TypeAnnotation> &elem_types) {
+  std::string key = "tuple";
+  for (auto &et : elem_types)
+    key += "_" + type_ann_to_string(et);
+  return key;
+}
+
+llvm::StructType *CodeGen::get_tuple_type(const std::vector<TypeAnnotation> &elem_types) {
+  std::string key = tuple_type_key(elem_types);
+  auto it = tuple_type_cache.find(key);
+  if (it != tuple_type_cache.end()) return it->second;
+
+  std::vector<Type *> llvm_elem_types;
+  for (auto &et : elem_types) {
+    Type *t = get_llvm_type(et);
+    if (!t) t = Type::getInt64Ty(Context);
+    llvm_elem_types.push_back(t);
+  }
+
+  StructType *st = StructType::create(Context, llvm_elem_types, key);
+  tuple_type_cache[key] = st;
+  return st;
 }
 
 static std::string mangle_ann(const TypeAnnotation &ann) {
@@ -701,6 +780,9 @@ bool CodeGen::monomorphize_and_codegen(FnDecl *template_decl,
     } else if (auto *arr = dynamic_cast<ArrayLitExpr *>(expr)) {
       for (auto &el : arr->elements)
         walk_expr(el.get());
+    } else if (auto *tup = dynamic_cast<TupleExpr *>(expr)) {
+      for (auto &el : tup->elements)
+        walk_expr(el.get());
     } else if (auto *ctor = dynamic_cast<ConstructorExpr *>(expr)) {
       for (auto &[_, fexpr] : ctor->fields)
         walk_expr(fexpr.get());
@@ -781,6 +863,11 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
       return ConstantFP::get(expected_type, num->value);
     Type *t = expected_type ? expected_type : Type::getInt64Ty(Context);
     return ConstantInt::get(t, (int64_t)num->value);
+  }
+
+  if (auto *ch = dynamic_cast<CharExpr *>(expr)) {
+    Type *t = expected_type ? expected_type : Type::getInt8Ty(Context);
+    return ConstantInt::get(t, ch->value);
   }
 
   if (auto *str = dynamic_cast<StringExpr *>(expr)) {
@@ -895,6 +982,28 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
     return nullptr;
   }
 
+  if (auto *tup = dynamic_cast<TupleExpr *>(expr)) {
+    // Use the expected type to determine the struct layout, or fall back
+    // to resolving from the element expressions.
+    StructType *st = expected_type ? dyn_cast<StructType>(expected_type) : nullptr;
+    if (!st) {
+      TypeAnnotation ann = resolve_expr_type(tup);
+      st = dyn_cast<StructType>(get_llvm_type(ann));
+    }
+    if (!st) {
+      errs() << "Error: cannot determine tuple type\n";
+      return nullptr;
+    }
+    Value *result = UndefValue::get(st);
+    for (size_t i = 0; i < tup->elements.size(); i++) {
+      Type *elem_type = st->getElementType(i);
+      Value *ev = eval_expr(tup->elements[i].get(), elem_type);
+      if (!ev) return nullptr;
+      result = Builder.CreateInsertValue(result, ev, {(unsigned)i}, "tup.el");
+    }
+    return result;
+  }
+
   if (auto *addr = dynamic_cast<AddressOfExpr *>(expr)) {
     Type *ptr_type = nullptr;
     Value *lvalue_ptr = get_lvalue_ptr(addr->operand.get(), &ptr_type);
@@ -977,10 +1086,20 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
     return Builder.CreateLoad(load_type, elem_ptr);
   }
 
-  // Field access: obj.field
+  // Field access: obj.field or obj.0 (tuple positional access)
   if (auto *field = dynamic_cast<FieldAccessExpr *>(expr)) {
-    // Resolve the base expression to get a struct value
     TypeAnnotation base_ann = resolve_expr_type(field->object.get());
+
+    // Handle tuple positional access: .0, .1, ...
+    if (base_ann.kind == TypeKind::Tuple) {
+      int idx = std::stoi(field->field);
+      Type *base_llvm_type = get_llvm_type(base_ann);
+      if (!base_llvm_type) return nullptr;
+      Value *obj_val = eval_expr(field->object.get(), base_llvm_type);
+      if (!obj_val) return nullptr;
+      return Builder.CreateExtractValue(obj_val, {(unsigned)idx}, field->field);
+    }
+
     if (base_ann.kind != TypeKind::Struct) {
       errs() << "Error: field access on non-struct expression\n";
       return nullptr;
@@ -1126,12 +1245,15 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
         return Builder.CreateGEP(Type::getInt8Ty(Context), ptr_val, idx_val, "ptr.offset");
     }
 
+    TypeAnnotation l_ann = resolve_expr_type(bin->left.get());
+    bool is_unsigned = is_unsigned_type(l_ann.kind);
+
     switch (bin->op) {
       case BinOp::Add: return is_float ? Builder.CreateFAdd(l, r) : Builder.CreateAdd(l, r);
       case BinOp::Sub: return is_float ? Builder.CreateFSub(l, r) : Builder.CreateSub(l, r);
       case BinOp::Mul: return is_float ? Builder.CreateFMul(l, r) : Builder.CreateMul(l, r);
-      case BinOp::Div: return is_float ? Builder.CreateFDiv(l, r) : Builder.CreateSDiv(l, r);
-      case BinOp::Mod: return Builder.CreateSRem(l, r);
+      case BinOp::Div: return is_float ? Builder.CreateFDiv(l, r) : (is_unsigned ? Builder.CreateUDiv(l, r) : Builder.CreateSDiv(l, r));
+      case BinOp::Mod: return is_unsigned ? Builder.CreateURem(l, r) : Builder.CreateSRem(l, r);
       case BinOp::Eq: {
         Value *cmp = Builder.CreateICmpEQ(l, r);
         if (expected_type && !expected_type->isIntegerTy(1))
@@ -1145,25 +1267,25 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
         return cmp;
       }
       case BinOp::Less: {
-        Value *cmp = Builder.CreateICmpSLT(l, r);
+        Value *cmp = is_unsigned ? Builder.CreateICmpULT(l, r) : Builder.CreateICmpSLT(l, r);
         if (expected_type && !expected_type->isIntegerTy(1))
           return Builder.CreateZExt(cmp, expected_type);
         return cmp;
       }
       case BinOp::Greater: {
-        Value *cmp = Builder.CreateICmpSGT(l, r);
+        Value *cmp = is_unsigned ? Builder.CreateICmpUGT(l, r) : Builder.CreateICmpSGT(l, r);
         if (expected_type && !expected_type->isIntegerTy(1))
           return Builder.CreateZExt(cmp, expected_type);
         return cmp;
       }
       case BinOp::Le: {
-        Value *cmp = Builder.CreateICmpSLE(l, r);
+        Value *cmp = is_unsigned ? Builder.CreateICmpULE(l, r) : Builder.CreateICmpSLE(l, r);
         if (expected_type && !expected_type->isIntegerTy(1))
           return Builder.CreateZExt(cmp, expected_type);
         return cmp;
       }
       case BinOp::Ge: {
-        Value *cmp = Builder.CreateICmpSGE(l, r);
+        Value *cmp = is_unsigned ? Builder.CreateICmpUGE(l, r) : Builder.CreateICmpSGE(l, r);
         if (expected_type && !expected_type->isIntegerTy(1))
           return Builder.CreateZExt(cmp, expected_type);
         return cmp;
@@ -1207,7 +1329,7 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
         return cmp;
       }
       case BinOp::Shr:
-        return Builder.CreateAShr(l, r);
+        return is_unsigned ? Builder.CreateLShr(l, r) : Builder.CreateAShr(l, r);
       case BinOp::Shl:
         return Builder.CreateShl(l, r);
       case BinOp::BitAnd:
@@ -1380,18 +1502,20 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
     Value *current = Builder.CreateLoad(target_type, target_ptr);
     Value *rhs = eval_expr(compound->value.get(), target_type);
     if (!rhs) return nullptr;
+    TypeAnnotation target_ann = resolve_expr_type(compound->target.get());
+    bool is_unsigned = is_unsigned_type(target_ann.kind);
     Value *result;
     switch (compound->op) {
       case BinOp::Add: result = Builder.CreateAdd(current, rhs); break;
       case BinOp::Sub: result = Builder.CreateSub(current, rhs); break;
       case BinOp::Mul: result = Builder.CreateMul(current, rhs); break;
-      case BinOp::Div: result = Builder.CreateSDiv(current, rhs); break;
-      case BinOp::Mod: result = Builder.CreateSRem(current, rhs); break;
+      case BinOp::Div: result = is_unsigned ? Builder.CreateUDiv(current, rhs) : Builder.CreateSDiv(current, rhs); break;
+      case BinOp::Mod: result = is_unsigned ? Builder.CreateURem(current, rhs) : Builder.CreateSRem(current, rhs); break;
       case BinOp::BitAnd: result = Builder.CreateAnd(current, rhs); break;
       case BinOp::BitOr: result = Builder.CreateOr(current, rhs); break;
       case BinOp::Xor: result = Builder.CreateXor(current, rhs); break;
       case BinOp::Shl: result = Builder.CreateShl(current, rhs); break;
-      case BinOp::Shr: result = Builder.CreateAShr(current, rhs); break;
+      case BinOp::Shr: result = is_unsigned ? Builder.CreateLShr(current, rhs) : Builder.CreateAShr(current, rhs); break;
       default:
         errs() << "Error: unsupported operator for compound assignment\n";
         return nullptr;
@@ -1633,7 +1757,7 @@ bool CodeGen::alloc_and_store(const std::string &name, TypeKind kind,
   Builder.CreateStore(init, alloca);
   named_values[name] = alloca;
   named_types[name] = kind;
-  if (kind == TypeKind::Struct || kind == TypeKind::Enum || ann.pointer_depth > 0)
+  if (kind == TypeKind::Struct || kind == TypeKind::Enum || kind == TypeKind::Tuple || ann.pointer_depth > 0)
     named_type_anns[name] = ann;
   return true;
 }
@@ -1646,7 +1770,7 @@ bool CodeGen::alloc_and_store_array(const std::string &name, TypeKind kind,
   Builder.CreateStore(init, alloca);
   named_values[name] = alloca;
   named_types[name] = kind;
-  if (kind == TypeKind::Struct || kind == TypeKind::Enum || ann.array_size > 0)
+  if (kind == TypeKind::Struct || kind == TypeKind::Enum || kind == TypeKind::Tuple || ann.array_size > 0)
     named_type_anns[name] = ann;
   return true;
 }
@@ -1690,6 +1814,7 @@ bool CodeGen::gen_global_let_decl(LetDecl *decl) {
   named_types[decl->name] = decl->type_ann.kind;
   if (decl->type_ann.kind == TypeKind::Struct ||
       decl->type_ann.kind == TypeKind::Enum ||
+      decl->type_ann.kind == TypeKind::Tuple ||
       decl->type_ann.pointer_depth > 0)
     named_type_anns[decl->name] = decl->type_ann;
   return true;
@@ -1713,16 +1838,23 @@ bool CodeGen::gen_let_decl(LetDecl *decl) {
   if (decl->type_ann.kind == TypeKind::Struct) {
     Value *init = nullptr;
     if (decl->init_expr) {
-      // If the init is an IdentExpr referencing an undefined name (the
-      // placeholder convention `let p: Point = p`), skip evaluation and
-      // zero-initialize. Otherwise try to evaluate it — it might be
-      // another struct variable, a function call, etc.
       bool skip = false;
       if (auto *id = dynamic_cast<IdentExpr *>(decl->init_expr.get()))
         skip = named_values.find(id->name) == named_values.end();
       if (!skip)
         init = eval_expr(decl->init_expr.get(), llvm_type);
     }
+    if (!init)
+      init = ConstantAggregateZero::get(llvm_type);
+    return alloc_and_store(decl->name, decl->type_ann.kind, init, llvm_type,
+                            decl->type_ann);
+  }
+
+  // Handle tuple types (anonymous structs)
+  if (decl->type_ann.kind == TypeKind::Tuple) {
+    Value *init = nullptr;
+    if (decl->init_expr)
+      init = eval_expr(decl->init_expr.get(), llvm_type);
     if (!init)
       init = ConstantAggregateZero::get(llvm_type);
     return alloc_and_store(decl->name, decl->type_ann.kind, init, llvm_type,
@@ -1746,10 +1878,25 @@ bool CodeGen::gen_let_decl(LetDecl *decl) {
     case TypeKind::Int8:
       init = eval_expr(decl->init_expr.get(), Type::getInt8Ty(Context));
       break;
+    case TypeKind::Int16:
+      init = eval_expr(decl->init_expr.get(), Type::getInt16Ty(Context));
+      break;
     case TypeKind::Int32:
       init = eval_expr(decl->init_expr.get(), Type::getInt32Ty(Context));
       break;
     case TypeKind::Int64:
+      init = eval_int_init(decl->init_expr.get());
+      break;
+    case TypeKind::Uint8:
+      init = eval_expr(decl->init_expr.get(), Type::getInt8Ty(Context));
+      break;
+    case TypeKind::Uint16:
+      init = eval_expr(decl->init_expr.get(), Type::getInt16Ty(Context));
+      break;
+    case TypeKind::Uint32:
+      init = eval_expr(decl->init_expr.get(), Type::getInt32Ty(Context));
+      break;
+    case TypeKind::Uint64:
       init = eval_int_init(decl->init_expr.get());
       break;
     case TypeKind::Float16:
@@ -1764,12 +1911,18 @@ bool CodeGen::gen_let_decl(LetDecl *decl) {
     case TypeKind::Bool:
       init = eval_expr(decl->init_expr.get(), Type::getInt1Ty(Context));
       break;
+    case TypeKind::Char:
+      init = eval_expr(decl->init_expr.get(), Type::getInt8Ty(Context));
+      break;
     case TypeKind::String:
       init = eval_string_init(decl->init_expr.get());
       break;
     case TypeKind::Cubical:
       init = eval_cubical_init(decl->init_expr.get(), &debug);
       if (init) std::cout << "  " << decl->name << " = " << debug << "\n";
+      break;
+    case TypeKind::Tuple:
+      init = eval_expr(decl->init_expr.get(), llvm_type);
       break;
     default:
       break;
@@ -1809,6 +1962,17 @@ bool CodeGen::gen_let_stmt(LetStmt *stmt) {
                             stmt->type_ann);
   }
 
+  // Handle tuple types (anonymous structs)
+  if (stmt->type_ann.kind == TypeKind::Tuple) {
+    Value *init = nullptr;
+    if (stmt->init_expr)
+      init = eval_expr(stmt->init_expr.get(), llvm_type);
+    if (!init)
+      init = ConstantAggregateZero::get(llvm_type);
+    return alloc_and_store(stmt->name, stmt->type_ann.kind, init, llvm_type,
+                            stmt->type_ann);
+  }
+
   Value *init = nullptr;
 
   if (stmt->type_ann.pointer_depth > 0) {
@@ -1825,10 +1989,25 @@ bool CodeGen::gen_let_stmt(LetStmt *stmt) {
     case TypeKind::Int8:
       init = eval_expr(stmt->init_expr.get(), Type::getInt8Ty(Context));
       break;
+    case TypeKind::Int16:
+      init = eval_expr(stmt->init_expr.get(), Type::getInt16Ty(Context));
+      break;
     case TypeKind::Int32:
       init = eval_expr(stmt->init_expr.get(), Type::getInt32Ty(Context));
       break;
     case TypeKind::Int64:
+      init = eval_int_init(stmt->init_expr.get());
+      break;
+    case TypeKind::Uint8:
+      init = eval_expr(stmt->init_expr.get(), Type::getInt8Ty(Context));
+      break;
+    case TypeKind::Uint16:
+      init = eval_expr(stmt->init_expr.get(), Type::getInt16Ty(Context));
+      break;
+    case TypeKind::Uint32:
+      init = eval_expr(stmt->init_expr.get(), Type::getInt32Ty(Context));
+      break;
+    case TypeKind::Uint64:
       init = eval_int_init(stmt->init_expr.get());
       break;
     case TypeKind::Float16:
@@ -1843,11 +2022,17 @@ bool CodeGen::gen_let_stmt(LetStmt *stmt) {
     case TypeKind::Bool:
       init = eval_expr(stmt->init_expr.get(), Type::getInt1Ty(Context));
       break;
+    case TypeKind::Char:
+      init = eval_expr(stmt->init_expr.get(), Type::getInt8Ty(Context));
+      break;
     case TypeKind::String:
       init = eval_string_init(stmt->init_expr.get());
       break;
     case TypeKind::Cubical:
       init = eval_cubical_init(stmt->init_expr.get(), nullptr);
+      break;
+    case TypeKind::Tuple:
+      init = eval_expr(stmt->init_expr.get(), llvm_type);
       break;
     default:
       break;
@@ -1884,7 +2069,7 @@ bool CodeGen::gen_fn_body(FnDecl *decl, Function *fn) {
     named_types[pname] = decl->params[i].type_ann.kind;
     {
       auto &ta = decl->params[i].type_ann;
-      if (ta.kind == TypeKind::Struct || ta.kind == TypeKind::Enum || ta.pointer_depth > 0 || ta.array_size > 0)
+      if (ta.kind == TypeKind::Struct || ta.kind == TypeKind::Enum || ta.kind == TypeKind::Tuple || ta.pointer_depth > 0 || ta.array_size > 0)
         named_type_anns[pname] = ta;
     }
     i++;
@@ -1905,7 +2090,7 @@ bool CodeGen::gen_fn_body(FnDecl *decl, Function *fn) {
   if (!Builder.GetInsertBlock()->getTerminator()) {
     if (ret_type->isVoidTy())
       Builder.CreateRetVoid();
-    else if (ret_type->isIntegerTy(64))
+    else if (ret_type->isIntegerTy())
       Builder.CreateRet(ConstantInt::get(ret_type, 0));
     else if (ret_type->isFPOrFPVectorTy())
       Builder.CreateRet(ConstantFP::get(ret_type, 0.0));

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -11,14 +12,21 @@
 enum class TypeKind {
   Void,
   Int8,
+  Int16,
   Int32,
   Int64,
+  Uint8,
+  Uint16,
+  Uint32,
+  Uint64,
   Float16,
   Float32,
   Float64,
   Bool,
   String,
+  Char,
   Cubical,
+  Tuple,
   Struct,
   Enum,
   TypeParam,
@@ -28,7 +36,8 @@ struct TypeAnnotation {
   TypeKind kind;
   int pointer_depth = 0;
   int array_size = 0; // 0 means not an array
-  std::string struct_name; // for Struct kind
+  std::string struct_name; // for Struct, Enum, TypeParam kind
+  std::vector<TypeAnnotation> tuple_types; // for Tuple kind
 };
 
 enum class BinOp {
@@ -58,6 +67,11 @@ struct NumberExpr : Expr {
 struct StringExpr : Expr {
   std::string value;
   StringExpr(const std::string &v) : value(v) {}
+};
+
+struct CharExpr : Expr {
+  uint8_t value;
+  CharExpr(uint8_t v) : value(v) {}
 };
 
 struct IdentExpr : Expr {
@@ -129,6 +143,10 @@ struct SubscriptExpr : Expr {
 };
 
 struct ArrayLitExpr : Expr {
+  std::vector<std::unique_ptr<Expr>> elements;
+};
+
+struct TupleExpr : Expr {
   std::vector<std::unique_ptr<Expr>> elements;
 };
 

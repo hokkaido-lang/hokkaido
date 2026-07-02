@@ -13,10 +13,10 @@ enum class TokenType {
   Match, Enum,
   Null,
   Cubical,
-  Int8, Int32, Int64, Float16, Float32, Float64, Bool, String, Void,
+  Int8, Int16, Int32, Int64, Uint8, Uint16, Uint32, Uint64, Float16, Float32, Float64, Bool, String, Char, Void,
   Identifier,
   Number, True, False,
-  StringLiteral,
+  StringLiteral, CharLiteral,
   Equals, Arrow, FatArrow,
   Eq, Ne, Less, Greater, LessEqual, GreaterEqual,
   AndAnd, OrOr, BitOr, Xor, Shr, Shl,
@@ -57,5 +57,6 @@ public:
 private:
   Token lex_string(int l, int c);
   Token lex_number(int l, int c);
+  Token lex_char_literal(int l, int c);
   Token lex_identifier(int l, int c);
 };

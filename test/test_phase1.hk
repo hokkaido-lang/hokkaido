@@ -1,0 +1,42 @@
+extern fn printf(str: int8*) -> int32
+
+fn main() -> int {
+  // Test int16
+  let a: int16 = 100
+  let b: int16 = 200
+  let c: int16 = a + b
+  let d: int16 = a - b
+  let e: int16 = a * b
+  let f: int16 = b / a
+
+  // Test unsigned types
+  let ua: uint8 = 10
+  let ub: uint16 = 20
+  let uc: uint32 = 30
+  let ud: uint64 = 40
+
+  let ue: uint8 = ua + ua
+  let uf: uint32 = uc / uc
+  let ug: uint32 = uc % uc
+
+  // Test char type
+  let ca: char = 'A'
+  let cb: char = '\n'
+  let cc: char = 65
+
+  // Test tuples
+  let t1: (int32, int32) = (1, 2)
+  let t2: (int64, int64, int64) = (10, 20, 30)
+
+  // Test tuple field access
+  let ta: int32 = t1.0
+  let tb: int32 = t1.1
+
+  let tc: int64 = t2.0
+  let td: int64 = t2.1
+  let te: int64 = t2.2
+
+  // Test nested tuple expression in return (no capture needed)
+  let result: int64 = tc + td + te
+  return result
+}
