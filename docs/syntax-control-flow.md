@@ -51,9 +51,8 @@ if a {
 }
 ```
 
-The `if` construct is an *expression*, not a statement — it does not produce a value
-but can be used in expression position in some contexts (the grammar may be extended
-in the future to support `if` expressions that yield a value).
+The `if` construct is also an **expression** that produces a value when an `else` branch
+is present (see [If-expressions](/docs/syntax-expressions#if-expressions)).
 
 ## For loop
 
@@ -131,9 +130,33 @@ for let i: int = 0; i < 10; i = i + 1 {
 }
 ```
 
+### Labeled break / continue
+
+A loop can be given a label with `'name:` before the `for` keyword. `break 'name` or
+`continue 'name` then refer to that specific loop rather than the innermost one. This
+is useful for breaking out of nested loops.
+
+```
+'outer: for let i: int = 0; i < 10; i = i + 1 {
+    for let j: int = 0; j < 10; j = j + 1 {
+        if i + j >= 15 {
+            break 'outer    // exits outer for loop
+        }
+    }
+}
+```
+
+Labels use a tick prefix (`'my_label`) followed by a colon (`:`) before the `for`
+keyword. Break and continue labels are written after the keyword (`break 'my_label`,
+`continue 'my_label`).
+
+An unlabeled `break`/`continue` always refers to the innermost enclosing loop, even
+when labeled loops are present in the nesting.
+
 ### Errors
 
-Using `break` or `continue` outside a loop is a compile-time error.
+Using `break` or `continue` outside a loop is a compile-time error. Using a label that
+does not match any enclosing loop is also a compile-time error.
 
 ### Update expression
 
@@ -192,10 +215,10 @@ fn area(s: Shape) -> float64 {
 
 ### Completeness
 
-The compiler does not currently check that all variants are covered. If a variant is
-not matched, it is ignored (the arm body is not reached). If no arm matches (which can
-happen with unmatched variants), the behavior is undefined — there is no default arm
-or catch-all pattern.
+The compiler emits a **warning** when not all enum variants are covered by match arms.
+If no arm matches (which can happen with unmatched variants), a default null value is
+returned. Future versions may make this a hard error or require an explicit `_ => {}`
+catch-all arm.
 
 ### Non-enum match
 

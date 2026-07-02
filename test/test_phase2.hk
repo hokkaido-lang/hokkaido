@@ -1,0 +1,38 @@
+fn main() -> int64 {
+  // ---------- if-expression ----------
+  let a: int64 = if 1 > 0 { 42 } else { 0 }
+  // a should be 42
+
+  // else-if chain
+  let b: int64 = if 2 > 5 { 10 } else if 3 < 4 { 20 } else { 30 }
+  // b should be 20
+
+  // ---------- labeled loops ----------
+  let sum: int64 = 0
+  let found: int64 = 0
+
+  'outer: for let i: int64 = 0; i < 10; i = i + 1 {
+    for let j: int64 = 0; j < 10; j = j + 1 {
+      if i + j == 15 {
+        found = 1
+        break 'outer
+      }
+    }
+  }
+  // found should be 1 after labeled break
+
+  // ---------- labeled continue ----------
+  let total: int64 = 0
+  let skipped: int64 = 0
+  'counter: for let k: int64 = 0; k < 10; k = k + 1 {
+    if k % 2 == 0 {
+      continue 'counter
+    }
+    total = total + k
+  }
+  // total should be 25 (1+3+5+7+9)
+
+  // ---------- combined ----------
+  let result: int64 = if a + b + sum + found + total + skipped + 10 > 0 { 1 } else { 0 }
+  return result
+}

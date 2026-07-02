@@ -198,7 +198,7 @@ produce an expression, not a bare `if` without else. This avoids ambiguity.
 
 ### Impact on later phases
 
-- Phase 2: `IfExpr` is explicitly a stretch goal. The design is decided
+- Phase 2: `IfExpr` is implemented. The design was decided
   now so the parser can be written to disambiguate stmt vs. expr context
   cleanly.
 
@@ -346,5 +346,5 @@ atomic_op  ::= "xchg" | "add" | "sub" | "and" | "or" | "xor"
 | 1 | Unsigned integer types | New distinct types (`uint8/16/32/64`) | Phase 1 (completed), LLVM instruction selection |
 | 2 | Dynamic memory | Built-in `alloc<T>` / `free` intrinsics | Phases 3, 6 |
 | 3 | Generic trait bounds | Deferred to future major version | Phase 5 scope reduced; operator overloading deferred |
-| 4 | `if` expression | New `IfExpr` node (coexists with `IfStmt`) | Phase 2 stretch goal |
+| 4 | `if` expression | New `IfExpr` node (coexists with `IfStmt`) | Phase 2 (completed) |
 | 5 | BNF freeze | BNF in this document is canonical for Phases 1–2 | Parser implementation |

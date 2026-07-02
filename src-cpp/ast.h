@@ -197,6 +197,12 @@ struct MatchExpr : Expr {
   std::vector<MatchArm> arms;
 };
 
+struct IfExpr : Expr {
+  std::unique_ptr<Expr> condition;
+  std::unique_ptr<Expr> then_expr;
+  std::unique_ptr<Expr> else_expr;
+};
+
 struct Decl {
   virtual ~Decl() = default;
 };
@@ -275,9 +281,13 @@ struct ReturnStmt : Stmt {
   std::unique_ptr<Expr> value;
 };
 
-struct BreakStmt : Stmt {};
+struct BreakStmt : Stmt {
+  std::string label;
+};
 
-struct ContinueStmt : Stmt {};
+struct ContinueStmt : Stmt {
+  std::string label;
+};
 
 struct IfStmt : Stmt {
   std::unique_ptr<Expr> condition;
@@ -286,6 +296,7 @@ struct IfStmt : Stmt {
 };
 
 struct ForStmt : Stmt {
+  std::string label;
   std::unique_ptr<Stmt> init;
   std::unique_ptr<Expr> condition;
   std::unique_ptr<Expr> update;

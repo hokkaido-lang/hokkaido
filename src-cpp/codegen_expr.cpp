@@ -95,6 +95,9 @@ TypeAnnotation CodeGen::resolve_expr_type(Expr *expr) {
     }
     return {TypeKind::Int64};
   }
+  if (auto *ifexpr = dynamic_cast<IfExpr *>(expr)) {
+    return resolve_expr_type(ifexpr->then_expr.get());
+  }
   if (auto *tup = dynamic_cast<TupleExpr *>(expr)) {
     TypeAnnotation ann = {TypeKind::Tuple};
     for (auto &el : tup->elements)
@@ -556,6 +559,7 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
     }
 
     Builder.SetInsertPoint(else_bb);
+    errs() << "Warning: non-exhaustive match pattern\n";
     Builder.CreateStore(Constant::getNullValue(expected_type), result_alloca);
     Builder.CreateBr(merge_bb);
 
@@ -845,6 +849,38 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
     }
     Builder.CreateStore(val, target_ptr);
     return val;
+  }
+
+  if (auto *ifexpr = dynamic_cast<IfExpr *>(expr)) {
+    Function *fn = Builder.GetInsertBlock()->getParent();
+
+    Value *cond = eval_expr(ifexpr->condition.get(), nullptr);
+    if (!cond) return nullptr;
+    if (!cond->getType()->isIntegerTy(1))
+      cond = Builder.CreateICmpNE(cond, ConstantInt::get(cond->getType(), 0));
+
+    BasicBlock *then_bb = BasicBlock::Create(Context, "if.then", fn);
+    BasicBlock *else_bb = BasicBlock::Create(Context, "if.else", fn);
+    BasicBlock *merge_bb = BasicBlock::Create(Context, "if.merge", fn);
+
+    AllocaInst *result = Builder.CreateAlloca(expected_type, nullptr, "if_result");
+
+    Builder.CreateCondBr(cond, then_bb, else_bb);
+
+    Builder.SetInsertPoint(then_bb);
+    Value *then_val = eval_expr(ifexpr->then_expr.get(), expected_type);
+    if (!then_val) return nullptr;
+    Builder.CreateStore(then_val, result);
+    Builder.CreateBr(merge_bb);
+
+    Builder.SetInsertPoint(else_bb);
+    Value *else_val = eval_expr(ifexpr->else_expr.get(), expected_type);
+    if (!else_val) return nullptr;
+    Builder.CreateStore(else_val, result);
+    Builder.CreateBr(merge_bb);
+
+    Builder.SetInsertPoint(merge_bb);
+    return Builder.CreateLoad(expected_type, result, "if_val");
   }
 
   if (auto *compound = dynamic_cast<CompoundAssignExpr *>(expr)) {

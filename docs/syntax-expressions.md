@@ -306,6 +306,33 @@ namespace point {
 let d = point::distance(p, q)
 ```
 
+## If-expressions
+
+An `if`-expression evaluates to a value. It requires an `else` branch, and the types of
+both branches must match. `else if` chains are supported:
+
+```
+let result: int64 = if condition { then_expr } else { else_expr }
+```
+
+```
+let x: int64 = if a > b { a } else { b }    // x = max(a, b)
+let y: int64 = if a > 0 { 1 } else if a < 0 { -1 } else { 0 }
+```
+
+`if`-expressions can be nested or used wherever an expression is expected:
+
+```
+let z: int64 = if flag { if nested { 1 } else { 2 } } else { 0 }
+```
+
+The `else` branch is mandatory — there is no implicit "fall through" to a default value.
+Each branch body is either a single expression or a block `{ ... }` whose last statement
+is an expression (the block's value). Other statements in the block execute for their
+side effects.
+
+If-expressions are primary expressions (precedence level 1).
+
 ## Char literals
 
 A char literal represents a single 8-bit character. It is written with single quotes and

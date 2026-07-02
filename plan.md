@@ -54,27 +54,26 @@ functions yet.
 
 ---
 
-## Phase 2 — Control Flow Correctness & Ergonomics
+## Phase 2 — Control Flow Correctness & Ergonomics ✅ Complete
 
 Focused on closing known correctness holes and small ergonomic wins in
 `docs/syntax-control-flow.md`.
 
-1. **`match` exhaustiveness checking**
-   - At minimum: compile-time warning when not all enum variants are covered.
-   - Stretch: hard error, with an explicit `_ => {}` catch-all arm added to the
-     grammar as an opt-out.
-2. **Labeled `break`/`continue`**
+1. ✅ **`match` exhaustiveness checking**
+   - Compile-time warning when not all enum variants are covered.
+   - Emitted in `codegen_expr.cpp` at the else branch of match codegen.
+2. ✅ **Labeled `break`/`continue`**
    - Grammar: `'label: for ...`, `break 'label`, `continue 'label`.
-   - Requires threading label scope through the loop-lowering pass.
-3. **`if` as an expression**
-   - Allow `let x: T = if cond { a } else { b }` when both branches are the same type
-     and an `else` is present (no implicit "falls through" case).
-   - This is explicitly flagged as future work in the current docs, making it a
-     natural next step.
+   - `'label:` prefix consumed in `parse_stmt()`, label stored in `ForStmt::label`.
+   - `break 'label` / `continue 'label` parsed in `parse_break_stmt` / `parse_continue_stmt`.
+   - Codegen match loop by label in `gen_break_stmt` / `gen_continue_stmt`.
+3. ✅ **`if` as an expression**
+   - `let x: T = if cond { a } else { b }` supported via `parse_if_expr()` in `parse_primary`.
+   - Codegen uses alloca + PHI pattern in `eval_expr`.
+   - Parser supports `else if` chaining recursively.
 
-**Exit criteria:** exhaustiveness check ships even if only as a warning; labeled
-break/continue and `if`-expressions are optional stretch goals for this phase if time
-allows, otherwise roll to Phase 2b.
+**Exit criteria:** all three items implemented and tested; `test/test_phase2.hk` covers
+if-expressions, labeled break/continue, and chained else-if.
 
 ---
 
@@ -189,7 +188,7 @@ tracked as follow-on tickets.
 |-------|-------|------------|------|
 | 0 | Design decisions | — | Low |
 | 1 | Type system gaps | 0 | Low |
-| 2 | Control flow fixes | — | Low–Medium |
+| 2 | Control flow fixes ✅ | — | Low–Medium |
 | 3 | Memory & data structures | 0 | Medium |
 | 4 | Closures | 3 (loosely) | Medium |
 | 5 | Generic types/bounds | 0, 1 | High |

@@ -153,6 +153,7 @@ private:
 
   // Loop state for break/continue
   struct LoopInfo {
+    std::string label;
     llvm::BasicBlock *update_bb;
     llvm::BasicBlock *end_bb;
   };

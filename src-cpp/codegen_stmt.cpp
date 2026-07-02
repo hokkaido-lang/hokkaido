@@ -108,7 +108,7 @@ bool CodeGen::gen_for_stmt(ForStmt *stmt) {
   }
 
   Builder.SetInsertPoint(body_bb);
-  loop_stack.push_back({update_bb, end_bb});
+  loop_stack.push_back({stmt->label, update_bb, end_bb});
   for (auto &s : stmt->body) {
     if (!gen_stmt(s.get())) return false;
   }
@@ -129,19 +129,39 @@ bool CodeGen::gen_for_stmt(ForStmt *stmt) {
 }
 
 bool CodeGen::gen_break_stmt(BreakStmt *stmt) {
-  if (loop_stack.empty()) {
-    errs() << "Error: 'break' outside of loop\n";
-    return false;
+  if (stmt->label.empty()) {
+    if (loop_stack.empty()) {
+      errs() << "Error: 'break' outside of loop\n";
+      return false;
+    }
+    Builder.CreateBr(loop_stack.back().end_bb);
+    return true;
   }
-  Builder.CreateBr(loop_stack.back().end_bb);
-  return true;
+  for (auto it = loop_stack.rbegin(); it != loop_stack.rend(); ++it) {
+    if (it->label == stmt->label) {
+      Builder.CreateBr(it->end_bb);
+      return true;
+    }
+  }
+  errs() << "Error: no loop with label '" << stmt->label << "' for break\n";
+  return false;
 }
 
 bool CodeGen::gen_continue_stmt(ContinueStmt *stmt) {
-  if (loop_stack.empty()) {
-    errs() << "Error: 'continue' outside of loop\n";
-    return false;
+  if (stmt->label.empty()) {
+    if (loop_stack.empty()) {
+      errs() << "Error: 'continue' outside of loop\n";
+      return false;
+    }
+    Builder.CreateBr(loop_stack.back().update_bb);
+    return true;
   }
-  Builder.CreateBr(loop_stack.back().update_bb);
-  return true;
+  for (auto it = loop_stack.rbegin(); it != loop_stack.rend(); ++it) {
+    if (it->label == stmt->label) {
+      Builder.CreateBr(it->update_bb);
+      return true;
+    }
+  }
+  errs() << "Error: no loop with label '" << stmt->label << "' for continue\n";
+  return false;
 }

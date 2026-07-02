@@ -219,7 +219,14 @@ Token Lexer::next_token() {
   }
 
   // Character literals: 'a', '\n', etc.
+  // Label prefix: 'identifier
   if (ch == '\'') {
+    // Check if this is a label prefix 'ident (no closing quote soon)
+    if (pos + 2 < input.size() && input[pos + 2] != '\'' && input[pos + 1] != '\\' &&
+        std::isalpha(input[pos + 1])) {
+      advance(); // skip '
+      return {TokenType::Tick, "'", 0, l, c};
+    }
     return lex_char_literal(l, c);
   }
 

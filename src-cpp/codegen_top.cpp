@@ -295,7 +295,14 @@ bool CodeGen::monomorphize_and_codegen(FnDecl *template_decl,
         walk_expr(fexpr.get());
     } else if (auto *match = dynamic_cast<MatchExpr *>(expr)) {
       walk_expr(match->value.get());
+      for (auto &arm : match->arms)
+        walk_expr(arm.expr.get());
+    } else if (auto *ifexpr_e = dynamic_cast<IfExpr *>(expr)) {
+      walk_expr(ifexpr_e->condition.get());
+      walk_expr(ifexpr_e->then_expr.get());
+      walk_expr(ifexpr_e->else_expr.get());
     } else if (auto *ret = dynamic_cast<ReturnStmt *>(expr)) {
+      walk_expr(ret->value.get());
     }
   };
   walk_body = [&](std::vector<std::unique_ptr<Stmt>> &body) {
