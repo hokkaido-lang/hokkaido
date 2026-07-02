@@ -1,3 +1,8 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Functions
+---
+
 # Functions
 
 ## Function declarations
@@ -18,7 +23,7 @@ fn name(param: type) {
 
 Each parameter has an explicit type annotation, just like `let`. Parameters are always
 passed by value. There are no default arguments, optional parameters, or variadic
-parameters (except in [C FFI](syntax-ffi-cubical.md#c-ffi) declarations).
+parameters (except in [C FFI](/docs/syntax-ffi-cubical#c-ffi) declarations).
 
 ```
 fn greet(name: string, count: int) {
@@ -66,7 +71,7 @@ let result: int = add(3, 4)
 log("hello")
 ```
 
-See [Function calls](syntax-expressions.md#function-calls) for details on call expressions,
+See [Function calls](/docs/syntax-expressions#function-calls) for details on call expressions,
 including the turbofish syntax for providing type arguments to generic functions.
 
 ### Forward references
@@ -151,7 +156,7 @@ two independent LLVM functions.
 
 ### Namespaced generics
 
-Generic functions inside [namespaces](syntax-modules.md#namespaces) work the same way:
+Generic functions inside [namespaces](/docs/syntax-modules#namespaces) work the same way:
 
 ```
 namespace util {

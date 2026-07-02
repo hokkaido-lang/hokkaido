@@ -1,3 +1,8 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Modules
+---
+
 # Modules
 
 ## Namespaces

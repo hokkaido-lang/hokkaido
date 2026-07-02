@@ -1,3 +1,8 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Cubical Surface Language
+---
+
 # Cubical Surface Language — Syntax Reference
 
 ## Top-level Declarations

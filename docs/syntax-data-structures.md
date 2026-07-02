@@ -1,3 +1,8 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Data Structures
+---
+
 # Data Structures
 
 ## Arrays
@@ -200,7 +205,7 @@ For example, `Option` with `Some { value: int }` and `None {}`:
 
 ### Pattern matching
 
-Enum values are destructured with [match](syntax-control-flow.md#match):
+Enum values are destructured with [match](/docs/syntax-control-flow#match):
 
 ```
 let s: Shape = Circle { radius: 2.0 }

@@ -1,3 +1,8 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Syntax Overview
+---
+
 # Hokkaido Language Syntax
 
 Hokkaido is a small, explicit, systems-programming language that compiles to native code via LLVM.
@@ -7,35 +12,35 @@ deliberately minimal.
 ## Contents
 
 - [Comments](#comments)
-- [Types](syntax-types.md#types)
-- [Variables](syntax-types.md#variables)
-- [Functions](syntax-functions.md#functions)
-- [Generic functions](syntax-functions.md#generic-functions)
-- [Return](syntax-functions.md#return)
-- [If / Else](syntax-control-flow.md#if--else)
-- [For loop](syntax-control-flow.md#for-loop)
-- [Break](syntax-control-flow.md#break)
-- [Continue](syntax-control-flow.md#continue)
-- [Match](syntax-control-flow.md#match)
-- [Operator precedence](syntax-expressions.md#operator-precedence)
-- [Comparison operators](syntax-expressions.md#comparison-operators)
-- [Logical operators](syntax-expressions.md#logical-operators)
-- [Bitwise operators](syntax-expressions.md#bitwise-operators)
-- [Arithmetic operators](syntax-expressions.md#arithmetic-operators) (including `%` modulo)
-- [Shift operators](syntax-expressions.md#shift-operators)
-- [Assignment](syntax-expressions.md#assignment)
-- [Pointers](syntax-expressions.md#pointers)
-- [Function calls](syntax-expressions.md#function-calls)
-- [Arrays](syntax-data-structures.md#arrays)
-- [Structs](syntax-data-structures.md#structs)
-- [Enums](syntax-data-structures.md#enums)
-- [Namespaces](syntax-modules.md#namespaces)
-- [Include](syntax-modules.md#include)
-- [C FFI](syntax-ffi-cubical.md#c-ffi)
-- [Freestanding mode](syntax-ffi-cubical.md#freestanding-mode)
-- [Inline assembly](syntax-ffi-cubical.md#inline-assembly)
-- [Cubical](syntax-ffi-cubical.md#cubical)
-- [Example: Number guessing game](example-guess.md)
+- [Types](/docs/syntax-types#types)
+- [Variables](/docs/syntax-types#variables)
+- [Functions](/docs/syntax-functions#functions)
+- [Generic functions](/docs/syntax-functions#generic-functions)
+- [Return](/docs/syntax-functions#return)
+- [If / Else](/docs/syntax-control-flow#if--else)
+- [For loop](/docs/syntax-control-flow#for-loop)
+- [Break](/docs/syntax-control-flow#break)
+- [Continue](/docs/syntax-control-flow#continue)
+- [Match](/docs/syntax-control-flow#match)
+- [Operator precedence](/docs/syntax-expressions#operator-precedence)
+- [Comparison operators](/docs/syntax-expressions#comparison-operators)
+- [Logical operators](/docs/syntax-expressions#logical-operators)
+- [Bitwise operators](/docs/syntax-expressions#bitwise-operators)
+- [Arithmetic operators](/docs/syntax-expressions#arithmetic-operators) (including `%` modulo)
+- [Shift operators](/docs/syntax-expressions#shift-operators)
+- [Assignment](/docs/syntax-expressions#assignment)
+- [Pointers](/docs/syntax-expressions#pointers)
+- [Function calls](/docs/syntax-expressions#function-calls)
+- [Arrays](/docs/syntax-data-structures#arrays)
+- [Structs](/docs/syntax-data-structures#structs)
+- [Enums](/docs/syntax-data-structures#enums)
+- [Namespaces](/docs/syntax-modules#namespaces)
+- [Include](/docs/syntax-modules#include)
+- [C FFI](/docs/syntax-ffi-cubical#c-ffi)
+- [Freestanding mode](/docs/syntax-ffi-cubical#freestanding-mode)
+- [Inline assembly](/docs/syntax-ffi-cubical#inline-assembly)
+- [Cubical](/docs/syntax-ffi-cubical#cubical)
+- [Example: Number guessing game](/docs/example-guess)
 
 ## Comments
 

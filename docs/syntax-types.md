@@ -1,3 +1,8 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Types & Variables
+---
+
 # Types and Variables
 
 ## Types
@@ -20,7 +25,7 @@ Every value in Hokkaido has a type, specified with a type annotation using colon
 | `bool`    | Boolean — `true` or `false`          | 1 byte    |
 | `string`  | Opaque string type (internally a pointer) | 8 bytes |
 | `void`    | No value (function returns only)     | 0 bytes   |
-| `cubical` | Compile-time cubical expression (see [Cubical](syntax-ffi-cubical.md#cubical)) | 8 bytes |
+| `cubical` | Compile-time cubical expression (see [Cubical](/docs/syntax-ffi-cubical#cubical)) | 8 bytes |
 
 ```
 let a: int8 = -128
@@ -37,7 +42,7 @@ let msg: string = "hello"
 
 ### Struct and enum types
 
-A user-defined [struct](syntax-data-structures.md#structs) or [enum](syntax-data-structures.md#enums) name is
+A user-defined [struct](/docs/syntax-data-structures#structs) or [enum](/docs/syntax-data-structures#enums) name is
 also a valid type:
 
 ```
@@ -68,7 +73,7 @@ let pp: int** = &p         // pointer to pointer
 let val: int = *p          // dereference → 42
 ```
 
-See [Pointers](syntax-expressions.md#pointers) for more detail.
+See [Pointers](/docs/syntax-expressions#pointers) for more detail.
 
 ### Array types
 
@@ -80,7 +85,7 @@ int8[256]  Array of 256 int8 values
 Point[10]  Array of 10 Point structs
 ```
 
-Array size must be a literal integer (compile-time constant). See [Arrays](syntax-data-structures.md#arrays).
+Array size must be a literal integer (compile-time constant). See [Arrays](/docs/syntax-data-structures#arrays).
 
 ### Type equivalence
 

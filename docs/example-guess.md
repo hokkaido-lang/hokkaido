@@ -1,3 +1,8 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: "Example: Guessing Game"
+---
+
 # Example: Number Guessing Game
 
 This example demonstrates C FFI, loops, conditionals, pointers, and user I/O by

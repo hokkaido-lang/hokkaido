@@ -1,3 +1,8 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Control Flow
+---
+
 # Control Flow
 
 ## If / Else

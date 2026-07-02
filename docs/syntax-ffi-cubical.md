@@ -1,3 +1,8 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: C FFI & Cubical
+---
+
 # C FFI, Freestanding, Inline Assembly, and Cubical
 
 ## C FFI
@@ -126,7 +131,7 @@ Cubical is a compile-time evaluation subsystem for Hokkaido. It embeds a
 Rust cubical language backend that type-checks
 and evaluates cubical source files during compilation, embedding the result as a
 constant in the generated code.  
-for reference check [cubical_surface_language](cubical_surface_language.md)
+for reference check [cubical_surface_language](/docs/cubical_surface_language)
 
 ### Cubical type
 

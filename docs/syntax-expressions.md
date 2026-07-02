@@ -1,3 +1,8 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Expressions
+---
+
 # Expressions
 
 ## Operator precedence
@@ -246,7 +251,7 @@ result = name(arg1, arg2, arg3)
 
 ### Turbofish type arguments
 
-When calling a [generic function](syntax-functions.md#generic-functions), provide explicit
+When calling a [generic function](/docs/syntax-functions#generic-functions), provide explicit
 type arguments with the `::< >` syntax:
 
 ```
