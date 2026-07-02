@@ -1,0 +1,17 @@
+extern fn printf(fmt: string, ...) -> int
+
+// Inline cubical expression (no .cub file needed)
+let n: cubical = "data Nat = | zero : Nat | suc : Nat -> Nat\ndef main : Nat = suc (suc (suc zero))"
+
+// Cubical evaluated as string (non-Nat/non-Bool result)
+// U0 has type U1, so this type-checks and evaluates to "U0"
+let flag: cubical = "def main : U1 = U0"
+
+fn main() -> int {
+    printf("n = %ld (expected 3)\n", n)
+
+    // cubical=inline resolves to string for non-Nat/non-Bool results
+    // "main : U1 = U0" should be parsed as a string
+    printf("flag = %s\n", flag)
+    return 0
+}

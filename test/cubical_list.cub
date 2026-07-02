@@ -1,0 +1,4 @@
+data Nat  = | zero : Nat | suc : Nat -> Nat
+data List = | nil : List | cons : Nat -> List -> List
+
+def main : List = cons (suc zero) (cons (suc (suc zero)) nil)

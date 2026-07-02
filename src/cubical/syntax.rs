@@ -171,7 +171,7 @@ impl Datatype {
 
 /// If the term is a Nat literal in normal form (chains of `suc` ending in
 /// `zero`), return the integer value. Otherwise return None.
-fn nat_to_int(t: &Term) -> Option<i64> {
+pub fn nat_to_int(t: &Term) -> Option<i64> {
     match t {
         Term::TCon(d, c, args) if d == "Nat" => match (c.as_str(), args.as_slice()) {
             ("zero", []) => Some(0),

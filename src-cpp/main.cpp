@@ -216,7 +216,7 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
-    CodeGen cg(Context, *M, Builder, Freestanding);
+    CodeGen cg(Context, *M, Builder, Freestanding, filePath.parent_path().string());
     if (!cg.generate(decls)) {
       return 1;
     }

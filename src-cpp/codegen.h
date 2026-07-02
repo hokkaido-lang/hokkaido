@@ -12,6 +12,7 @@
 #include "llvm/IR/Module.h"
 
 #include "ast.h"
+#include "cubical.h"
 
 // =========================================================================
 // Hokkaido Language — Code Generator
@@ -27,6 +28,8 @@ class CodeGen {
   std::map<std::string, llvm::AllocaInst *> named_values;
   std::map<std::string, TypeKind> named_types;
   std::map<std::string, TypeAnnotation> named_type_anns;
+  // Module-level global variables (created for top-level lets)
+  std::map<std::string, llvm::GlobalVariable *> global_values;
 
   // Registered struct types (name -> LLVM struct type)
   std::map<std::string, llvm::StructType *> struct_types;
@@ -45,8 +48,9 @@ class CodeGen {
 
 public:
   CodeGen(llvm::LLVMContext &Ctx, llvm::Module &Mod, llvm::IRBuilder<> &Bld,
-          bool Freestanding = false)
-      : Context(Ctx), M(Mod), Builder(Bld), freestanding(Freestanding) {}
+          bool Freestanding = false, std::string BaseDir = "")
+      : Context(Ctx), M(Mod), Builder(Bld), freestanding(Freestanding),
+        base_dir(std::move(BaseDir)) {}
 
   bool generate(const std::vector<std::unique_ptr<Decl>> &decls);
 
@@ -80,6 +84,7 @@ private:
 
   // Let declarations / statements
   bool gen_let_decl(LetDecl *decl);
+  bool gen_global_let_decl(LetDecl *decl);
   bool gen_let_stmt(LetStmt *stmt);
   bool alloc_and_store(const std::string &name, TypeKind kind,
                        llvm::Value *init, llvm::Type *llvm_type,
@@ -122,7 +127,9 @@ private:
   bool gen_pattern_bind(Pattern *pat, llvm::Value *val,
                          const TypeAnnotation &val_ann);
 
-  // Generics / monomorphization helpers
+  // Cubical structured value helpers
+  llvm::Constant *build_cubical_constant(const cubical_value::CubicalValue *val);
+  llvm::Type *build_cubical_type(const cubical_value::CubicalValue *val);
   std::string mangle_name(const std::string &fn_name,
                            const std::vector<TypeAnnotation> &type_args);
   void substitute_type_params(TypeAnnotation &ann,
@@ -131,6 +138,9 @@ private:
   bool monomorphize_and_codegen(FnDecl *template_decl,
                                   const std::vector<TypeAnnotation> &type_args,
                                   const std::string &mangled_name);
+
+  // Source file base directory, used to resolve .cub file paths.
+  std::string base_dir;
 
   // Loop state for break/continue
   struct LoopInfo {

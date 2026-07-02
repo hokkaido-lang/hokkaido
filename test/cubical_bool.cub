@@ -1,0 +1,5 @@
+data Bool =
+  | true  : Bool
+  | false : Bool
+
+def main : Bool = true

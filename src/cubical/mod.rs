@@ -2,6 +2,7 @@ pub mod env;
 pub mod equality;
 pub mod ffi;
 pub mod interval;
+pub mod json;
 pub mod nbe;
 pub mod parser;
 pub mod syntax;

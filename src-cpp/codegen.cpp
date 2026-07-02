@@ -1,5 +1,6 @@
 #include "codegen.h"
 
+#include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -131,10 +132,13 @@ TypeAnnotation CodeGen::resolve_expr_type(Expr *expr) {
     auto it = named_type_anns.find(id->name);
     if (it != named_type_anns.end())
       return it->second;
-    // Fallback: check named_types
     auto kt = named_types.find(id->name);
     if (kt != named_types.end())
       return {kt->second};
+    auto gi = global_values.find(id->name);
+    if (gi != global_values.end()) {
+      return {TypeKind::Int64};
+    }
     return {TypeKind::Void};
   }
   if (auto *field = dynamic_cast<FieldAccessExpr *>(expr)) {
@@ -259,6 +263,11 @@ Value *CodeGen::get_lvalue_ptr(Expr *expr, Type **out_type) {
   if (auto *id = dynamic_cast<IdentExpr *>(expr)) {
     auto it = named_values.find(id->name);
     if (it == named_values.end()) {
+      auto gi = global_values.find(id->name);
+      if (gi != global_values.end()) {
+        if (out_type) *out_type = gi->second->getValueType();
+        return gi->second;
+      }
       errs() << "Error: undefined variable '" << id->name << "'\n";
       return nullptr;
     }
@@ -484,6 +493,14 @@ bool CodeGen::generate(const std::vector<std::unique_ptr<Decl>> &decls) {
     }
   }
 
+  // Pass 1.5: process top-level let declarations (creates global variables
+  // so they're visible from any function body during pass 2)
+  for (auto &decl : decls) {
+    if (auto *let = dynamic_cast<LetDecl *>(decl.get())) {
+      if (!gen_global_let_decl(let)) return false;
+    }
+  }
+
   // Pass 2: generate function bodies (extern declarations have none —
   // they're foreign symbols resolved at link time)
   for (auto *fn : fn_decls) {
@@ -528,12 +545,6 @@ bool CodeGen::gen_main_body(const std::vector<std::unique_ptr<Decl>> &decls) {
   Builder.SetInsertPoint(EntryBB);
   named_values.clear();
   named_types.clear();
-
-  for (auto &decl : decls) {
-    if (auto *let = dynamic_cast<LetDecl *>(decl.get())) {
-      if (!gen_let_decl(let)) return false;
-    }
-  }
 
   // Call user main and return its value truncated to i32
   Value *result;
@@ -779,6 +790,11 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
   if (auto *id = dynamic_cast<IdentExpr *>(expr)) {
     auto it = named_values.find(id->name);
     if (it == named_values.end()) {
+      auto gi = global_values.find(id->name);
+      if (gi != global_values.end()) {
+        Type *gv_type = gi->second->getValueType();
+        return Builder.CreateLoad(gv_type, gi->second, id->name);
+      }
       errs() << "Error: undefined variable '" << id->name << "'\n";
       return nullptr;
     }
@@ -896,10 +912,16 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
     if (auto *id = dynamic_cast<IdentExpr *>(deref->operand.get())) {
       auto it = named_values.find(id->name);
       if (it == named_values.end()) {
-        errs() << "Error: undefined variable '" << id->name << "'\n";
-        return nullptr;
+        auto gi = global_values.find(id->name);
+        if (gi != global_values.end()) {
+          ptr = Builder.CreateLoad(gi->second->getValueType(), gi->second, id->name);
+        } else {
+          errs() << "Error: undefined variable '" << id->name << "'\n";
+          return nullptr;
+        }
+      } else {
+        ptr = Builder.CreateLoad(it->second->getAllocatedType(), it->second, id->name);
       }
-      ptr = Builder.CreateLoad(it->second->getAllocatedType(), it->second, id->name);
     } else {
       ptr = eval_expr(deref->operand.get(), PointerType::getUnqual(Context));
     }
@@ -1406,6 +1428,57 @@ Value *CodeGen::eval_string_init(Expr *expr) {
   return eval_expr(expr, PointerType::getUnqual(Context));
 }
 
+// -------------------------------------------------------------------------
+// Cubical structured value → LLVM constant
+// -------------------------------------------------------------------------
+
+Type *CodeGen::build_cubical_type(const cubical_value::CubicalValue *val) {
+  switch (val->kind) {
+    case cubical_value::CubicalValue::Nat:
+      return Type::getInt64Ty(Context);
+    case cubical_value::CubicalValue::Bool:
+      return Type::getInt8Ty(Context);
+    case cubical_value::CubicalValue::Pair: {
+      Type *first = build_cubical_type(val->first.get());
+      Type *second = build_cubical_type(val->second.get());
+      return StructType::get(Context, {first, second});
+    }
+    case cubical_value::CubicalValue::Array: {
+      if (val->elements.empty())
+        return ArrayType::get(Type::getInt64Ty(Context), 0);
+      Type *elem = build_cubical_type(val->elements[0].get());
+      return ArrayType::get(elem, val->elements.size());
+    }
+    default:
+      return Type::getInt64Ty(Context);
+  }
+}
+
+Constant *CodeGen::build_cubical_constant(const cubical_value::CubicalValue *val) {
+  switch (val->kind) {
+    case cubical_value::CubicalValue::Nat:
+      return ConstantInt::get(Type::getInt64Ty(Context), val->nat_value);
+    case cubical_value::CubicalValue::Bool:
+      return ConstantInt::get(Type::getInt8Ty(Context), val->bool_value ? 1 : 0);
+    case cubical_value::CubicalValue::Pair: {
+      Type *ty = build_cubical_type(val);
+      Constant *first = build_cubical_constant(val->first.get());
+      Constant *second = build_cubical_constant(val->second.get());
+      return ConstantStruct::get(cast<StructType>(ty), {first, second});
+    }
+    case cubical_value::CubicalValue::Array: {
+      std::vector<Constant *> elems;
+      for (auto &e : val->elements)
+        elems.push_back(build_cubical_constant(e.get()));
+      Type *elem_type = elems.empty() ? Type::getInt64Ty(Context) : elems[0]->getType();
+      auto *arr_ty = ArrayType::get(elem_type, elems.size());
+      return ConstantArray::get(arr_ty, elems);
+    }
+    default:
+      return nullptr;
+  }
+}
+
 Value *CodeGen::eval_cubical_init(Expr *expr, std::string *debug_out) {
   auto *str = dynamic_cast<StringExpr *>(expr);
   if (!str) {
@@ -1417,9 +1490,15 @@ Value *CodeGen::eval_cubical_init(Expr *expr, std::string *debug_out) {
 
   if (cubical_source.size() >= 4 &&
       (cubical_source.substr(cubical_source.size() - 4) == ".cub")) {
-    std::ifstream ifs(cubical_source);
+    // Resolve relative to the source file's directory, not CWD.
+    namespace fs = std::filesystem;
+    fs::path file_path(cubical_source);
+    if (file_path.is_relative() && !base_dir.empty()) {
+      file_path = fs::path(base_dir) / cubical_source;
+    }
+    std::ifstream ifs(file_path);
     if (!ifs) {
-      errs() << "Error: cannot open cubical file '" << cubical_source << "'\n";
+      errs() << "Error: cannot open cubical file '" << file_path.string() << "'\n";
       return nullptr;
     }
     cubical_source.assign((std::istreambuf_iterator<char>(ifs)),
@@ -1428,10 +1507,11 @@ Value *CodeGen::eval_cubical_init(Expr *expr, std::string *debug_out) {
 
   cubical_value cv(cubical_source);
   if (!cv.valid()) {
-    errs() << "Error: cubical evaluation failed\n";
+    errs() << "Error: cubical evaluation failed: " << cv.error() << "\n";
     return nullptr;
   }
 
+  // Try to parse as a Nat → int64
   int64_t int_val = cv.as_int();
   if (int_val >= 0) {
     if (debug_out)
@@ -1439,9 +1519,57 @@ Value *CodeGen::eval_cubical_init(Expr *expr, std::string *debug_out) {
     return ConstantInt::get(Type::getInt64Ty(Context), int_val);
   }
 
+  // Try to parse as a bool (True/False)
+  std::string result_str = cv.str();
+  {
+    // Extract value after " = "
+    auto eq_pos = result_str.find(" = ");
+    std::string val_str = (eq_pos != std::string::npos)
+                              ? result_str.substr(eq_pos + 3)
+                              : result_str;
+    while (!val_str.empty() && val_str.front() == ' ') val_str.erase(0, 1);
+    if (val_str == "True" || val_str == "true") {
+      if (debug_out)
+        *debug_out = "true  (from cubical: " + result_str + ")";
+      return ConstantInt::get(Type::getInt8Ty(Context), 1);
+    }
+    if (val_str == "False" || val_str == "false") {
+      if (debug_out)
+        *debug_out = "false  (from cubical: " + result_str + ")";
+      return ConstantInt::get(Type::getInt8Ty(Context), 0);
+    }
+  }
+
+  // Try to parse as a structured cubical value from JSON
+  {
+    auto cv_root = cv.parse_json();
+    if (cv_root) {
+      Constant *c = build_cubical_constant(cv_root.get());
+      if (c) {
+        // Return the constant directly (no GlobalVariable wrapper)
+        // gen_global_let_decl will wrap it in a GlobalVariable
+        if (debug_out)
+          *debug_out = "structured cubical value";
+        return c;
+      }
+    }
+  }
+
+  // Fallback: embed the cubical result as a string constant
   if (debug_out)
-    *debug_out = "\"" + cv.str() + "\"";
-  return Builder.CreateGlobalString(cv.str(), "cubical_result");
+    *debug_out = "\"" + result_str + "\"";
+  // Create the string constant directly, without using Builder
+  // (Builder may not have an insert point during Pass 1.5)
+  Constant *StrConst = ConstantDataArray::getString(Context, result_str);
+  auto *StrGV = new GlobalVariable(M, StrConst->getType(), true,
+                                    GlobalVariable::PrivateLinkage,
+                                    StrConst, "cubical_result");
+  Constant *Zero = ConstantInt::get(Type::getInt32Ty(Context), 0);
+  Constant *Indices[] = {Zero, Zero};
+  // Return a pointer to the first char (GEP). With opaque pointers this
+  // may fold to the GlobalVariable itself — gen_global_let_decl handles
+  // this by wrapping it in a pointer-typed global.
+  return ConstantExpr::getInBoundsGetElementPtr(StrConst->getType(), StrGV, Indices);
 }
 
 // -------------------------------------------------------------------------
@@ -1526,6 +1654,46 @@ bool CodeGen::alloc_and_store_array(const std::string &name, TypeKind kind,
 // -------------------------------------------------------------------------
 // Let declarations (top-level)
 // -------------------------------------------------------------------------
+
+bool CodeGen::gen_global_let_decl(LetDecl *decl) {
+  Type *llvm_type = get_llvm_type(decl->type_ann);
+  if (!llvm_type) return false;
+
+  if (decl->type_ann.kind == TypeKind::Cubical) {
+    std::string debug;
+    Value *init = eval_cubical_init(decl->init_expr.get(), &debug);
+    if (!init) return false;
+    std::cout << "  " << decl->name << " = " << debug << "\n";
+
+    // Always wrap the result in a new GlobalVariable.
+    // For strings, the GEP folds to the string GV in opaque pointer mode;
+    // using init->getType() creates a pointer-typed global, so loading it
+    // gives a pointer (not the array data).
+    auto *gv = new GlobalVariable(M, init->getType(), true,
+                                   GlobalVariable::InternalLinkage,
+                                   cast<Constant>(init), decl->name);
+    gv->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
+    global_values[decl->name] = gv;
+    named_types[decl->name] = TypeKind::Int64;
+    return true;
+  }
+
+  // Non-cubical global let: compute the value and create a global variable
+  Value *init = eval_expr(decl->init_expr.get(), llvm_type);
+  if (!init) return false;
+
+  auto *gv = new GlobalVariable(M, llvm_type, true,
+                                 GlobalVariable::InternalLinkage,
+                                 cast<Constant>(init), decl->name);
+  gv->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
+  global_values[decl->name] = gv;
+  named_types[decl->name] = decl->type_ann.kind;
+  if (decl->type_ann.kind == TypeKind::Struct ||
+      decl->type_ann.kind == TypeKind::Enum ||
+      decl->type_ann.pointer_depth > 0)
+    named_type_anns[decl->name] = decl->type_ann;
+  return true;
+}
 
 bool CodeGen::gen_let_decl(LetDecl *decl) {
   Type *llvm_type = get_llvm_type(decl->type_ann);

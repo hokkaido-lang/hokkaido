@@ -136,8 +136,9 @@ for reference check [cubical_surface_language](/docs/cubical_surface_language)
 ### Cubical type
 
 The `cubical` type is a compile-time placeholder. After evaluation it resolves to
-either `int64` (when the cubical file evaluates to a natural number) or `string`
-(when it evaluates to another type of value).
+`int64` (Nat), `int8` (Bool), an LLVM anonymous struct (pair), an LLVM array
+(cons-chain), or a pointer to a string constant (fallback for non-structurable
+values like universes or functions).
 
 ### Usage
 
@@ -166,11 +167,47 @@ fn main() -> int {
 
 ### Result resolution
 
-The cubical backend always returns a **natural number** (Nat) encoded as either a
-decimal literal or a chain of `suc(suc(...zero))`. The compiler parses this result:
+The cubical backend returns a JSON-serialized result. The compiler resolves it as
+follows:
 
-- If it parses as a decimal integer → the variable becomes an `int64` constant.
-- If it cannot be parsed as a Nat → the variable becomes a `string` constant
-  containing the cubical backend's text output.
-  
+- **Nat** (decimal integer or `suc`/`zero` chain) → the variable becomes an
+  `int64` constant.
+- **Bool** (`True` or `False`) → the variable becomes an `int8` constant (1 or 0).
+- **Pair** (Σ-type, written `(a , b)`) → the variable becomes an LLVM anonymous
+  struct constant with the appropriate field types. Nested pairs produce nested
+  struct types.
+- **Cons-chain** (`nil` / `cons`) → the variable becomes an LLVM array constant.
+  All elements must have the same type.
+- **Other values** (universes, functions, etc.) → the variable becomes a `string`
+  constant containing the cubical backend's text output, stored as an LLVM
+  pointer-to-`i8` (compatible with `printf("%s", ...)`).
+
+### Top-level let declarations
+
+Top-level `let` declarations with the `cubical` type produce LLVM `GlobalVariable`
+objects (not stack allocas), making them visible from every function body:
+
+```
+let n: cubical = "data Nat = | zero : Nat | suc : Nat -> Nat\ndef main : Nat = suc (suc (suc zero))"
+
+fn main() -> int {
+    printf("n = %ld\n", n)    // prints "n = 3"
+    return 0
+}
+```
+
+When the cubical result is a string, a pointer-typed global is created that
+stores the address of the underlying string constant. Loading it yields a
+pointer suitable for passing to C functions like `printf`.
+
+### Inline vs file source
+
+The string literal can contain inline cubical source or a path to a `.cub` file
+(resolved relative to the source file's directory):
+
+```
+let a: cubical = "path/to/example.cub"   -- file path
+let b: cubical = "def main : Nat = ..."  -- inline source
+```
+
 There is no runtime cubical evaluation — everything happens during compilation.

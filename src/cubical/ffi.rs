@@ -1,12 +1,37 @@
+use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
+use crate::cubical::json::term_to_json;
 use crate::cubical::syntax::show_term;
 use crate::cubical::env::{Env, apply_globals, global_ctx};
-use crate::cubical::nbe::{Globals, Value, Neutral, nbe_eval_with_globals, eval_nbe};
+use crate::cubical::nbe::{Globals, Value, Neutral, nbe_eval_with_globals, nbe_eval, eval_nbe};
 use crate::cubical::parser::ProgramParser;
 use crate::cubical::typechecker;
 use crate::cubical::syntax::Term;
+
+thread_local! {
+    static LAST_ERROR: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+fn set_last_error(msg: String) {
+    LAST_ERROR.with(|e| *e.borrow_mut() = Some(msg));
+}
+
+fn take_last_error() -> Option<String> {
+    LAST_ERROR.with(|e| e.borrow_mut().take())
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn cubical_get_last_error() -> *mut c_char {
+    match take_last_error() {
+        Some(msg) => match CString::new(msg) {
+            Ok(cs) => cs.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        None => std::ptr::null_mut(),
+    }
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn cubical_eval(source: *const c_char) -> *mut c_char {
@@ -16,37 +41,88 @@ pub extern "C" fn cubical_eval(source: *const c_char) -> *mut c_char {
     let c_str = unsafe { CStr::from_ptr(source) };
     let src = match c_str.to_str() {
         Ok(s) => s,
-        Err(_) => return std::ptr::null_mut(),
+        Err(_) => {
+            set_last_error("invalid UTF-8 in cubical source".to_string());
+            return std::ptr::null_mut();
+        }
     };
     match eval_cubical_source(src) {
         Ok(result) => match CString::new(result) {
             Ok(cs) => cs.into_raw(),
-            Err(_) => std::ptr::null_mut(),
+            Err(_) => {
+                set_last_error("cubical result contains null bytes".to_string());
+                std::ptr::null_mut()
+            }
         },
-        Err(_) => std::ptr::null_mut(),
+        Err(e) => {
+            set_last_error(e);
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn cubical_eval_json(source: *const c_char) -> *mut c_char {
+    if source.is_null() {
+        return std::ptr::null_mut();
+    }
+    let c_str = unsafe { CStr::from_ptr(source) };
+    let src = match c_str.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            set_last_error("invalid UTF-8 in cubical source".to_string());
+            return std::ptr::null_mut();
+        }
+    };
+    match eval_cubical_json(src) {
+        Ok(result) => match CString::new(result) {
+            Ok(cs) => cs.into_raw(),
+            Err(_) => {
+                set_last_error("cubical result contains null bytes".to_string());
+                std::ptr::null_mut()
+            }
+        },
+        Err(e) => {
+            set_last_error(e);
+            std::ptr::null_mut()
+        }
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn cubical_eval_int(source: *const c_char) -> i64 {
     if source.is_null() {
+        set_last_error("null cubical source pointer".to_string());
         return -1;
     }
     let c_str = unsafe { CStr::from_ptr(source) };
     let src = match c_str.to_str() {
         Ok(s) => s,
-        Err(_) => return -1,
+        Err(_) => {
+            set_last_error("invalid UTF-8 in cubical source".to_string());
+            return -1;
+        }
     };
     match eval_cubical_source(src) {
         Ok(result_str) => {
             let eq_pos = match result_str.find(" = ") {
                 Some(p) => p,
-                None => return -1,
+                None => {
+                    set_last_error(format!("unexpected cubical output format: {}", result_str));
+                    return -1;
+                }
             };
             let nat_str = result_str[eq_pos + 3..].trim();
-            parse_nat_str(nat_str)
+            let val = parse_nat_str(nat_str);
+            if val < 0 {
+                set_last_error(format!("cannot parse '{}' as a natural number", nat_str));
+            }
+            val
         }
-        Err(_) => -1,
+        Err(e) => {
+            set_last_error(e);
+            -1
+        }
     }
 }
 
@@ -173,6 +249,45 @@ fn eval_cubical_source(source: &str) -> Result<String, String> {
     let result = show_term(&global_names, &nf);
 
     Ok(format!("{} = {}", name, result))
+}
+
+fn eval_cubical_json(source: &str) -> Result<String, String> {
+    let mut env = Env::new();
+    let mut parser = ProgramParser::new(source).map_err(|e| e.to_string())?;
+
+    while let Some(decl) = parser.next_decl().map_err(|e| e.to_string())? {
+        match decl {
+            crate::cubical::parser::Decl::Import { .. } => {
+                return Err("import not supported".to_string());
+            }
+            crate::cubical::parser::Decl::Data(dt) => {
+                env.declare_datatype(dt);
+            }
+            crate::cubical::parser::Decl::Def { name, ty, val } => {
+                let closed_ty = apply_globals(&env.defs, &ty);
+                env.define(name.clone(), closed_ty.clone(), val.clone());
+                typechecker::check_dt(
+                    &env.datatypes,
+                    &global_ctx(&env.defs),
+                    &val,
+                    &closed_ty,
+                )
+                .map_err(|e| format!("type error in '{}': {}", name, e))?;
+            }
+        }
+    }
+
+    let val = if let Some(entry) = env.defs.iter().find(|(n, _, _)| n == "main") {
+        entry.2.clone()
+    } else if let Some(entry) = env.defs.last() {
+        entry.2.clone()
+    } else {
+        return Err("no definition to evaluate".to_string());
+    };
+
+    let nf = nbe_eval(&val);
+    let json = term_to_json(&nf);
+    Ok(json.to_string())
 }
 
 #[cfg(test)]
