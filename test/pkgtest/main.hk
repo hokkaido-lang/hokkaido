@@ -1,0 +1,15 @@
+package main
+
+extern fn printf(fmt: string, ...) -> int
+
+import "util"
+
+fn main() -> int {
+    let x: int = util::add(10, 20)
+    printf("10 + 20 = %ld\n", x)       // expect 30
+
+    let y: int = util::multiply(3, 4)
+    printf("3 * 4 = %ld\n", y)         // expect 12
+
+    return 0
+}

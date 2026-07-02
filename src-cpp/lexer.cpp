@@ -285,6 +285,9 @@ Token Lexer::lex_identifier(int l, int c) {
 
   if (id == "let") return {TokenType::Let, id, 0, l, c};
   if (id == "include") return {TokenType::Include, id, 0, l, c};
+  if (id == "import") return {TokenType::Import, id, 0, l, c};
+  if (id == "package") return {TokenType::Package, id, 0, l, c};
+  if (id == "pub") return {TokenType::Pub, id, 0, l, c};
   if (id == "namespace") return {TokenType::Namespace, id, 0, l, c};
   if (id == "extern") return {TokenType::Extern, id, 0, l, c};
   if (id == "fn") return {TokenType::Fn, id, 0, l, c};

@@ -22,10 +22,15 @@ class Parser {
   // Directory the current source file lives in; used to resolve relative
   // `include "..."` paths.
   std::string base_dir;
+  // Module root directory — the nearest parent of base_dir that contains
+  // an `hk.mod` file, or base_dir itself if not found.
+  std::string module_root;
   // Set of canonical file paths already included, shared across the whole
   // include tree, so a file (directly or transitively) cannot include
   // itself and get stuck in infinite recursion.
   std::shared_ptr<std::set<std::string>> included_files;
+  // Set of canonical directory paths already imported (to deduplicate).
+  std::shared_ptr<std::set<std::string>> imported_packages;
 
   void next_token();
   void skip_newlines();
@@ -33,26 +38,37 @@ class Parser {
 
 public:
   Parser(Lexer &lex, std::string base_dir = "",
-         std::shared_ptr<std::set<std::string>> included_files = nullptr)
+         std::shared_ptr<std::set<std::string>> included_files = nullptr,
+         std::shared_ptr<std::set<std::string>> imported_packages = nullptr)
       : lexer(lex), base_dir(std::move(base_dir)),
         included_files(included_files ? std::move(included_files)
-                                       : std::make_shared<std::set<std::string>>()) {
+                                       : std::make_shared<std::set<std::string>>()),
+        imported_packages(imported_packages ? std::move(imported_packages)
+                                            : std::make_shared<std::set<std::string>>()) {
+    module_root = find_module_root(this->base_dir);
     next_token();
   }
 
   bool ok() const { return !has_error; }
   const std::string &error() const { return error_msg; }
 
-  std::vector<std::unique_ptr<Decl>> parse_program();
+  std::vector<std::unique_ptr<Decl>> parse_program(std::string known_package = "");
 
 private:
-  std::unique_ptr<LetDecl> parse_let_decl();
-  std::unique_ptr<FnDecl> parse_fn_decl();
-  std::unique_ptr<FnDecl> parse_extern_fn_decl();
-  std::unique_ptr<StructDecl> parse_struct_decl();
-  std::unique_ptr<AdtDecl> parse_enum_decl();
+  // Package name of the current file (set by parse_package_decl).
+  std::string package_name;
+
+  std::string find_module_root(const std::string &dir);
+  bool parse_package_decl();
+  bool parse_import_decl(std::vector<std::unique_ptr<Decl>> &decls);
   bool parse_include_decl(std::vector<std::unique_ptr<Decl>> &decls);
   bool parse_namespace_decl(std::vector<std::unique_ptr<Decl>> &decls);
+  void prefix_decl_names(std::vector<std::unique_ptr<Decl>> &decls, const std::string &prefix);
+  std::unique_ptr<LetDecl> parse_let_decl(bool is_pub);
+  std::unique_ptr<FnDecl> parse_fn_decl(bool is_pub);
+  std::unique_ptr<FnDecl> parse_extern_fn_decl();
+  std::unique_ptr<StructDecl> parse_struct_decl(bool is_pub);
+  std::unique_ptr<AdtDecl> parse_enum_decl(bool is_pub);
   TypeAnnotation parse_type_annotation();
 
   // Statements

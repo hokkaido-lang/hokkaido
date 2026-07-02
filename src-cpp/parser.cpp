@@ -21,31 +21,75 @@ void Parser::set_error(const std::string &msg) {
 }
 
 // -------------------------------------------------------------------------
+// Module root discovery
+// -------------------------------------------------------------------------
+
+std::string Parser::find_module_root(const std::string &dir) {
+  namespace fs = std::filesystem;
+  fs::path current = dir.empty() ? fs::current_path() : fs::path(dir);
+  // Walk up the directory tree looking for hk.mod
+  fs::path parent = current;
+  while (true) {
+    if (fs::exists(parent / "hk.mod"))
+      return parent.string();
+    fs::path next = parent.parent_path();
+    if (next == parent) break; // reached filesystem root
+    parent = next;
+  }
+  // Fall back to the entry file's directory
+  return dir.empty() ? fs::current_path().string() : std::string(dir);
+}
+
+// -------------------------------------------------------------------------
 // Top-level
 // -------------------------------------------------------------------------
 
-std::vector<std::unique_ptr<Decl>> Parser::parse_program() {
+std::vector<std::unique_ptr<Decl>> Parser::parse_program(std::string known_package) {
   std::vector<std::unique_ptr<Decl>> decls;
   skip_newlines();
+
+  // Parse optional `package name` declaration
+  if (cur_tok.type == TokenType::Package) {
+    if (!parse_package_decl()) return decls;
+    skip_newlines();
+  }
+
+  // If this file is being imported (known_package set), verify the package
+  // name matches.
+  if (!known_package.empty()) {
+    if (known_package != package_name) {
+      set_error("expected package '" + known_package + "' but file has '" +
+                package_name + "'");
+      return decls;
+    }
+  }
+
   while (cur_tok.type != TokenType::Eof) {
+    bool is_pub = false;
+    if (cur_tok.type == TokenType::Pub) {
+      is_pub = true;
+      next_token();
+    }
     if (cur_tok.type == TokenType::Let) {
-      auto decl = parse_let_decl();
+      auto decl = parse_let_decl(is_pub);
       if (decl) decls.push_back(std::move(decl));
       else break;
     } else if (cur_tok.type == TokenType::Fn) {
-      auto decl = parse_fn_decl();
+      auto decl = parse_fn_decl(is_pub);
       if (decl) decls.push_back(std::move(decl));
       else break;
     } else if (cur_tok.type == TokenType::Struct) {
-      auto decl = parse_struct_decl();
+      auto decl = parse_struct_decl(is_pub);
       if (decl) decls.push_back(std::move(decl));
       else break;
     } else if (cur_tok.type == TokenType::Enum) {
-      auto decl = parse_enum_decl();
+      auto decl = parse_enum_decl(is_pub);
       if (decl) decls.push_back(std::move(decl));
       else break;
     } else if (cur_tok.type == TokenType::Include) {
       if (!parse_include_decl(decls)) break;
+    } else if (cur_tok.type == TokenType::Import) {
+      if (!parse_import_decl(decls)) break;
     } else if (cur_tok.type == TokenType::Namespace) {
       if (!parse_namespace_decl(decls)) break;
     } else if (cur_tok.type == TokenType::Extern) {
@@ -53,12 +97,144 @@ std::vector<std::unique_ptr<Decl>> Parser::parse_program() {
       if (decl) decls.push_back(std::move(decl));
       else break;
     } else {
-      set_error("expected declaration (let, fn, struct, enum, include, namespace, extern)");
+      set_error("expected declaration (let, fn, struct, enum, include, import, namespace, extern)");
       break;
     }
     skip_newlines();
   }
   return decls;
+}
+
+// -------------------------------------------------------------------------
+// Package declaration
+// -------------------------------------------------------------------------
+
+bool Parser::parse_package_decl() {
+  next_token(); // consume 'package'
+  if (cur_tok.type != TokenType::Identifier) {
+    set_error("expected package name after 'package'");
+    return false;
+  }
+  package_name = cur_tok.text;
+  next_token();
+  return true;
+}
+
+// -------------------------------------------------------------------------
+// Import declaration
+// -------------------------------------------------------------------------
+
+bool Parser::parse_import_decl(std::vector<std::unique_ptr<Decl>> &decls) {
+  next_token(); // consume 'import'
+
+  std::string alias;
+  std::string path;
+
+  // import alias "path"   or   import "path"
+  if (cur_tok.type == TokenType::StringLiteral) {
+    path = cur_tok.text;
+    next_token();
+    // Derive alias from last path component
+    size_t slash = path.rfind('/');
+    alias = (slash != std::string::npos) ? path.substr(slash + 1) : path;
+  } else if (cur_tok.type == TokenType::Identifier) {
+    alias = cur_tok.text;
+    next_token();
+    if (cur_tok.type != TokenType::StringLiteral) {
+      set_error("expected string literal path after import alias");
+      return false;
+    }
+    path = cur_tok.text;
+    next_token();
+  } else {
+    set_error("expected string literal path or alias after 'import'");
+    return false;
+  }
+
+  // Resolve the import path relative to the module root
+  namespace fs = std::filesystem;
+  fs::path import_dir = fs::path(module_root) / path;
+
+  // Canonicalize to detect duplicate imports
+  std::error_code ec;
+  fs::path canonical_dir = fs::weakly_canonical(import_dir, ec);
+  if (ec) canonical_dir = import_dir;
+  std::string dir_key = canonical_dir.string();
+
+  if (!fs::is_directory(import_dir)) {
+    set_error("cannot import '" + path + "': not a directory");
+    return false;
+  }
+
+  // Deduplicate: skip if this package has already been imported
+  if (imported_packages->count(dir_key)) {
+    return true;
+  }
+  imported_packages->insert(dir_key);
+
+  // Collect and parse all .hk files in the directory
+  std::vector<std::string> hk_files;
+  for (auto &entry : fs::directory_iterator(import_dir)) {
+    if (entry.path().extension() == ".hk") {
+      hk_files.push_back(entry.path().string());
+    }
+  }
+
+  // Sort for deterministic order
+  std::sort(hk_files.begin(), hk_files.end());
+
+  for (auto &file_path : hk_files) {
+    std::ifstream ifs(file_path);
+    if (!ifs) {
+      set_error("cannot open '" + file_path + "' in imported package '" + path + "'");
+      return false;
+    }
+    std::stringstream ss;
+    ss << ifs.rdbuf();
+    std::string content = ss.str();
+
+    // Derive expected package name from the directory path (last segment)
+    size_t last_slash = path.rfind('/');
+    std::string expected_pkg = (last_slash != std::string::npos) ? path.substr(last_slash + 1) : path;
+
+    Lexer sub_lexer(content);
+    Parser sub_parser(sub_lexer, fs::path(file_path).parent_path().string(),
+                      included_files, imported_packages);
+    auto sub_decls = sub_parser.parse_program(expected_pkg);
+
+    if (!sub_parser.ok()) {
+      set_error("in imported package '" + path + "': " + sub_parser.error());
+      return false;
+    }
+
+    // Prefix all declaration names with alias::
+    prefix_decl_names(sub_decls, alias);
+
+    for (auto &d : sub_decls) {
+      decls.push_back(std::move(d));
+    }
+  }
+
+  return true;
+}
+
+// -------------------------------------------------------------------------
+// Prefix declaration names with a namespace prefix
+// -------------------------------------------------------------------------
+
+void Parser::prefix_decl_names(std::vector<std::unique_ptr<Decl>> &decls,
+                                const std::string &prefix) {
+  for (auto &d : decls) {
+    if (auto *fn = dynamic_cast<FnDecl *>(d.get())) {
+      fn->name = prefix + "::" + fn->name;
+    } else if (auto *let = dynamic_cast<LetDecl *>(d.get())) {
+      let->name = prefix + "::" + let->name;
+    } else if (auto *st = dynamic_cast<StructDecl *>(d.get())) {
+      st->name = prefix + "::" + st->name;
+    } else if (auto *adt = dynamic_cast<AdtDecl *>(d.get())) {
+      adt->name = prefix + "::" + adt->name;
+    }
+  }
 }
 
 // -------------------------------------------------------------------------
@@ -155,7 +331,7 @@ TypeAnnotation Parser::parse_type_annotation() {
 // Struct declarations
 // -------------------------------------------------------------------------
 
-std::unique_ptr<StructDecl> Parser::parse_struct_decl() {
+std::unique_ptr<StructDecl> Parser::parse_struct_decl(bool is_pub) {
   next_token(); // consume 'struct'
 
   if (cur_tok.type != TokenType::Identifier) {
@@ -210,6 +386,7 @@ std::unique_ptr<StructDecl> Parser::parse_struct_decl() {
   decl->name = name;
   known_structs.insert(name);
   decl->fields = std::move(fields);
+  decl->is_pub = is_pub;
   return decl;
 }
 
@@ -217,7 +394,7 @@ std::unique_ptr<StructDecl> Parser::parse_struct_decl() {
 // Enum declarations
 // -------------------------------------------------------------------------
 
-std::unique_ptr<AdtDecl> Parser::parse_enum_decl() {
+std::unique_ptr<AdtDecl> Parser::parse_enum_decl(bool is_pub) {
   next_token(); // consume 'enum'
 
   if (cur_tok.type != TokenType::Identifier) {
@@ -298,6 +475,7 @@ std::unique_ptr<AdtDecl> Parser::parse_enum_decl() {
   auto decl = std::make_unique<AdtDecl>();
   decl->name = name;
   decl->variants = std::move(variants);
+  decl->is_pub = is_pub;
   return decl;
 }
 
@@ -336,28 +514,35 @@ bool Parser::parse_namespace_decl(std::vector<std::unique_ptr<Decl>> &decls) {
 
   std::vector<std::unique_ptr<Decl>> inner_decls;
   while (cur_tok.type != TokenType::RBrace && cur_tok.type != TokenType::Eof) {
+    bool is_pub = false;
+    if (cur_tok.type == TokenType::Pub) {
+      is_pub = true;
+      next_token();
+    }
     if (cur_tok.type == TokenType::Let) {
-      auto decl = parse_let_decl();
+      auto decl = parse_let_decl(is_pub);
       if (!decl) return false;
       inner_decls.push_back(std::move(decl));
     } else if (cur_tok.type == TokenType::Fn) {
-      auto decl = parse_fn_decl();
+      auto decl = parse_fn_decl(is_pub);
       if (!decl) return false;
       inner_decls.push_back(std::move(decl));
     } else if (cur_tok.type == TokenType::Struct) {
-      auto decl = parse_struct_decl();
+      auto decl = parse_struct_decl(is_pub);
       if (!decl) return false;
       inner_decls.push_back(std::move(decl));
     } else if (cur_tok.type == TokenType::Enum) {
-      auto decl = parse_enum_decl();
+      auto decl = parse_enum_decl(is_pub);
       if (!decl) return false;
       inner_decls.push_back(std::move(decl));
     } else if (cur_tok.type == TokenType::Include) {
       if (!parse_include_decl(inner_decls)) return false;
+    } else if (cur_tok.type == TokenType::Import) {
+      if (!parse_import_decl(inner_decls)) return false;
     } else if (cur_tok.type == TokenType::Namespace) {
       if (!parse_namespace_decl(inner_decls)) return false;
     } else {
-      set_error("expected declaration inside namespace (let, fn, struct, enum, include, namespace)");
+      set_error("expected declaration inside namespace (let, fn, struct, enum, include, import, namespace)");
       return false;
     }
     skip_newlines();
@@ -428,7 +613,7 @@ bool Parser::parse_include_decl(std::vector<std::unique_ptr<Decl>> &decls) {
   std::string content = ss.str();
 
   Lexer sub_lexer(content);
-  Parser sub_parser(sub_lexer, full_path.parent_path().string(), included_files);
+  Parser sub_parser(sub_lexer, full_path.parent_path().string(), included_files, imported_packages);
   auto sub_decls = sub_parser.parse_program();
 
   if (!sub_parser.ok()) {
@@ -483,7 +668,7 @@ bool Parser::parse_let_common(TypeAnnotation &ann, std::string &name,
   return !has_error;
 }
 
-std::unique_ptr<LetDecl> Parser::parse_let_decl() {
+std::unique_ptr<LetDecl> Parser::parse_let_decl(bool is_pub) {
   next_token(); // consume 'let'
 
   TypeAnnotation type_ann;
@@ -494,6 +679,7 @@ std::unique_ptr<LetDecl> Parser::parse_let_decl() {
   auto decl = std::make_unique<LetDecl>();
   decl->type_ann = type_ann;
   decl->name = name;
+  decl->is_pub = is_pub;
   decl->init_expr = std::move(init);
   return decl;
 }
@@ -502,7 +688,7 @@ std::unique_ptr<LetDecl> Parser::parse_let_decl() {
 // Function declarations
 // -------------------------------------------------------------------------
 
-std::unique_ptr<FnDecl> Parser::parse_fn_decl() {
+std::unique_ptr<FnDecl> Parser::parse_fn_decl(bool is_pub) {
   next_token(); // consume 'fn'
 
   if (cur_tok.type != TokenType::Identifier) {
@@ -599,6 +785,7 @@ std::unique_ptr<FnDecl> Parser::parse_fn_decl() {
   decl->return_type = return_type;
   decl->body = std::move(body);
   decl->type_params = std::move(type_params);
+  decl->is_pub = is_pub;
   // Pop type params from scope
   for (auto &tp : decl->type_params)
     type_param_names.erase(tp);

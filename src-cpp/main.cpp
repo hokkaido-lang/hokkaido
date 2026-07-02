@@ -202,12 +202,13 @@ int main(int argc, char *argv[]) {
   if (filePath.extension() == ".hk") {
     Lexer lexer(Content);
     auto included_files = std::make_shared<std::set<std::string>>();
+    auto imported_packages = std::make_shared<std::set<std::string>>();
     {
       std::error_code ec;
       auto canonical = std::filesystem::weakly_canonical(filePath, ec);
       included_files->insert((ec ? filePath : canonical).string());
     }
-    Parser parser(lexer, filePath.parent_path().string(), included_files);
+    Parser parser(lexer, filePath.parent_path().string(), included_files, imported_packages);
     auto decls = parser.parse_program();
 
     if (!parser.ok()) {

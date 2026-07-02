@@ -183,10 +183,24 @@ struct Decl {
   virtual ~Decl() = default;
 };
 
+// =========================================================================
+// Declarations
+// =========================================================================
+
+struct PackageDecl : Decl {
+  std::string name;
+};
+
+struct ImportDecl : Decl {
+  std::string path;
+  std::string alias;
+};
+
 struct LetDecl : Decl {
   TypeAnnotation type_ann;
   std::string name;
   std::unique_ptr<Expr> init_expr;
+  bool is_pub = false;
 };
 
 struct StructField {
@@ -197,6 +211,7 @@ struct StructField {
 struct StructDecl : Decl {
   std::string name;
   std::vector<StructField> fields;
+  bool is_pub = false;
 };
 
 // Algebraic data types (tagged unions / Rust-style enums)
@@ -209,6 +224,7 @@ struct AdtVariant {
 struct AdtDecl : Decl {
   std::string name;
   std::vector<AdtVariant> variants;
+  bool is_pub = false;
 };
 
 struct ConstructorExpr : Expr {
@@ -271,4 +287,5 @@ struct FnDecl : Decl {
   bool is_variadic = false;
   // Generic type parameter names, e.g. ["T", "U"] for `fn foo<T, U>(...)`.
   std::vector<std::string> type_params;
+  bool is_pub = false;
 };
