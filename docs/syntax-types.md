@@ -64,6 +64,15 @@ enum Option { Some { value: int }, None }
 let v: Option = Some { value: 42 }
 ```
 
+For [generic structs](/docs/syntax-data-structures#generic-structs), the type
+arguments are written inside angle brackets after the struct name:
+
+```
+struct Pair<T> { first: T, second: T }
+let p: Pair<int64> = Pair<int64> { first: 10, second: 20 }
+let nested: Pair<Pair<int64>> = Pair<Pair<int64>> { ... }
+```
+
 ### Pointer types
 
 A pointer type is written by appending `*` to the element type — one `*` per level of indirection:

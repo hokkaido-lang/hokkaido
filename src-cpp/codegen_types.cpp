@@ -50,6 +50,14 @@ Type *CodeGen::get_llvm_type(const TypeAnnotation &ann) {
     return base;
   }
   if (ann.kind == TypeKind::Struct) {
+    if (!ann.type_args.empty()) {
+      StructType *st = monomorphize_struct(ann.struct_name, ann.type_args);
+      if (!st) return nullptr;
+      base = st;
+      for (int i = 0; i < ann.pointer_depth; i++)
+        base = PointerType::getUnqual(Context);
+      return base;
+    }
     auto it = struct_types.find(ann.struct_name);
     if (it != struct_types.end()) {
       base = it->second;
@@ -107,6 +115,13 @@ Type *CodeGen::get_llvm_type(const TypeAnnotation &ann) {
 // -------------------------------------------------------------------------
 
 void CodeGen::register_struct_decl(StructDecl *decl) {
+  if (!decl->type_params.empty()) {
+    struct_templates[decl->name] = decl;
+    for (auto &field : decl->fields)
+      struct_fields[decl->name].push_back({field.name, field.type_ann});
+    return;
+  }
+
   StructType *st = StructType::create(Context, decl->name);
 
   std::vector<Type *> member_types;
@@ -287,4 +302,72 @@ llvm::StructType *CodeGen::get_slice_type(const TypeAnnotation &elem_ann) {
   StructType *st = StructType::create(Context, {ptr, len}, key);
   slice_type_cache[key] = st;
   return st;
+}
+
+// -------------------------------------------------------------------------
+// Generic struct helpers
+// -------------------------------------------------------------------------
+
+std::string CodeGen::struct_mangled_name(const std::string &name,
+                                          const std::vector<TypeAnnotation> &type_args) {
+  std::string result = name;
+  for (auto &ta : type_args)
+    result += "$" + mangle_ann(ta);
+  return result;
+}
+
+llvm::StructType *CodeGen::monomorphize_struct(const std::string &name,
+                                                const std::vector<TypeAnnotation> &type_args) {
+  std::string mangled = struct_mangled_name(name, type_args);
+
+  auto it = struct_types.find(mangled);
+  if (it != struct_types.end()) return it->second;
+
+  auto template_it = struct_templates.find(name);
+  if (template_it == struct_templates.end()) {
+    errs() << "Error: struct '" << name << "' is not a generic struct\n";
+    return nullptr;
+  }
+
+  StructDecl *decl = template_it->second;
+  StructType *st = StructType::create(Context, mangled);
+
+  std::vector<Type *> member_types;
+  std::vector<std::pair<std::string, TypeAnnotation>> fields_info;
+
+  for (auto &field : decl->fields) {
+    TypeAnnotation field_ann = field.type_ann;
+    substitute_type_params_recursive(field_ann, decl->type_params, type_args);
+    Type *field_type = get_llvm_type(field_ann);
+    if (!field_type) {
+      errs() << "Error: monomorphization failed for field '" << field.name << "' in struct '"
+             << name << "'\n";
+      return nullptr;
+    }
+    member_types.push_back(field_type);
+    fields_info.push_back({field.name, field_ann});
+  }
+
+  st->setBody(member_types);
+  struct_types[mangled] = st;
+  struct_fields[mangled] = std::move(fields_info);
+
+  return st;
+}
+
+void CodeGen::substitute_type_params_recursive(TypeAnnotation &ann,
+                                                const std::vector<std::string> &param_names,
+                                                const std::vector<TypeAnnotation> &type_args) {
+  if (ann.kind == TypeKind::TypeParam) {
+    for (size_t i = 0; i < param_names.size(); i++) {
+      if (ann.struct_name == param_names[i]) {
+        ann = type_args[i];
+        return;
+      }
+    }
+  }
+  for (auto &ta : ann.tuple_types)
+    substitute_type_params_recursive(ta, param_names, type_args);
+  for (auto &ta : ann.type_args)
+    substitute_type_params_recursive(ta, param_names, type_args);
 }

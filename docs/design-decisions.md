@@ -112,7 +112,8 @@ extern fn free(ptr: int8*) -> void
 ## 3. Generics and Trait Bounds
 
 **Decision:** Defer trait-like bounds on type parameters to a future major
-version. Phase 5 will implement generic structs and enums without bounds.
+version. Phase 5a implements generic structs without bounds; generic enums
+and trait bounds remain deferred.
 
 ### Rationale
 
@@ -130,8 +131,8 @@ compatible extension.
 
 ### What this means for Phase 5
 
-- Generic structs: `struct Pair<A, B> { first: A, second: B }` — works.
-- Generic enums: `enum Option<T> { Some { value: T }, None {} }` — works.
+- Generic structs: `struct Pair<A, B> { first: A, second: B }` — works (Phase 5a).
+- Generic enums: `enum Option<T> { Some { value: T }, None {} }` — deferred.
 - Type parameters on struct/enum fields can be used in function signatures
   (e.g., `fn first<A, B>(p: Pair<A, B>) -> A`).
 - No ability to write `fn sort<T: Ord>(...)` — users must accept concrete

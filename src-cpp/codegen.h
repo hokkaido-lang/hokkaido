@@ -79,6 +79,12 @@ private:
   llvm::StructType *get_struct_type(const std::string &name);
   int get_struct_field_index(const std::string &struct_name, const std::string &field_name);
   TypeAnnotation get_struct_field_type(const std::string &struct_name, const std::string &field_name);
+  // Generic struct templates (name -> AST)
+  std::map<std::string, StructDecl *> struct_templates;
+  std::string struct_mangled_name(const std::string &name,
+                                   const std::vector<TypeAnnotation> &type_args);
+  llvm::StructType *monomorphize_struct(const std::string &name,
+                                         const std::vector<TypeAnnotation> &type_args);
 
   // Enum declarations
   void register_enum_decl(AdtDecl *decl);
@@ -143,11 +149,15 @@ private:
   // Cubical structured value helpers
   llvm::Constant *build_cubical_constant(const cubical_value::CubicalValue *val);
   llvm::Type *build_cubical_type(const cubical_value::CubicalValue *val);
+  std::string mangle_ann(const TypeAnnotation &ann);
   std::string mangle_name(const std::string &fn_name,
                            const std::vector<TypeAnnotation> &type_args);
   void substitute_type_params(TypeAnnotation &ann,
                                 const std::vector<std::string> &param_names,
                                 const std::vector<TypeAnnotation> &type_args);
+  void substitute_type_params_recursive(TypeAnnotation &ann,
+                                         const std::vector<std::string> &param_names,
+                                         const std::vector<TypeAnnotation> &type_args);
   bool monomorphize_and_codegen(FnDecl *template_decl,
                                   const std::vector<TypeAnnotation> &type_args,
                                   const std::string &mangled_name);

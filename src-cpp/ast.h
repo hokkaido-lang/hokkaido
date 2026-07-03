@@ -40,6 +40,7 @@ struct TypeAnnotation {
   int array_size = 0; // 0 means not an array
   std::string struct_name; // for Struct, Enum, TypeParam kind
   std::vector<TypeAnnotation> tuple_types; // for Tuple kind / Fn (param types + return type last)
+  std::vector<TypeAnnotation> type_args; // for generic types like Foo<int>
 };
 
 enum class BinOp {
@@ -240,6 +241,7 @@ struct StructDecl : Decl {
   std::string name;
   std::vector<StructField> fields;
   bool is_pub = false;
+  std::vector<std::string> type_params; // generic type params like <T, U>
 };
 
 // Algebraic data types (tagged unions / Rust-style enums)
@@ -259,6 +261,7 @@ struct ConstructorExpr : Expr {
   std::string enum_name;
   std::string variant_name;
   std::vector<std::pair<std::string, std::unique_ptr<Expr>>> fields;
+  std::vector<TypeAnnotation> type_args; // generic type args like <int, float>
 };
 
 struct Param {

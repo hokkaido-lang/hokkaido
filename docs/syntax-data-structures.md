@@ -77,6 +77,58 @@ Alignment follows the element type's alignment.
 
 A struct is a named product type grouping multiple fields of possibly different types.
 
+### Generic structs
+
+A struct can be parameterized over one or more type parameters using angle brackets:
+
+```
+struct Name<T> {
+    field1: T,
+    field2: type2,
+}
+struct Pair<A, B> {
+    first: A,
+    second: B,
+}
+```
+
+Type parameters can appear anywhere a type annotation is valid: field types, nested
+generic types, etc.
+
+```
+struct Pair<T> {
+    first: T,
+    second: T,
+}
+struct Triple<A, B, C> {
+    a: A,
+    b: B,
+    c: C,
+}
+```
+
+Instantiation uses angle brackets with concrete types:
+
+```
+let p: Pair<int64> = Pair<int64> { first: 10, second: 20 }
+let t: Triple<int64, bool, int64> = Triple<int64, bool, int64> { a: 1, b: true, c: 3 }
+```
+
+Nested generics (a generic struct whose type argument is itself a generic
+instantiation) are supported:
+
+```
+let inner: Pair<int64> = Pair<int64> { first: 3, second: 7 }
+let outer: Pair<Pair<int64>> = Pair<Pair<int64>> { first: inner, second: inner }
+```
+
+Each distinct combination of type arguments produces a separate LLVM struct type at
+compile time (monomorphization), keyed by a mangled name (e.g. `Pair$i64`).
+
+**Current limitations:**
+- Generic enums are not yet supported.
+- Trait bounds on type parameters (`<T: Display>`) are not yet supported.
+
 ### Declaration
 
 ```

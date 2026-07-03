@@ -1,0 +1,49 @@
+// Phase 5a: Generic Structs
+// Tests: generic struct declaration, instantiation, field access,
+// multiple type params, nested generics, generics with functions
+
+struct Pair<T> {
+    first: T
+    second: T
+}
+
+struct Triple<A, B, C> {
+    a: A
+    b: B
+    c: C
+}
+
+struct PairPair {
+    first: Pair<int64>
+    second: Pair<int64>
+}
+
+fn test_basic_generic() -> int64 {
+    let p: Pair<int64> = Pair<int64> { first: 100, second: 200 }
+    return p.first + p.second
+}
+
+fn test_multi_param() -> int64 {
+    let t: Triple<int64, bool, int64> = Triple<int64, bool, int64> { a: 1, b: true, c: 3 }
+    return t.a + t.c
+}
+
+fn test_nested_generic() -> int64 {
+    let inner: Pair<int64> = Pair<int64> { first: 3, second: 7 }
+    let outer: Pair<Pair<int64>> = Pair<Pair<int64>> { first: inner, second: inner }
+    return outer.first.first + outer.first.second + outer.second.first + outer.second.second
+}
+
+fn test_generic_field() -> int64 {
+    let inner: Pair<int64> = Pair<int64> { first: 5, second: 10 }
+    let p: PairPair = PairPair { first: inner, second: inner }
+    return p.first.first + p.second.second
+}
+
+fn main() -> int {
+    let r1: int64 = test_basic_generic()
+    let r2: int64 = test_multi_param()
+    let r3: int64 = test_nested_generic()
+    let r4: int64 = test_generic_field()
+    return r1 + r2 + r3 + r4
+}

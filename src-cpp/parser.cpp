@@ -350,6 +350,33 @@ TypeAnnotation Parser::parse_type_annotation() {
     return ann;
   }
 
+  // Handle generic type arguments: Foo<int, float>
+  if (cur_tok.type == TokenType::Less && ann.kind == TypeKind::Struct) {
+    next_token();
+    while (cur_tok.type != TokenType::Greater && cur_tok.type != TokenType::Shr
+           && cur_tok.type != TokenType::Eof) {
+      if (!ann.type_args.empty()) {
+        if (cur_tok.type != TokenType::Comma) {
+          set_error("expected ',' or '>' in generic type arguments");
+          return ann;
+        }
+        next_token();
+      }
+      ann.type_args.push_back(parse_type_annotation());
+      if (has_error) return ann;
+    }
+    if (cur_tok.type == TokenType::Shr) {
+      cur_tok.type = TokenType::Greater;
+      // Don't consume: the caller's level will also see this as its '>'
+      return ann;
+    }
+    if (cur_tok.type != TokenType::Greater) {
+      set_error("expected '>' to close generic type arguments");
+      return ann;
+    }
+    next_token();
+  }
+
   // Parse pointer indirection levels (e.g. int* -> pointer to int)
   while (cur_tok.type == TokenType::Star) {
     ann.pointer_depth++;
@@ -395,6 +422,32 @@ std::unique_ptr<StructDecl> Parser::parse_struct_decl(bool is_pub) {
   }
   std::string name = cur_tok.text;
   next_token();
+
+  std::vector<std::string> type_params;
+  if (cur_tok.type == TokenType::Less) {
+    next_token();
+    while (cur_tok.type != TokenType::Greater && cur_tok.type != TokenType::Eof) {
+      if (!type_params.empty()) {
+        if (cur_tok.type != TokenType::Comma) {
+          set_error("expected ',' or '>' in generic type parameters");
+          return nullptr;
+        }
+        next_token();
+      }
+      if (cur_tok.type != TokenType::Identifier) {
+        set_error("expected type parameter name");
+        return nullptr;
+      }
+      type_params.push_back(cur_tok.text);
+      type_param_names.insert(cur_tok.text);
+      next_token();
+    }
+    if (cur_tok.type != TokenType::Greater) {
+      set_error("expected '>' to close generic type parameters");
+      return nullptr;
+    }
+    next_token();
+  }
 
   skip_newlines();
   if (cur_tok.type != TokenType::LBrace) {
@@ -442,6 +495,9 @@ std::unique_ptr<StructDecl> Parser::parse_struct_decl(bool is_pub) {
   known_structs.insert(name);
   decl->fields = std::move(fields);
   decl->is_pub = is_pub;
+  decl->type_params = std::move(type_params);
+  for (auto &p : decl->type_params)
+    type_param_names.erase(p);
   return decl;
 }
 
@@ -1449,14 +1505,44 @@ std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
   }
   // Handle constructor expression: VariantName { field: expr, ... }
   // or positional: VariantName { expr, expr, ... }
-  if (cur_tok.type == TokenType::LBrace) {
+  if (cur_tok.type == TokenType::Less || cur_tok.type == TokenType::LBrace) {
     auto *ident = dynamic_cast<IdentExpr *>(left.get());
     if (ident && (known_variants.count(ident->name) > 0 || known_structs.count(ident->name) > 0)) {
       std::string variant_name = ident->name;
+      std::vector<TypeAnnotation> ctor_type_args;
+      if (cur_tok.type == TokenType::Less) {
+        next_token();
+        while (cur_tok.type != TokenType::Greater && cur_tok.type != TokenType::Shr
+               && cur_tok.type != TokenType::Eof) {
+          if (!ctor_type_args.empty()) {
+            if (cur_tok.type != TokenType::Comma) {
+              set_error("expected ',' or '>' in generic type arguments");
+              return nullptr;
+            }
+            next_token();
+          }
+          ctor_type_args.push_back(parse_type_annotation());
+          if (has_error) return nullptr;
+        }
+        if (cur_tok.type == TokenType::Shr) {
+          cur_tok.type = TokenType::Greater;
+        } else {
+          if (cur_tok.type != TokenType::Greater) {
+            set_error("expected '>' to close generic type arguments");
+            return nullptr;
+          }
+          next_token();
+        }
+        if (cur_tok.type != TokenType::LBrace) {
+          set_error("expected '{' after generic type arguments");
+          return nullptr;
+        }
+      }
       next_token(); // consume '{'
       skip_newlines();
       auto ctor = std::make_unique<ConstructorExpr>();
       ctor->variant_name = variant_name;
+      ctor->type_args = std::move(ctor_type_args);
       bool is_named = false;
       bool has_fields = false;
       while (cur_tok.type != TokenType::RBrace && cur_tok.type != TokenType::Eof) {

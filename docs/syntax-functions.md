@@ -171,8 +171,9 @@ fn main() -> int {
 
 ### Current limitations
 
-- Generic *types* (structs, enums, arrays) are not supported — only generic functions.
-- Type parameters cannot have bounds or constraints.
+- Generic enums are not yet supported (struct generics work — see
+  [Generic structs](/docs/syntax-data-structures#generic-structs)).
+- Type parameters cannot have bounds or constraints (trait system not yet implemented).
 - Type parameters cannot be used in array sizes (e.g. `int[N]` is not valid).
 
 ## Return

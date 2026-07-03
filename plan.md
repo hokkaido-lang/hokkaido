@@ -107,25 +107,24 @@ end-to-end. Covered by `test/test_phase3.hk` (9 test functions).
 
 ---
 
-## Phase 4 — Functions & Abstraction
+## Phase 4 — Functions & Abstraction ✅ Complete
 
 Higher-risk phase; touches calling conventions and possibly closures' capture
 semantics.
 
-1. **Closures**
-   - Design capture semantics first: by-value copy only (simplest, consistent with
-     Hokkaido's "structs are copied by value" philosophy) vs. by-reference capture.
-     Recommend by-value-only for v1 to avoid lifetime analysis.
-   - Represent a closure as a struct containing captured values + a function pointer,
-     similar to existing struct/pointer machinery — no new runtime needed.
-2. **Operator overloading (optional/deferred)**
-   - Lowest priority in this phase; consider deferring entirely, since it interacts
-     with generics and trait bounds (Phase 5). Flag as "not yet scheduled" rather than
-     committing a design now.
+1. ✅ **Closures**
+   - By-value capture only (no borrow checker for v1).
+   - `lambda` keyword syntax: `lambda (x: T) -> R { body }`.
+   - Closure = struct with `{ i8* fn_ptr, captures... }` — the helper function
+     takes `(i8* captures_ctx, T1, T2, ...) -> R`.
+   - Captures discovered by walking the body, stored inline in the closure struct.
+   - Call site: alloca a copy of the closure for stable context pointer, extract
+     fn_ptr, bitcast, call.
+2. ❌ **Operator overloading** — explicitly deferred until after trait bounds land.
 
-**Exit criteria:** closures with value-capture ship with tests covering capture,
-call, and interaction with existing generic functions. Operator overloading remains
-explicitly out of scope until Phase 5 lands.
+**Exit criteria:** ✅ closures with value-capture ship with tests covering capture,
+call, and interaction with existing generic functions. Covered by `test/test_phase4.hk`
+(5 test functions, exit 80).
 
 ---
 
@@ -133,20 +132,30 @@ explicitly out of scope until Phase 5 lands.
 
 Builds directly on the Phase 0 decision about trait bounds.
 
-1. **Generic structs and enums**
-   - Extend the existing monomorphization machinery (already used for generic
-     functions) to type declarations.
-   - Update the "Current limitations" section of `docs/syntax-functions.md` once this
-     lands, since it explicitly calls out this gap today.
-2. **Type parameter bounds/constraints** (only if Phase 0 opted in)
+### Phase 5a — Generic Structs ✅ Complete
+
+1. ✅ **Generic structs**
+   - `struct Foo<T> { field: T }` syntax with `<T, U>` type params.
+   - `Foo<int>` instantiates via monomorphization: substitutes type params in field
+     types, creates a unique LLVM struct type keyed by mangled name (`Foo$i64`).
+   - Supports multiple type params, nested generics (`Pair<Pair<int64>>`), and
+     field access through monomorphized types.
+   - `>>` (nested `> >`) handled for `Pair<Pair<T>>` syntax.
+   - Generic structs as field types in non-generic structs works.
+   - Covered by `test/test_phase5.hk` (5 test functions).
+
+### Phase 5b — Type Parameter Bounds & Traits (Not Yet Started)
+
+2. ❌ **Type parameter bounds/constraints**
    - Minimal trait-like mechanism: a bound declares a set of required function
      signatures a type must implement.
-   - This is the largest-scope item in the roadmap; consider splitting into its own
-     sub-roadmap if it proceeds.
+   - Includes: `trait` declaration, `impl` blocks, trait bounds `<T: Display>`,
+     and dispatch (static via monomorphization, or vtable-based).
+   - This is the largest-scope item in the roadmap; split into its own sub-roadmap.
 
-**Exit criteria:** generic containers (e.g., a generic `Pair<A, B>` or `Option<T>`)
-work end-to-end with turbofish instantiation, matching the existing generic-function
-calling convention for consistency.
+**Exit criteria (Phase 5a ✅):** generic containers (e.g., a generic `Pair<A, B>`
+or `Option<T>`) work end-to-end with angle-bracket instantiation, matching the
+existing generic-function calling convention for consistency.
 
 ---
 
@@ -194,8 +203,9 @@ tracked as follow-on tickets.
 | 1 | Type system gaps | 0 | Low |
 | 2 | Control flow fixes ✅ | — | Low–Medium |
 | 3 | Memory & data structures ✅ | 0 | Medium |
-| 4 | Closures | 3 (loosely) | Medium |
-| 5 | Generic types/bounds | 0, 1 | High |
+| 4 | Closures ✅ | 3 (loosely) | Medium |
+| 5a | Generic structs ✅ | 0, 1 | High |
+| 5b | Traits/bounds ❌ | 5a | High |
 | 6 | Stdlib & docs | 3 | Low |
 | 7 | Cubical follow-ups | — | Medium |
 

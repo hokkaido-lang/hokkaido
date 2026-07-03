@@ -164,8 +164,8 @@ bool CodeGen::gen_main_body(const std::vector<std::unique_ptr<Decl>> &decls) {
 // Generics / monomorphization helpers
 // -------------------------------------------------------------------------
 
-static std::string mangle_ann(const TypeAnnotation &ann) {
-  auto fn = [](const TypeAnnotation &a) -> std::string {
+std::string CodeGen::mangle_ann(const TypeAnnotation &ann) {
+  auto fn = [&](const TypeAnnotation &a) -> std::string {
     switch (a.kind) {
       case TypeKind::Void:    return "void";
       case TypeKind::Int8:    return "i8";
@@ -187,6 +187,8 @@ static std::string mangle_ann(const TypeAnnotation &ann) {
       case TypeKind::TypeParam: {
         std::string s = a.struct_name;
         for (auto &c : s) if (c == ':') c = '_';
+        for (auto &ta : a.type_args)
+          s += "$" + mangle_ann(ta);
         return s;
       }
       case TypeKind::Tuple: {
@@ -243,15 +245,8 @@ bool CodeGen::monomorphize_and_codegen(FnDecl *template_decl,
   std::vector<std::pair<TypeAnnotation *, TypeAnnotation>> saved_anns;
 
   auto substitute_in = [&](TypeAnnotation &ann) {
-    if (ann.kind == TypeKind::TypeParam) {
-      saved_anns.push_back({&ann, ann});
-      for (size_t i = 0; i < template_decl->type_params.size(); i++) {
-        if (ann.struct_name == template_decl->type_params[i]) {
-          ann = type_args[i];
-          break;
-        }
-      }
-    }
+    saved_anns.push_back({&ann, ann});
+    substitute_type_params_recursive(ann, template_decl->type_params, type_args);
   };
 
   for (auto &p : template_decl->params)

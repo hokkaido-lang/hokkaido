@@ -27,8 +27,12 @@ TypeAnnotation CodeGen::resolve_expr_type(Expr *expr) {
   }
   if (auto *field = dynamic_cast<FieldAccessExpr *>(expr)) {
     TypeAnnotation base = resolve_expr_type(field->object.get());
-    if (base.kind == TypeKind::Void || base.kind == TypeKind::Struct)
-      return get_struct_field_type(base.struct_name, field->field);
+    if (base.kind == TypeKind::Void || base.kind == TypeKind::Struct) {
+      std::string struct_key = base.struct_name;
+      if (!base.type_args.empty())
+        struct_key = struct_mangled_name(base.struct_name, base.type_args);
+      return get_struct_field_type(struct_key, field->field);
+    }
     return {TypeKind::Void};
   }
   if (auto *addr = dynamic_cast<AddressOfExpr *>(expr)) {
@@ -82,8 +86,11 @@ TypeAnnotation CodeGen::resolve_expr_type(Expr *expr) {
       if (vi >= 0)
         return {TypeKind::Enum, 0, 0, ename};
     }
-    if (struct_types.count(ctor->variant_name) > 0)
-      return {TypeKind::Struct, 0, 0, ctor->variant_name};
+    std::string struct_key = ctor->variant_name;
+    if (struct_types.count(struct_key) == 0 && struct_templates.count(struct_key) > 0)
+      struct_key = struct_mangled_name(ctor->variant_name, ctor->type_args);
+    if (struct_types.count(struct_key) > 0)
+      return {TypeKind::Struct, 0, 0, struct_key};
     return {TypeKind::Void};
   }
   if (auto *atm = dynamic_cast<AtomicExpr *>(expr)) {
@@ -418,7 +425,10 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
       return result;
     }
 
-    auto st_it = struct_types.find(ctor->variant_name);
+    std::string struct_key = ctor->variant_name;
+    if (!ctor->type_args.empty())
+      struct_key = struct_mangled_name(ctor->variant_name, ctor->type_args);
+    auto st_it = struct_types.find(struct_key);
     if (st_it != struct_types.end()) {
       StructType *st = st_it->second;
       Value *result = UndefValue::get(st);
@@ -427,19 +437,18 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
         int actual_idx;
         TypeAnnotation field_ann;
         if (field_name.empty()) {
-          // Positional: use position index
           actual_idx = (int)fi;
-          auto it = struct_fields.find(ctor->variant_name);
+          auto it = struct_fields.find(struct_key);
           if (it != struct_fields.end() && (size_t)actual_idx < it->second.size())
             field_ann = it->second[actual_idx].second;
           else
             field_ann = {TypeKind::Int64};
         } else {
-          field_ann = get_struct_field_type(ctor->variant_name, field_name);
-          actual_idx = get_struct_field_index(ctor->variant_name, field_name);
+          field_ann = get_struct_field_type(struct_key, field_name);
+          actual_idx = get_struct_field_index(struct_key, field_name);
         }
         if (actual_idx < 0) {
-          errs() << "Error: struct '" << ctor->variant_name
+          errs() << "Error: struct '" << struct_key
                  << "' has no field '" << field_name << "'\n";
           return nullptr;
         }
@@ -590,9 +599,12 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
     Value *obj_val = eval_expr(field->object.get(), base_llvm_type);
     if (!obj_val) return nullptr;
 
-    int field_idx = get_struct_field_index(base_ann.struct_name, field->field);
+    std::string struct_key = base_ann.struct_name;
+    if (!base_ann.type_args.empty())
+      struct_key = struct_mangled_name(base_ann.struct_name, base_ann.type_args);
+    int field_idx = get_struct_field_index(struct_key, field->field);
     if (field_idx < 0) {
-      errs() << "Error: struct '" << base_ann.struct_name << "' has no field named '"
+      errs() << "Error: struct '" << struct_key << "' has no field named '"
              << field->field << "'\n";
       return nullptr;
     }
