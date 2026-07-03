@@ -1039,7 +1039,8 @@ std::unique_ptr<ReturnStmt> Parser::parse_return_stmt() {
       cur_tok.type == TokenType::BitNot ||
       cur_tok.type == TokenType::Star ||
       cur_tok.type == TokenType::Ampersand ||
-      cur_tok.type == TokenType::Null) {
+      cur_tok.type == TokenType::Null ||
+      cur_tok.type == TokenType::Lambda) {
     auto expr = parse_expr();
     if (!expr) return nullptr;
     auto stmt = std::make_unique<ReturnStmt>();
@@ -1393,6 +1394,30 @@ std::unique_ptr<Expr> Parser::parse_unary() {
 }
 
 std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
+  // Handle function call: expr(args) — expression-based calls (closures)
+  if (cur_tok.type == TokenType::LParen) {
+    auto call = std::make_unique<CallExpr>();
+    call->callee_expr = std::move(left);
+    next_token(); // consume '('
+    while (cur_tok.type != TokenType::RParen && cur_tok.type != TokenType::Eof) {
+      if (!call->args.empty()) {
+        if (cur_tok.type != TokenType::Comma) {
+          set_error("expected ',' or ')' in argument list");
+          return nullptr;
+        }
+        next_token();
+      }
+      auto arg = parse_expr();
+      if (!arg) return nullptr;
+      call->args.push_back(std::move(arg));
+    }
+    if (cur_tok.type != TokenType::RParen) {
+      set_error("expected ')' to close argument list");
+      return nullptr;
+    }
+    next_token(); // consume ')'
+    left = std::move(call);
+  }
   // Handle subscript access: arr[i]
   while (cur_tok.type == TokenType::LSquare) {
     next_token(); // consume '['
@@ -1607,6 +1632,9 @@ std::unique_ptr<Expr> Parser::parse_primary() {
   if (cur_tok.type == TokenType::Atomic) {
     return parse_atomic_expr();
   }
+  if (cur_tok.type == TokenType::Lambda) {
+    return parse_lambda_expr();
+  }
   set_error("expected expression");
   return nullptr;
 }
@@ -1810,6 +1838,60 @@ std::unique_ptr<Expr> Parser::parse_match_expr() {
   }
   next_token(); // consume '}'
   return mexpr;
+}
+
+std::unique_ptr<Expr> Parser::parse_lambda_expr() {
+  next_token(); // consume 'lambda'
+
+  if (cur_tok.type != TokenType::LParen) {
+    set_error("expected '(' after 'lambda'");
+    return nullptr;
+  }
+  next_token(); // consume '('
+
+  auto closure = std::make_unique<ClosureExpr>();
+  while (cur_tok.type != TokenType::RParen && cur_tok.type != TokenType::Eof) {
+    if (!closure->params.empty()) {
+      if (cur_tok.type != TokenType::Comma) {
+        set_error("expected ',' or ')' in lambda parameter list");
+        return nullptr;
+      }
+      next_token();
+    }
+    Param param;
+    if (cur_tok.type != TokenType::Identifier) {
+      set_error("expected parameter name in lambda");
+      return nullptr;
+    }
+    param.name = cur_tok.text;
+    next_token();
+
+    if (cur_tok.type != TokenType::Colon) {
+      set_error("expected ':' after lambda parameter name");
+      return nullptr;
+    }
+    next_token();
+
+    param.type_ann = parse_type_annotation();
+    if (has_error) return nullptr;
+    closure->params.push_back(std::move(param));
+  }
+  next_token(); // consume ')'
+
+  if (cur_tok.type != TokenType::Arrow) {
+    set_error("expected '->' and return type in lambda");
+    return nullptr;
+  }
+  next_token();
+
+  closure->return_type = parse_type_annotation();
+  if (has_error) return nullptr;
+
+  skip_newlines();
+  closure->body = parse_block();
+  if (has_error) return nullptr;
+
+  return closure;
 }
 
 std::unique_ptr<Expr> Parser::parse_atomic_expr() {

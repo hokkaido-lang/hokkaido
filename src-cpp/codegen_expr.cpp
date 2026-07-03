@@ -107,7 +107,20 @@ TypeAnnotation CodeGen::resolve_expr_type(Expr *expr) {
       ann.tuple_types.push_back(resolve_expr_type(el.get()));
     return ann;
   }
+  if (auto *closure = dynamic_cast<ClosureExpr *>(expr)) {
+    TypeAnnotation ann = {TypeKind::Fn};
+    for (auto &p : closure->params)
+      ann.tuple_types.push_back(p.type_ann);
+    ann.tuple_types.push_back(closure->return_type);
+    return ann;
+  }
   if (auto *call = dynamic_cast<CallExpr *>(expr)) {
+    if (call->callee_expr) {
+      TypeAnnotation callee_ann = resolve_expr_type(call->callee_expr.get());
+      if (callee_ann.kind == TypeKind::Fn && callee_ann.tuple_types.size() >= 1)
+        return callee_ann.tuple_types.back();
+      return {TypeKind::Void};
+    }
     if (!call->type_args.empty()) {
       auto it = generic_templates.find(call->callee);
       if (it != generic_templates.end()) {
@@ -792,7 +805,210 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
     }
   }
 
+  if (auto *closure = dynamic_cast<ClosureExpr *>(expr)) {
+    // --- Discover captured variables ---
+    std::unordered_set<std::string> param_names;
+    for (auto &p : closure->params)
+      param_names.insert(p.name);
+
+    std::vector<std::string> captures;
+    discover_captures_in_body(closure->body, param_names, captures);
+
+    int id = closure_counter++;
+    std::string fn_name = "__closure_" + std::to_string(id);
+    std::string struct_name = "__closure_s_" + std::to_string(id);
+
+    // --- Build capture types ---
+    std::vector<Type *> cap_types;
+    std::vector<TypeAnnotation> cap_anns;
+    for (auto &cap_name : captures) {
+      auto ann_it = named_type_anns.find(cap_name);
+      if (ann_it != named_type_anns.end()) {
+        cap_types.push_back(get_llvm_type(ann_it->second));
+        cap_anns.push_back(ann_it->second);
+      } else {
+        auto kt = named_types.find(cap_name);
+        if (kt != named_types.end()) {
+          cap_types.push_back(get_llvm_type(kt->second));
+          cap_anns.push_back({kt->second});
+        } else {
+          cap_types.push_back(Type::getInt64Ty(Context));
+          cap_anns.push_back({TypeKind::Int64});
+        }
+      }
+    }
+
+    // --- Function type: R (i8*, T1, T2, ...) ---
+    std::vector<Type *> fn_param_types;
+    fn_param_types.push_back(PointerType::getUnqual(Context)); // captures context
+    for (auto &p : closure->params)
+      fn_param_types.push_back(get_llvm_type(p.type_ann));
+
+    Type *ret_type = get_llvm_type(closure->return_type);
+    if (!ret_type) ret_type = Type::getInt64Ty(Context);
+
+    FunctionType *FT = FunctionType::get(ret_type, fn_param_types, false);
+    Function *helper = Function::Create(FT, Function::InternalLinkage, fn_name, &M);
+
+    // --- Closure struct type: { i8*, caps... } ---
+    std::vector<Type *> closure_elem_types;
+    closure_elem_types.push_back(PointerType::getUnqual(Context));
+    for (auto *ct : cap_types)
+      closure_elem_types.push_back(ct);
+    StructType *closure_st = StructType::create(Context, closure_elem_types, struct_name);
+
+    // --- Emit helper function body ---
+    BasicBlock *saved_insert_bb = Builder.GetInsertBlock();
+    {
+      BasicBlock *BB = BasicBlock::Create(Context, "entry", helper);
+      Builder.SetInsertPoint(BB);
+
+      auto saved_values = std::move(named_values);
+      auto saved_types = std::move(named_types);
+      auto saved_type_anns = std::move(named_type_anns);
+      named_values.clear();
+      named_types.clear();
+      named_type_anns.clear();
+
+      Value *context_ptr = helper->getArg(0);
+      Value *closure_ctx = Builder.CreateBitCast(context_ptr,
+          PointerType::getUnqual(Context), "closure_ctx");
+
+      // Load captures from context into local allocas
+      for (size_t ci = 0; ci < captures.size(); ci++) {
+        Value *cap_ptr = Builder.CreateGEP(closure_st, closure_ctx,
+            {ConstantInt::get(Type::getInt32Ty(Context), 0),
+             ConstantInt::get(Type::getInt32Ty(Context), 1 + (int)ci)},
+            captures[ci] + ".ptr");
+        AllocaInst *cap_alloca = Builder.CreateAlloca(cap_types[ci], nullptr, captures[ci]);
+        Value *cap_val = Builder.CreateLoad(cap_types[ci], cap_ptr, captures[ci]);
+        Builder.CreateStore(cap_val, cap_alloca);
+        named_values[captures[ci]] = cap_alloca;
+        named_types[captures[ci]] = cap_anns[ci].kind;
+        if (cap_anns[ci].pointer_depth > 0 || cap_anns[ci].array_size > 0 ||
+            cap_anns[ci].kind == TypeKind::Struct || cap_anns[ci].kind == TypeKind::Enum ||
+            cap_anns[ci].kind == TypeKind::Tuple || cap_anns[ci].kind == TypeKind::Slice)
+          named_type_anns[captures[ci]] = cap_anns[ci];
+      }
+
+      // Store params
+      size_t ai = 1;
+      for (size_t pi = 0; pi < closure->params.size(); pi++, ai++) {
+        Value *arg_val = helper->getArg(ai);
+        arg_val->setName(closure->params[pi].name);
+        Type *param_llvm_type = get_llvm_type(closure->params[pi].type_ann);
+        AllocaInst *param_alloca = Builder.CreateAlloca(param_llvm_type, nullptr,
+            closure->params[pi].name);
+        Builder.CreateStore(arg_val, param_alloca);
+        named_values[closure->params[pi].name] = param_alloca;
+        named_types[closure->params[pi].name] = closure->params[pi].type_ann.kind;
+        auto &ta = closure->params[pi].type_ann;
+        if (ta.kind == TypeKind::Struct || ta.kind == TypeKind::Enum ||
+            ta.kind == TypeKind::Tuple || ta.kind == TypeKind::Slice ||
+            ta.pointer_depth > 0 || ta.array_size > 0)
+          named_type_anns[closure->params[pi].name] = ta;
+      }
+
+      for (auto &stmt : closure->body) {
+        if (!gen_stmt(stmt.get())) {
+          named_values = std::move(saved_values);
+          named_types = std::move(saved_types);
+          named_type_anns = std::move(saved_type_anns);
+          return nullptr;
+        }
+      }
+
+      if (!Builder.GetInsertBlock()->getTerminator()) {
+        if (ret_type->isVoidTy())
+          Builder.CreateRetVoid();
+        else if (ret_type->isIntegerTy())
+          Builder.CreateRet(ConstantInt::get(ret_type, 0));
+        else if (ret_type->isFPOrFPVectorTy())
+          Builder.CreateRet(ConstantFP::get(ret_type, 0.0));
+        else
+          Builder.CreateRet(ConstantPointerNull::get(cast<PointerType>(ret_type)));
+      }
+
+      named_values = std::move(saved_values);
+      named_types = std::move(saved_types);
+      named_type_anns = std::move(saved_type_anns);
+    }
+
+    if (saved_insert_bb)
+      Builder.SetInsertPoint(saved_insert_bb);
+
+    // --- Build closure struct at lambda site ---
+    AllocaInst *closure_alloca = Builder.CreateAlloca(closure_st, nullptr, "lambda");
+
+    Value *fn_ptr = helper;
+    if (fn_ptr->getType() != PointerType::getUnqual(Context))
+      fn_ptr = Builder.CreateBitCast(fn_ptr, PointerType::getUnqual(Context), "fn_ptr");
+    Value *fn_gep = Builder.CreateGEP(closure_st, closure_alloca,
+        {ConstantInt::get(Type::getInt32Ty(Context), 0),
+         ConstantInt::get(Type::getInt32Ty(Context), 0)},
+        "fn.ptr");
+    Builder.CreateStore(fn_ptr, fn_gep);
+
+    for (size_t ci = 0; ci < captures.size(); ci++) {
+      auto cap_val_it = named_values.find(captures[ci]);
+      if (cap_val_it != named_values.end()) {
+        Value *cap_val = Builder.CreateLoad(cap_types[ci], cap_val_it->second,
+            captures[ci]);
+        Value *cap_gep = Builder.CreateGEP(closure_st, closure_alloca,
+            {ConstantInt::get(Type::getInt32Ty(Context), 0),
+             ConstantInt::get(Type::getInt32Ty(Context), 1 + (int)ci)},
+            captures[ci] + ".cap");
+        Builder.CreateStore(cap_val, cap_gep);
+      }
+    }
+
+    return Builder.CreateLoad(closure_st, closure_alloca, "lambda.val");
+  }
+
   if (auto *call = dynamic_cast<CallExpr *>(expr)) {
+    // Expression-based call (e.g. closure variable / lambda call)
+    if (call->callee_expr) {
+      TypeAnnotation callee_ann = resolve_expr_type(call->callee_expr.get());
+      Type *callee_llvm = get_llvm_type(callee_ann);
+      if (!callee_llvm) callee_llvm = Type::getInt64Ty(Context);
+
+      Value *closure_val = eval_expr(call->callee_expr.get(), callee_llvm);
+      if (!closure_val) return nullptr;
+
+      Value *fn_i8 = Builder.CreateExtractValue(closure_val, {0}, "fn_ptr");
+
+      // Alloca a copy for a stable context pointer
+      AllocaInst *copy_alloca = Builder.CreateAlloca(closure_val->getType(),
+          nullptr, "clos_copy");
+      Builder.CreateStore(closure_val, copy_alloca);
+      Value *context_ptr = Builder.CreateBitCast(copy_alloca,
+          PointerType::getUnqual(Context), "context");
+
+      Type *ret_type = get_llvm_type(callee_ann.tuple_types.back());
+      if (!ret_type) ret_type = Type::getInt64Ty(Context);
+
+      std::vector<Type *> call_param_types;
+      call_param_types.push_back(PointerType::getUnqual(Context));
+      for (size_t pi = 0; pi + 1 < callee_ann.tuple_types.size(); pi++)
+        call_param_types.push_back(get_llvm_type(callee_ann.tuple_types[pi]));
+
+      FunctionType *call_ft = FunctionType::get(ret_type, call_param_types, false);
+      PointerType *fn_ptr_type = PointerType::getUnqual(Context);
+      Value *fn = Builder.CreateBitCast(fn_i8, fn_ptr_type, "fn");
+
+      std::vector<Value *> args;
+      args.push_back(context_ptr);
+      for (size_t i = 0; i < call->args.size(); i++) {
+        Type *arg_type = call_param_types.size() > i + 1
+            ? call_param_types[i + 1] : Type::getInt64Ty(Context);
+        Value *arg = eval_expr(call->args[i].get(), arg_type);
+        if (!arg) return nullptr;
+        args.push_back(arg);
+      }
+
+      return Builder.CreateCall(call_ft, fn, args, "call");
+    }
+
     std::string actual_callee = call->callee;
     if (!call->type_args.empty()) {
       actual_callee = mangle_name(call->callee, call->type_args);
@@ -996,4 +1212,119 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
 
   errs() << "Error: unknown expression type\n";
   return nullptr;
+}
+
+// -------------------------------------------------------------------------
+// Capture discovery helpers for closures
+// -------------------------------------------------------------------------
+
+void CodeGen::discover_captures(Expr *expr,
+                                 const std::unordered_set<std::string> &param_names,
+                                 std::vector<std::string> &captures) {
+  if (!expr) return;
+  if (auto *id = dynamic_cast<IdentExpr *>(expr)) {
+    if (param_names.find(id->name) == param_names.end() &&
+        named_values.find(id->name) != named_values.end()) {
+      if (std::find(captures.begin(), captures.end(), id->name) == captures.end())
+        captures.push_back(id->name);
+    }
+    return;
+  }
+  if (auto *bin = dynamic_cast<BinaryExpr *>(expr)) {
+    discover_captures(bin->left.get(), param_names, captures);
+    discover_captures(bin->right.get(), param_names, captures);
+    return;
+  }
+  if (auto *unary = dynamic_cast<UnaryExpr *>(expr)) {
+    discover_captures(unary->operand.get(), param_names, captures);
+    return;
+  }
+  if (auto *call = dynamic_cast<CallExpr *>(expr)) {
+    if (call->callee_expr)
+      discover_captures(call->callee_expr.get(), param_names, captures);
+    for (auto &arg : call->args)
+      discover_captures(arg.get(), param_names, captures);
+    return;
+  }
+  if (auto *assign = dynamic_cast<AssignExpr *>(expr)) {
+    discover_captures(assign->target.get(), param_names, captures);
+    discover_captures(assign->value.get(), param_names, captures);
+    return;
+  }
+  if (auto *compound = dynamic_cast<CompoundAssignExpr *>(expr)) {
+    discover_captures(compound->target.get(), param_names, captures);
+    discover_captures(compound->value.get(), param_names, captures);
+    return;
+  }
+  if (auto *field = dynamic_cast<FieldAccessExpr *>(expr)) {
+    discover_captures(field->object.get(), param_names, captures);
+    return;
+  }
+  if (auto *deref = dynamic_cast<DerefExpr *>(expr)) {
+    discover_captures(deref->operand.get(), param_names, captures);
+    return;
+  }
+  if (auto *addr = dynamic_cast<AddressOfExpr *>(expr)) {
+    discover_captures(addr->operand.get(), param_names, captures);
+    return;
+  }
+  if (auto *sub = dynamic_cast<SubscriptExpr *>(expr)) {
+    discover_captures(sub->array.get(), param_names, captures);
+    discover_captures(sub->index.get(), param_names, captures);
+    return;
+  }
+  if (auto *arr = dynamic_cast<ArrayLitExpr *>(expr)) {
+    for (auto &el : arr->elements)
+      discover_captures(el.get(), param_names, captures);
+    return;
+  }
+  if (auto *tup = dynamic_cast<TupleExpr *>(expr)) {
+    for (auto &el : tup->elements)
+      discover_captures(el.get(), param_names, captures);
+    return;
+  }
+  if (auto *ctor = dynamic_cast<ConstructorExpr *>(expr)) {
+    for (auto &[_, fexpr] : ctor->fields)
+      discover_captures(fexpr.get(), param_names, captures);
+    return;
+  }
+  if (auto *match = dynamic_cast<MatchExpr *>(expr)) {
+    discover_captures(match->value.get(), param_names, captures);
+    for (auto &arm : match->arms)
+      discover_captures(arm.expr.get(), param_names, captures);
+    return;
+  }
+  if (auto *ifexpr = dynamic_cast<IfExpr *>(expr)) {
+    discover_captures(ifexpr->condition.get(), param_names, captures);
+    discover_captures(ifexpr->then_expr.get(), param_names, captures);
+    discover_captures(ifexpr->else_expr.get(), param_names, captures);
+    return;
+  }
+}
+
+void CodeGen::discover_captures_in_body(
+    const std::vector<std::unique_ptr<Stmt>> &body,
+    const std::unordered_set<std::string> &param_names,
+    std::vector<std::string> &captures) {
+  for (auto &stmt : body) {
+    if (auto *exprs = dynamic_cast<ExprStmt *>(stmt.get())) {
+      discover_captures(exprs->expr.get(), param_names, captures);
+    } else if (auto *let = dynamic_cast<LetStmt *>(stmt.get())) {
+      discover_captures(let->init_expr.get(), param_names, captures);
+    } else if (auto *ret = dynamic_cast<ReturnStmt *>(stmt.get())) {
+      discover_captures(ret->value.get(), param_names, captures);
+    } else if (auto *ifs = dynamic_cast<IfStmt *>(stmt.get())) {
+      discover_captures(ifs->condition.get(), param_names, captures);
+      discover_captures_in_body(ifs->then_branch, param_names, captures);
+      discover_captures_in_body(ifs->else_branch, param_names, captures);
+    } else if (auto *for_s = dynamic_cast<ForStmt *>(stmt.get())) {
+      if (for_s->init) {
+        if (auto *let_init = dynamic_cast<LetStmt *>(for_s->init.get()))
+          discover_captures(let_init->init_expr.get(), param_names, captures);
+      }
+      discover_captures(for_s->condition.get(), param_names, captures);
+      discover_captures(for_s->update.get(), param_names, captures);
+      discover_captures_in_body(for_s->body, param_names, captures);
+    }
+  }
 }

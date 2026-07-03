@@ -32,6 +32,8 @@ Type *CodeGen::get_llvm_type(TypeKind kind) {
     case TypeKind::Struct:  return nullptr; // must use annotation overload
     case TypeKind::Slice:
       return nullptr; // must use annotation overload
+    case TypeKind::Fn:
+      return nullptr; // must use annotation overload
     case TypeKind::TypeParam:
       errs() << "Internal error: unresolved type parameter in codegen\n";
       return nullptr;
@@ -67,6 +69,18 @@ Type *CodeGen::get_llvm_type(const TypeAnnotation &ann) {
   }
   if (ann.kind == TypeKind::Slice) {
     return get_slice_type(ann.tuple_types[0]);
+  }
+  if (ann.kind == TypeKind::Fn) {
+    std::vector<Type *> fn_param_types;
+    fn_param_types.push_back(PointerType::getUnqual(Context)); // captures context
+    for (size_t pi = 0; pi + 1 < ann.tuple_types.size(); pi++)
+      fn_param_types.push_back(get_llvm_type(ann.tuple_types[pi]));
+    Type *ret_type = get_llvm_type(ann.tuple_types.back());
+    FunctionType *fn_type = FunctionType::get(ret_type, fn_param_types, false);
+    base = PointerType::getUnqual(Context);
+    for (int i = 0; i < ann.pointer_depth; i++)
+      base = PointerType::getUnqual(Context);
+    return base;
   }
   if (ann.kind == TypeKind::Enum) {
     auto it = enum_types.find(ann.struct_name);
@@ -225,6 +239,15 @@ static std::string type_ann_to_string(const TypeAnnotation &ann) {
         s += "_" + type_ann_to_string(et);
       return s;
     }
+    case TypeKind::Slice:
+      return "slice_" + type_ann_to_string(ann.tuple_types[0]);
+    case TypeKind::Fn: {
+      std::string s = "fn";
+      for (size_t pi = 0; pi + 1 < ann.tuple_types.size(); pi++)
+        s += "_" + type_ann_to_string(ann.tuple_types[pi]);
+      s += "_to_" + type_ann_to_string(ann.tuple_types.back());
+      return s;
+    }
   }
   return "?";
 }
@@ -259,7 +282,7 @@ llvm::StructType *CodeGen::get_slice_type(const TypeAnnotation &elem_ann) {
   auto it = slice_type_cache.find(key);
   if (it != slice_type_cache.end()) return it->second;
 
-  Type *ptr = PointerType::getUnqual(elem_type);
+  Type *ptr = PointerType::getUnqual(Context);
   Type *len = Type::getInt64Ty(Context);
   StructType *st = StructType::create(Context, {ptr, len}, key);
   slice_type_cache[key] = st;

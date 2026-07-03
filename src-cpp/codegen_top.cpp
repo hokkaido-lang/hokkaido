@@ -197,6 +197,13 @@ static std::string mangle_ann(const TypeAnnotation &ann) {
       }
       case TypeKind::Slice:
         return "slice_" + mangle_ann(a.tuple_types[0]);
+      case TypeKind::Fn: {
+        std::string s = "fn";
+        for (size_t pi = 0; pi + 1 < a.tuple_types.size(); pi++)
+          s += "_" + mangle_ann(a.tuple_types[pi]);
+        s += "_to_" + mangle_ann(a.tuple_types.back());
+        return s;
+      }
     }
     return "?";
   };
@@ -266,6 +273,8 @@ bool CodeGen::monomorphize_and_codegen(FnDecl *template_decl,
         substitute_in(ta);
       for (auto &arg : call->args)
         walk_expr(arg.get());
+      if (call->callee_expr)
+        walk_expr(call->callee_expr.get());
     } else if (auto *bin = dynamic_cast<BinaryExpr *>(expr)) {
       walk_expr(bin->left.get());
       walk_expr(bin->right.get());
@@ -303,6 +312,8 @@ bool CodeGen::monomorphize_and_codegen(FnDecl *template_decl,
       walk_expr(ifexpr_e->condition.get());
       walk_expr(ifexpr_e->then_expr.get());
       walk_expr(ifexpr_e->else_expr.get());
+    } else if (auto *closure = dynamic_cast<ClosureExpr *>(expr)) {
+      walk_body(closure->body);
     } else if (auto *ret = dynamic_cast<ReturnStmt *>(expr)) {
       walk_expr(ret->value.get());
     }

@@ -1,0 +1,47 @@
+// Hokkaido Phase 4 — Closures
+// ============================
+
+// Test 1: basic lambda with immediate call
+fn test_basic_call() -> int {
+    return lambda (x: int) -> int { return x + 1 }(5)
+}
+
+// Test 2: closure with capture
+fn test_capture() -> int {
+    let base: int = 7
+    return lambda (x: int) -> int { return x + base }(3)
+}
+
+// Test 3: closure with multiple captures
+fn test_multi_capture() -> int {
+    let a: int = 2
+    let b: int = 3
+    let c: int = 5
+    return lambda (x: int) -> int { return x * a + b * c }(4)
+}
+
+// Test 4: closure with a param
+fn test_multi_param() -> int {
+    return lambda (x: int) -> int { return x + 1 }(10)
+}
+
+// Test 5: nested closure
+fn test_nested() -> int {
+    return lambda (x: int) -> int {
+        return lambda (y: int) -> int { return y + x }(20)
+    }(10)
+}
+
+fn main() -> int {
+    let r1: int = test_basic_call()
+    let r2: int = test_capture()
+    let r3: int = test_multi_capture()
+    let r4: int = test_multi_param()
+    let r5: int = test_nested()
+
+    let total: int = r1 + r2 + r3 + r4 + r5
+    // r1 = 6, r2 = 10, r3 = 4*2 + 3*5 = 8 + 15 = 23
+    // r4 = 11, r5 = 30
+    // total = 6 + 10 + 23 + 11 + 30 = 80
+    return total
+}

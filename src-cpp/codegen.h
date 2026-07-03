@@ -3,6 +3,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "llvm/IR/BasicBlock.h"
@@ -150,6 +151,15 @@ private:
   bool monomorphize_and_codegen(FnDecl *template_decl,
                                   const std::vector<TypeAnnotation> &type_args,
                                   const std::string &mangled_name);
+
+  // Closure helpers
+  int closure_counter = 0;
+  void discover_captures(Expr *expr,
+                          const std::unordered_set<std::string> &param_names,
+                          std::vector<std::string> &captures);
+  void discover_captures_in_body(const std::vector<std::unique_ptr<Stmt>> &body,
+                                  const std::unordered_set<std::string> &param_names,
+                                  std::vector<std::string> &captures);
 
   // Source file base directory, used to resolve .cub file paths.
   std::string base_dir;

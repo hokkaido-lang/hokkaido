@@ -31,6 +31,7 @@ enum class TypeKind {
   Enum,
   TypeParam,
   Slice,
+  Fn,
 };
 
 struct TypeAnnotation {
@@ -38,7 +39,7 @@ struct TypeAnnotation {
   int pointer_depth = 0;
   int array_size = 0; // 0 means not an array
   std::string struct_name; // for Struct, Enum, TypeParam kind
-  std::vector<TypeAnnotation> tuple_types; // for Tuple kind
+  std::vector<TypeAnnotation> tuple_types; // for Tuple kind / Fn (param types + return type last)
 };
 
 enum class BinOp {
@@ -95,7 +96,8 @@ struct BinaryExpr : Expr {
 };
 
 struct CallExpr : Expr {
-  std::string callee;
+  std::string callee; // for named calls (e.g. foo(x))
+  std::unique_ptr<Expr> callee_expr; // for expression calls (e.g. closure(x))
   std::vector<std::unique_ptr<Expr>> args;
   std::vector<TypeAnnotation> type_args;
 };
@@ -319,4 +321,10 @@ struct FnDecl : Decl {
   // Generic type parameter names, e.g. ["T", "U"] for `fn foo<T, U>(...)`.
   std::vector<std::string> type_params;
   bool is_pub = false;
+};
+
+struct ClosureExpr : Expr {
+  std::vector<Param> params;
+  TypeAnnotation return_type;
+  std::vector<std::unique_ptr<Stmt>> body;
 };
