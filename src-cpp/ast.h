@@ -30,6 +30,7 @@ enum class TypeKind {
   Struct,
   Enum,
   TypeParam,
+  Slice,
 };
 
 struct TypeAnnotation {
@@ -202,6 +203,7 @@ struct IfExpr : Expr {
   std::unique_ptr<Expr> then_expr;
   std::unique_ptr<Expr> else_expr;
 };
+
 
 struct Decl {
   virtual ~Decl() = default;

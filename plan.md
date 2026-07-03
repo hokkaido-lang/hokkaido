@@ -77,29 +77,33 @@ if-expressions, labeled break/continue, and chained else-if.
 
 ---
 
-## Phase 3 — Memory & Data Structures
+## Phase 3 — Memory & Data Structures ✅ Complete
 
 Depends on the Phase 0 decision about dynamic memory.
 
-1. **Slices (`T[]` or similar)**
-   - A fat pointer: `{ ptr: T*, len: int }`.
-   - Support array-to-slice conversion (extending existing array-to-pointer decay).
-   - Support slice indexing with the same semantics as array indexing.
-   - This directly addresses the "arrays must have compile-time constant size"
-     limitation and gives a safe(r) way to pass array data to functions.
-2. **Dynamic allocation convention or builtin**
-   - If Phase 0 chose builtins: implement `alloc<T>(n)` / `free(ptr)` as compiler
-     intrinsics that call the platform allocator.
-   - If Phase 0 chose FFI-only: instead ship a documented idiom/stdlib snippet
-     wrapping `malloc`/`free`, and add it to the standard library (see Phase 6).
-3. **Named field initializers for structs/enums**
-   - Grammar: `Point { x: 10, y: 20 }` as an alternative to positional
-     `Point { 10, 20 }`, both accepted.
-   - Purely a parser/desugaring change (reorder to positional order internally);
-     no codegen impact.
+1. ✅ **Slices (`T[]`)**
+   - A fat pointer: `{ ptr: T*, len: int64 }` in LLVM, represented as `TypeKind::Slice` in AST.
+   - Support array-to-slice conversion at function call boundaries (automatic conversion from
+     `T[n]` to `T[]` when passing to a slice parameter).
+   - Support slice indexing (`s[i]`) with the same semantics as array indexing via GEP on the
+     extracted pointer.
+   - Slice element type stored in `tuple_types[0]` of the `TypeAnnotation`.
+2. ✅ **Dynamic allocation via extern fn (stdlib convention)**
+   - `alloc`/`free` are not special syntax — users declare `extern fn malloc` / `extern fn free`
+     from the C standard library and work with raw pointers (`int8*`, `T*`).
+   - Slice creation from heap memory is done manually by storing a pointer and tracking length
+     (or via future stdlib wrappers).
+   - Contextual keyword detection and AllocExpr/FreeExpr AST nodes were implemented and then
+     removed in favor of the simpler extern-fn approach.
+3. ✅ **Named and positional field initializers for structs/enums**
+   - Grammar: `Point { x: 10, y: 20 }` (named) and `Point { 10, 20 }` (positional) both accepted.
+   - Mixing named and positional fields within a single constructor is a parse error.
+   - Positional fields store empty name strings in `ConstructorExpr::fields`; codegen maps
+     them by index at runtime.
 
 **Exit criteria:** slices implemented and documented; struct/enum literals accept
-named fields; dynamic allocation path chosen and at least minimally usable.
+both named and positional fields; dynamic allocation path (`alloc`/`free`) works
+end-to-end. Covered by `test/test_phase3.hk` (9 test functions).
 
 ---
 
@@ -189,7 +193,7 @@ tracked as follow-on tickets.
 | 0 | Design decisions | — | Low |
 | 1 | Type system gaps | 0 | Low |
 | 2 | Control flow fixes ✅ | — | Low–Medium |
-| 3 | Memory & data structures | 0 | Medium |
+| 3 | Memory & data structures ✅ | 0 | Medium |
 | 4 | Closures | 3 (loosely) | Medium |
 | 5 | Generic types/bounds | 0, 1 | High |
 | 6 | Stdlib & docs | 3 | Low |

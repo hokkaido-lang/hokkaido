@@ -195,6 +195,8 @@ static std::string mangle_ann(const TypeAnnotation &ann) {
           s += "_" + mangle_ann(et);
         return s;
       }
+      case TypeKind::Slice:
+        return "slice_" + mangle_ann(a.tuple_types[0]);
     }
     return "?";
   };

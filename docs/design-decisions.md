@@ -66,8 +66,11 @@ entire class of subtle bugs (e.g., comparing a "signed flag int" with a
 
 ## 2. Dynamic Memory Strategy
 
-**Decision:** Dynamic memory will be a language feature via built-in
-`alloc<T>(count: uint64) -> T*` and `free(ptr: void*)` compiler intrinsics.
+**Decision:** Dynamic memory is not a language feature. Users declare `extern fn malloc` and
+`extern fn free` from the C standard library and work with raw pointers (`int8*`, `T*`).
+Early prototypes used `alloc<T>(n) / free(ptr)` as contextual keyword intrinsics, but
+these were removed in favor of the simpler extern-fn approach — a future stdlib can provide
+convenience wrappers without adding syntax.
 
 ### Rationale
 
@@ -85,23 +88,15 @@ systems language should eliminate.
 ### Specification
 
 ```
-// Allocate `count` elements of type T, uninitialized.
-// Returns a pointer to the allocated memory, or null on OOM.
-fn alloc<T>(count: uint64) -> T*
-
-// Free memory previously returned by alloc.
-fn free(ptr: void*)
+extern fn malloc(size: int64) -> int8*
+extern fn free(ptr: int8*) -> void
 ```
 
-- `alloc` and `free` are compiler intrinsics, not library functions.
-- `alloc` maps to the platform's aligned malloc (e.g., `aligned_alloc` on
-  POSIX, `_aligned_malloc` on MSVC).
-- The size in bytes is `count * sizeof(T)`, computed at compile time
-  (monomorphization) or via a size-table lookup at runtime for dynamically
-  sized types (deferred to a later phase).
-- `free` takes `void*` (represented as `int8*` in the type system).
-- Out-of-memory returns null; the caller must check. There is no exception
-  mechanism.
+- `malloc` returns a raw `int8*` pointer; users cast to `T*` by reassigning to a `T*` variable.
+- The number of bytes to allocate is `n * sizeof(T)`, computed manually by the caller.
+- `free` accepts an `int8*`; any pointer type can be passed (LLVM opaque pointers).
+- There is no built-in `alloc<T>(n)` syntax or `AllocExpr`/`FreeExpr` AST node.
+- Out-of-memory returns null; the caller must check. There is no exception mechanism.
 
 ### Impact on later phases
 
@@ -204,10 +199,10 @@ produce an expression, not a bare `if` without else. This avoids ambiguity.
 
 ---
 
-## 5. Frozen BNF for Phases 1–2
+## 5. Frozen BNF for Phases 1–3
 
 The following BNF supersedes the existing informal syntax descriptions for
-all features planned in Phases 1 and 2. It is the canonical reference;
+all features planned in Phases 1, 2, and 3. It is the canonical reference;
 any discrepancy with the prose documentation should be resolved in favor of
 this BNF.
 
@@ -227,7 +222,7 @@ escaped_char ::= "\\" ("n" | "t" | "\\" | "'" | '"')
 ### Types
 
 ```
-type       ::= base_type ("[" int_lit "]")? ("*")*
+type       ::= base_type ("[" int_lit "]")? ("*")* ("[" "]")?   // T[n] array, T[] slice, T* pointer
 base_type  ::= "int8" | "int16" | "int32" | "int64" | "int"
              | "uint8" | "uint16" | "uint32" | "uint64"
              | "float16" | "float32" | "float64" | "float"
@@ -245,6 +240,11 @@ Notes:
   is just `T` (parenthesized type), not a tuple.
 - The array size `int_lit` must be positive. Zero-size arrays are not
   allowed.
+- A slice type `T[]` is written with empty brackets and represents a fat
+  pointer `{ ptr: T*, len: int64 }`. Slices are a distinct type kind from
+  arrays and pointers.
+- `int[5][]` is a slice of arrays (each element is `int[5]`). Pointer depth
+  and slice are orthogonal: `int[]*` is a pointer to a slice.
 
 ### Declarations
 
@@ -286,9 +286,9 @@ expr_stmt  ::= expr
 let_stmt   ::= "let" ident ":" type "=" expr
 return_stmt ::= "return" expr?
 if_stmt    ::= "if" expr block ("else" (block | if_stmt))?
-for_stmt   ::= "for" "(" stmt? ";" expr? ";" expr? ")" block
-break_stmt  ::= "break"
-continue_stmt ::= "continue"
+for_stmt   ::= ("'" ident)? "for" "(" stmt? ";" expr? ";" expr? ")" block
+break_stmt  ::= "break" ("'" ident)?        // optional label
+continue_stmt ::= "continue" ("'" ident)?   // optional label
 ```
 
 ### Expressions
@@ -321,17 +321,23 @@ primary    ::= int_lit | float_lit | char_lit | str_lit
              | "(" expr ")"
              | "[" expr ("," expr)* "]"
              | struct_or_enum_ctor
+             | "if" expr block "else" (expr | "if" ...)  // if-expression
              | "match" expr "{" match_arm ("," match_arm)* "}"
              | "asm" "(" str_lit ")"
              | "atomic" "(" atomic_op "," expr ("," expr)* ")"
 
-struct_or_enum_ctor ::= ident "{" (named_field ("," named_field)* ","?)? "}"
+struct_or_enum_ctor ::= ident ("::" ident)? "{" field_list "}"
+field_list ::= (named_field ("," named_field)* ","?)?    // named: `x: expr`
+             | (positional_field ("," positional_field)* ","?)?  // positional: expr
 named_field ::= ident ":" expr
+positional_field ::= expr
+// Mixing named and positional fields in a single constructor is an error.
 
-match_arm  ::= pattern "=>" block
-pattern    ::= ident ("{" (ident ("," ident)*)? "}")?   // variant pattern
+match_arm  ::= pattern "=>" expr                          // arm body is an expression
+pattern    ::= ident ("::" ident)* ("{" (pattern_field ("," pattern_field)*)? "}")?
              | "_"                                        // wildcard
              | int_lit | char_lit                          // literal pattern
+pattern_field ::= ident (":" ident)?                     // shorthand `x` or explicit `x: pat`
 
 atomic_op  ::= "xchg" | "add" | "sub" | "and" | "or" | "xor"
              | "cmpxchg" | "fence"
@@ -347,4 +353,6 @@ atomic_op  ::= "xchg" | "add" | "sub" | "and" | "or" | "xor"
 | 2 | Dynamic memory | Built-in `alloc<T>` / `free` intrinsics | Phases 3, 6 |
 | 3 | Generic trait bounds | Deferred to future major version | Phase 5 scope reduced; operator overloading deferred |
 | 4 | `if` expression | New `IfExpr` node (coexists with `IfStmt`) | Phase 2 (completed) |
-| 5 | BNF freeze | BNF in this document is canonical for Phases 1–2 | Parser implementation |
+| 5 | BNF freeze | BNF in this document is canonical for Phases 1–3 | Parser implementation |
+| 6 | String type | Opaque pointer (`int8*`) | All phases |
+| 7 | Dynamic memory approach | Extern fn (`malloc`/`free`), not built-in syntax | Phase 3 (completed) |

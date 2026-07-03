@@ -19,7 +19,7 @@ bool CodeGen::alloc_and_store(const std::string &name, TypeKind kind,
   Builder.CreateStore(init, alloca);
   named_values[name] = alloca;
   named_types[name] = kind;
-  if (kind == TypeKind::Struct || kind == TypeKind::Enum || kind == TypeKind::Tuple || ann.pointer_depth > 0)
+  if (kind == TypeKind::Struct || kind == TypeKind::Enum || kind == TypeKind::Tuple || kind == TypeKind::Slice || ann.pointer_depth > 0)
     named_type_anns[name] = ann;
   return true;
 }
@@ -182,6 +182,10 @@ bool CodeGen::gen_let_decl(LetDecl *decl) {
     case TypeKind::Tuple:
       init = eval_expr(decl->init_expr.get(), llvm_type);
       break;
+    case TypeKind::Slice:
+      init = eval_expr(decl->init_expr.get(), llvm_type);
+      if (!init) return false;
+      break;
     default:
       break;
   }
@@ -293,6 +297,10 @@ bool CodeGen::gen_let_stmt(LetStmt *stmt) {
     case TypeKind::Tuple:
       init = eval_expr(stmt->init_expr.get(), llvm_type);
       break;
+    case TypeKind::Slice:
+      init = eval_expr(stmt->init_expr.get(), llvm_type);
+      if (!init) return false;
+      break;
     default:
       break;
   }
@@ -326,7 +334,7 @@ bool CodeGen::gen_fn_body(FnDecl *decl, Function *fn) {
     named_types[pname] = decl->params[i].type_ann.kind;
     {
       auto &ta = decl->params[i].type_ann;
-      if (ta.kind == TypeKind::Struct || ta.kind == TypeKind::Enum || ta.kind == TypeKind::Tuple || ta.pointer_depth > 0 || ta.array_size > 0)
+      if (ta.kind == TypeKind::Struct || ta.kind == TypeKind::Enum || ta.kind == TypeKind::Tuple || ta.kind == TypeKind::Slice || ta.pointer_depth > 0 || ta.array_size > 0)
         named_type_anns[pname] = ta;
     }
     i++;

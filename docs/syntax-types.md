@@ -98,6 +98,41 @@ Point[10]  Array of 10 Point structs
 
 Array size must be a literal integer (compile-time constant). See [Arrays](/docs/syntax-data-structures#arrays).
 
+### Slice types
+
+A slice type is written by appending `[]` to the element type (no size):
+
+```
+int64[]    Slice (dynamically-sized view) of int64 values
+int[]      Slice of int values
+Point[]    Slice of Point structs
+```
+
+A slice is a fat pointer `{ ptr: T*, len: int64 }` in memory — it pairs a pointer to the
+first element with a 64-bit length. Slices can be created from an array by passing it to a
+function expecting a slice parameter (automatic array-to-slice conversion).
+
+Slice indexing uses the same `s[i]` syntax as arrays.
+
+For heap-allocated slices, use `extern fn malloc` / `extern fn free` from the C standard
+library and work with raw pointers:
+
+```
+extern fn malloc(size: int64) -> int8*
+extern fn free(ptr: int8*) -> void
+
+fn main() -> int64 {
+    let ptr: int8* = malloc(24)
+    let arr: int64* = ptr
+    arr[0] = 10
+    arr[1] = 20
+    arr[2] = 30
+    let s: int64 = arr[0] + arr[1] + arr[2]
+    free(ptr)
+    return s
+}
+```
+
 ### Tuple types
 
 A tuple type is written as a comma-separated list of types inside parentheses:
@@ -137,6 +172,8 @@ There are no implicit conversions except:
 - `bool` (`i1`) is zero-extended to wider integer types when needed (e.g. in arithmetic).
 - `int64` values are silently truncated to `int32` when assigned to an `int32` variable.
 - There are no implicit conversions between signed and unsigned types of different signedness.
+- An array `T[n]` converts implicitly to a slice `T[]` when passed to a function parameter
+  expecting a slice. The slice's `len` is set to `n` (the array's compile-time size).
 
 ## Variables
 

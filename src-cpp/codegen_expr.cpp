@@ -50,6 +50,9 @@ TypeAnnotation CodeGen::resolve_expr_type(Expr *expr) {
       base.array_size = 0;
       return base;
     }
+    if (base.kind == TypeKind::Slice) {
+      return base.tuple_types[0];
+    }
     if (base.pointer_depth > 0) {
       base.pointer_depth--;
       return base;
@@ -177,6 +180,19 @@ Value *CodeGen::get_lvalue_ptr(Expr *expr, Type **out_type) {
     Value *index = eval_expr(sub->index.get(), Type::getInt64Ty(Context));
     if (!index) return nullptr;
 
+    if (base_ann.kind == TypeKind::Slice) {
+      // Slice subscript: extract ptr from slice struct, then GEP
+      Type *slice_type = get_llvm_type(base_ann);
+      Value *slice_val = eval_expr(sub->array.get(), slice_type);
+      if (!slice_val) return nullptr;
+      Value *ptr = Builder.CreateExtractValue(slice_val, {0}, "slice_ptr");
+      TypeAnnotation elem_ann = base_ann.tuple_types[0];
+      Type *elem_type = get_llvm_type(elem_ann);
+      Value *elem_ptr = Builder.CreateGEP(elem_type, ptr, index, "slice_elem_ptr");
+      if (out_type) *out_type = elem_type;
+      return elem_ptr;
+    }
+
     if (base_ann.array_size > 0) {
       Type *arr_llvm_type = nullptr;
       Value *arr_ptr = get_lvalue_ptr(sub->array.get(), &arr_llvm_type);
@@ -296,6 +312,29 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
         return Builder.CreateGEP(arr_type, it->second, indices, id->name);
       }
     }
+    // Check if this variable is an array and we need array-to-slice conversion
+    auto ann_it = named_type_anns.find(id->name);
+    if (ann_it != named_type_anns.end() && ann_it->second.array_size > 0) {
+      TypeAnnotation &var_ann = ann_it->second;
+      Type *var_llvm = get_llvm_type(var_ann);
+      if (auto *var_arr_type = dyn_cast_or_null<ArrayType>(var_llvm)) {
+        // If expected type is the slice type for this element, do conversion
+        TypeAnnotation slice_elem = var_ann;
+        slice_elem.array_size = 0;
+        Type *slice_type = get_slice_type(slice_elem);
+        if (expected_type == slice_type) {
+          Value *indices[] = {
+            ConstantInt::get(Type::getInt64Ty(Context), 0),
+            ConstantInt::get(Type::getInt64Ty(Context), 0)
+          };
+          Value *ptr = Builder.CreateGEP(var_arr_type, it->second, indices, "slice_ptr");
+          Value *len = ConstantInt::get(Type::getInt64Ty(Context), var_arr_type->getNumElements());
+          Value *undef = UndefValue::get(expected_type);
+          Value *with_ptr = Builder.CreateInsertValue(undef, ptr, {0});
+          return Builder.CreateInsertValue(with_ptr, len, {1});
+        }
+      }
+    }
     if (expected_type)
       return Builder.CreateLoad(expected_type, it->second, id->name);
     return Builder.CreateLoad(alloc_type, it->second, id->name);
@@ -306,11 +345,18 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
   }
 
   if (auto *ctor = dynamic_cast<ConstructorExpr *>(expr)) {
+    // Normalize variant_name: strip enum prefix if present
+    std::string ctor_var_short = ctor->variant_name;
+    {
+      size_t pos = ctor_var_short.rfind("::");
+      if (pos != std::string::npos)
+        ctor_var_short = ctor_var_short.substr(pos + 2);
+    }
     StructType *enum_st = nullptr;
     std::string enum_name;
     int variant_idx = -1;
     for (auto &[ename, st] : enum_types) {
-      int idx = get_enum_variant_index(ename, ctor->variant_name);
+      int idx = get_enum_variant_index(ename, ctor_var_short);
       if (idx >= 0) {
         enum_st = st;
         enum_name = ename;
@@ -327,17 +373,29 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
       Value *var_data = UndefValue::get(var_type);
       for (size_t fi = 0; fi < ctor->fields.size(); fi++) {
         auto &[field_name, field_expr] = ctor->fields[fi];
-        TypeAnnotation field_ann = get_struct_field_type(
-            enum_name + "::" + ctor->variant_name, field_name);
-        Type *field_type = get_llvm_type(field_ann);
-        if (!field_type) field_type = Type::getInt64Ty(Context);
-        int actual_idx = get_struct_field_index(
-            enum_name + "::" + ctor->variant_name, field_name);
+        int actual_idx;
+        TypeAnnotation field_ann;
+        if (field_name.empty()) {
+          // Positional: use position index
+          actual_idx = (int)fi;
+          std::string struct_key = enum_name + "::" + ctor_var_short;
+          auto var_it = struct_fields.find(struct_key);
+          if (var_it != struct_fields.end() && (size_t)actual_idx < var_it->second.size())
+            field_ann = var_it->second[actual_idx].second;
+          else
+            field_ann = {TypeKind::Int64};
+        } else {
+          std::string struct_key = enum_name + "::" + ctor_var_short;
+          field_ann = get_struct_field_type(struct_key, field_name);
+          actual_idx = get_struct_field_index(struct_key, field_name);
+        }
         if (actual_idx < 0) {
           errs() << "Error: variant '" << ctor->variant_name
                  << "' has no field '" << field_name << "'\n";
           return nullptr;
         }
+        Type *field_type = get_llvm_type(field_ann);
+        if (!field_type) field_type = Type::getInt64Ty(Context);
         Value *fv = eval_expr(field_expr.get(), field_type);
         if (!fv) return nullptr;
         var_data = Builder.CreateInsertValue(var_data, fv,
@@ -353,17 +411,27 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
       Value *result = UndefValue::get(st);
       for (size_t fi = 0; fi < ctor->fields.size(); fi++) {
         auto &[field_name, field_expr] = ctor->fields[fi];
-        TypeAnnotation field_ann = get_struct_field_type(
-            ctor->variant_name, field_name);
-        Type *field_type = get_llvm_type(field_ann);
-        if (!field_type) field_type = Type::getInt64Ty(Context);
-        int actual_idx = get_struct_field_index(
-            ctor->variant_name, field_name);
+        int actual_idx;
+        TypeAnnotation field_ann;
+        if (field_name.empty()) {
+          // Positional: use position index
+          actual_idx = (int)fi;
+          auto it = struct_fields.find(ctor->variant_name);
+          if (it != struct_fields.end() && (size_t)actual_idx < it->second.size())
+            field_ann = it->second[actual_idx].second;
+          else
+            field_ann = {TypeKind::Int64};
+        } else {
+          field_ann = get_struct_field_type(ctor->variant_name, field_name);
+          actual_idx = get_struct_field_index(ctor->variant_name, field_name);
+        }
         if (actual_idx < 0) {
           errs() << "Error: struct '" << ctor->variant_name
                  << "' has no field '" << field_name << "'\n";
           return nullptr;
         }
+        Type *field_type = get_llvm_type(field_ann);
+        if (!field_type) field_type = Type::getInt64Ty(Context);
         Value *fv = eval_expr(field_expr.get(), field_type);
         if (!fv) return nullptr;
         result = Builder.CreateInsertValue(result, fv,
@@ -434,10 +502,21 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
   if (auto *sub = dynamic_cast<SubscriptExpr *>(expr)) {
     TypeAnnotation base_ann = resolve_expr_type(sub->array.get());
     bool is_array_sub = base_ann.array_size > 0;
-    bool is_ptr_sub = !is_array_sub && base_ann.pointer_depth > 0;
+    bool is_slice_sub = base_ann.kind == TypeKind::Slice;
+    bool is_ptr_sub = !is_array_sub && !is_slice_sub && base_ann.pointer_depth > 0;
     Value *elem_ptr = nullptr;
 
-    if (is_array_sub) {
+    if (is_slice_sub) {
+      Type *slice_type = get_llvm_type(base_ann);
+      Value *slice_val = eval_expr(sub->array.get(), slice_type);
+      if (!slice_val) return nullptr;
+      Value *ptr = Builder.CreateExtractValue(slice_val, {0}, "slice_ptr");
+      Value *index = eval_expr(sub->index.get(), Type::getInt64Ty(Context));
+      if (!index) return nullptr;
+      TypeAnnotation elem_ann = base_ann.tuple_types[0];
+      Type *elem_type = get_llvm_type(elem_ann);
+      elem_ptr = Builder.CreateGEP(elem_type, ptr, index, "slice_elem_ptr");
+    } else if (is_array_sub) {
       Type *arr_llvm_type = nullptr;
       Value *arr_ptr = get_lvalue_ptr(sub->array.get(), &arr_llvm_type);
       if (!arr_ptr) return nullptr;

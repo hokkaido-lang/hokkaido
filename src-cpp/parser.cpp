@@ -356,9 +356,16 @@ TypeAnnotation Parser::parse_type_annotation() {
     next_token();
   }
 
-  // Parse array size (e.g. int[10])
+  // Parse array size (e.g. int[10]) or slice (e.g. int[])
   if (cur_tok.type == TokenType::LSquare) {
     next_token(); // consume '['
+    if (cur_tok.type == TokenType::RSquare) {
+      // Slice type: T[]
+      next_token(); // consume ']'
+      TypeAnnotation slice_ann = {TypeKind::Slice};
+      slice_ann.tuple_types.push_back(ann);
+      return slice_ann;
+    }
     if (cur_tok.type != TokenType::Number) {
       set_error("expected array size as number literal");
       return ann;
@@ -469,6 +476,7 @@ std::unique_ptr<AdtDecl> Parser::parse_enum_decl(bool is_pub) {
     }
     variant.name = cur_tok.text;
     known_variants.insert(cur_tok.text);
+    known_variants.insert(name + "::" + cur_tok.text);
     next_token();
     skip_newlines();
 
@@ -1415,6 +1423,7 @@ std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
     }
   }
   // Handle constructor expression: VariantName { field: expr, ... }
+  // or positional: VariantName { expr, expr, ... }
   if (cur_tok.type == TokenType::LBrace) {
     auto *ident = dynamic_cast<IdentExpr *>(left.get());
     if (ident && (known_variants.count(ident->name) > 0 || known_structs.count(ident->name) > 0)) {
@@ -1423,23 +1432,41 @@ std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
       skip_newlines();
       auto ctor = std::make_unique<ConstructorExpr>();
       ctor->variant_name = variant_name;
+      bool is_named = false;
+      bool has_fields = false;
       while (cur_tok.type != TokenType::RBrace && cur_tok.type != TokenType::Eof) {
-        if (cur_tok.type != TokenType::Identifier) {
-          set_error("expected field name in constructor");
-          return nullptr;
+        std::string field_name;
+        std::unique_ptr<Expr> field_val;
+        if (cur_tok.type == TokenType::Identifier) {
+          std::string possible_name = cur_tok.text;
+          next_token();
+          skip_newlines();
+          if (cur_tok.type == TokenType::Colon) {
+            // Named field
+            is_named = true;
+            field_name = possible_name;
+            next_token(); // consume ':'
+            skip_newlines();
+            field_val = parse_expr();
+            if (!field_val) return nullptr;
+          } else {
+            // Positional: the identifier is an expression
+            if (is_named && has_fields) {
+              set_error("cannot mix named and positional fields");
+              return nullptr;
+            }
+            field_val = std::make_unique<IdentExpr>(possible_name);
+          }
+        } else {
+          if (is_named && has_fields) {
+            set_error("cannot mix named and positional fields");
+            return nullptr;
+          }
+          field_val = parse_expr();
+          if (!field_val) return nullptr;
         }
-        std::string field_name = cur_tok.text;
-        next_token();
-        skip_newlines();
-        if (cur_tok.type != TokenType::Colon) {
-          set_error("expected ':' after field name in constructor");
-          return nullptr;
-        }
-        next_token();
-        skip_newlines();
-        auto field_val = parse_expr();
-        if (!field_val) return nullptr;
         ctor->fields.push_back({field_name, std::move(field_val)});
+        has_fields = true;
         skip_newlines();
         if (cur_tok.type == TokenType::Comma) {
           next_token();
@@ -1853,6 +1880,16 @@ std::unique_ptr<Pattern> Parser::parse_pattern() {
     // Wildcard
     if (name == "_")
       return std::make_unique<WildcardPattern>();
+    // Qualified enum variant: EnumName::VariantName or VariantName
+    while (cur_tok.type == TokenType::ColonColon) {
+      next_token(); // consume '::'
+      if (cur_tok.type != TokenType::Identifier) {
+        set_error("expected variant name after '::'");
+        return nullptr;
+      }
+      name += "::" + cur_tok.text;
+      next_token();
+    }
     // Struct pattern: Identifier { ... }
     skip_newlines();
     if (cur_tok.type == TokenType::LBrace) {

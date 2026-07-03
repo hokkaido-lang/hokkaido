@@ -49,8 +49,16 @@ Value *CodeGen::gen_pattern_check(Pattern *pat, Value *val,
                        enum_types.find(val_ann.struct_name) != enum_types.end());
     int variant_data_idx = -1;
 
+    // Normalize variant name: strip enum prefix if present
+    std::string sp_short = sp->struct_name;
+    {
+      size_t pos = sp_short.rfind("::");
+      if (pos != std::string::npos)
+        sp_short = sp_short.substr(pos + 2);
+    }
+
     if (is_variant) {
-      int vi = get_enum_variant_index(val_ann.struct_name, sp->struct_name);
+      int vi = get_enum_variant_index(val_ann.struct_name, sp_short);
       if (vi < 0) {
         errs() << "Error: '" << sp->struct_name << "' is not a variant of enum '"
                << val_ann.struct_name << "'\n";
@@ -64,8 +72,8 @@ Value *CodeGen::gen_pattern_check(Pattern *pat, Value *val,
       Value *cond = tag_match;
 
       for (auto &[field_name, sub_pat] : sp->fields) {
-        int idx = get_struct_field_index(
-            val_ann.struct_name + "::" + sp->struct_name, field_name);
+        std::string struct_key = val_ann.struct_name + "::" + sp_short;
+        int idx = get_struct_field_index(struct_key, field_name);
         if (idx < 0) {
           errs() << "Error: variant '" << sp->struct_name
                  << "' has no field '" << field_name << "'\n";
@@ -73,8 +81,7 @@ Value *CodeGen::gen_pattern_check(Pattern *pat, Value *val,
         }
         Value *field_val = Builder.CreateExtractValue(val,
             {(unsigned)variant_data_idx, (unsigned)idx}, field_name);
-        TypeAnnotation field_ann = get_struct_field_type(
-            val_ann.struct_name + "::" + sp->struct_name, field_name);
+        TypeAnnotation field_ann = get_struct_field_type(struct_key, field_name);
         Value *sub_cond = gen_pattern_check(sub_pat.get(), field_val, field_ann);
         if (!sub_cond) return nullptr;
         cond = Builder.CreateAnd(cond, sub_cond);
@@ -132,8 +139,16 @@ bool CodeGen::gen_pattern_bind(Pattern *pat, Value *val,
                        enum_types.find(val_ann.struct_name) != enum_types.end());
     int variant_data_idx = -1;
 
+    // Normalize variant name: strip enum prefix if present
+    std::string sp_short = sp->struct_name;
+    {
+      size_t pos = sp_short.rfind("::");
+      if (pos != std::string::npos)
+        sp_short = sp_short.substr(pos + 2);
+    }
+
     if (is_variant) {
-      int vi = get_enum_variant_index(val_ann.struct_name, sp->struct_name);
+      int vi = get_enum_variant_index(val_ann.struct_name, sp_short);
       if (vi < 0) return false;
       variant_data_idx = 1 + vi;
     }
@@ -142,13 +157,12 @@ bool CodeGen::gen_pattern_bind(Pattern *pat, Value *val,
       Value *field_val;
       TypeAnnotation field_ann;
       if (is_variant) {
-        int idx = get_struct_field_index(
-            val_ann.struct_name + "::" + sp->struct_name, field_name);
+        std::string struct_key = val_ann.struct_name + "::" + sp_short;
+        int idx = get_struct_field_index(struct_key, field_name);
         if (idx < 0) return false;
         field_val = Builder.CreateExtractValue(val,
             {(unsigned)variant_data_idx, (unsigned)idx}, field_name);
-        field_ann = get_struct_field_type(
-            val_ann.struct_name + "::" + sp->struct_name, field_name);
+        field_ann = get_struct_field_type(struct_key, field_name);
       } else {
         int idx = get_struct_field_index(sp->struct_name, field_name);
         if (idx < 0) return false;

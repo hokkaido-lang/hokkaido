@@ -30,6 +30,8 @@ Type *CodeGen::get_llvm_type(TypeKind kind) {
     case TypeKind::Cubical: return Type::getInt64Ty(Context);
     case TypeKind::Tuple:   return nullptr; // must use annotation overload
     case TypeKind::Struct:  return nullptr; // must use annotation overload
+    case TypeKind::Slice:
+      return nullptr; // must use annotation overload
     case TypeKind::TypeParam:
       errs() << "Internal error: unresolved type parameter in codegen\n";
       return nullptr;
@@ -62,6 +64,9 @@ Type *CodeGen::get_llvm_type(const TypeAnnotation &ann) {
     }
     errs() << "Error: unknown struct/enum type '" << ann.struct_name << "'\n";
     return nullptr;
+  }
+  if (ann.kind == TypeKind::Slice) {
+    return get_slice_type(ann.tuple_types[0]);
   }
   if (ann.kind == TypeKind::Enum) {
     auto it = enum_types.find(ann.struct_name);
@@ -175,8 +180,13 @@ int CodeGen::get_enum_variant_index(const std::string &enum_name,
                                      const std::string &variant_name) {
   auto it = enum_variants.find(enum_name);
   if (it == enum_variants.end()) return -1;
+  // variant_name may be "Some" or "EnumName::Some" — strip prefix
+  std::string short_name = variant_name;
+  size_t pos = short_name.rfind("::");
+  if (pos != std::string::npos)
+    short_name = short_name.substr(pos + 2);
   for (size_t i = 0; i < it->second.size(); i++) {
-    if (it->second[i].first == variant_name) return (int)i;
+    if (it->second[i].first == short_name) return (int)i;
   }
   return -1;
 }
@@ -240,5 +250,18 @@ llvm::StructType *CodeGen::get_tuple_type(const std::vector<TypeAnnotation> &ele
 
   StructType *st = StructType::create(Context, llvm_elem_types, key);
   tuple_type_cache[key] = st;
+  return st;
+}
+
+llvm::StructType *CodeGen::get_slice_type(const TypeAnnotation &elem_ann) {
+  Type *elem_type = get_llvm_type(elem_ann);
+  std::string key = "slice_" + type_ann_to_string(elem_ann);
+  auto it = slice_type_cache.find(key);
+  if (it != slice_type_cache.end()) return it->second;
+
+  Type *ptr = PointerType::getUnqual(elem_type);
+  Type *len = Type::getInt64Ty(Context);
+  StructType *st = StructType::create(Context, {ptr, len}, key);
+  slice_type_cache[key] = st;
   return st;
 }

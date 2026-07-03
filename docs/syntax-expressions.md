@@ -271,6 +271,25 @@ atomic(fence)                                   // memory fence
 
 `atomic(...)` is a primary expression (precedence level 1).
 
+## Constructor expressions
+
+Struct values and enum variants are constructed using the `{ }` syntax:
+
+```
+Point { x: 10, y: 20 }      // named fields
+Point { 10, 20 }             // positional fields
+Opt::Some { 42 }             // enum variant with positional field
+Opt::Some { val: 42 }        // enum variant with named field
+```
+
+Named and positional fields cannot be mixed within a single constructor — the parser
+emits an error if both forms appear. Named fields can appear in any order; the compiler
+maps them by name to the correct struct field position. Positional fields are mapped by
+index.
+
+Constructor expressions are a postfix operator on the type/variant name (precedence
+level 1, same as function calls and field access).
+
 ## Function calls
 
 A function call evaluates the argument expressions left to right, then transfers control
