@@ -69,6 +69,8 @@ private:
   std::unique_ptr<FnDecl> parse_extern_fn_decl();
   std::unique_ptr<StructDecl> parse_struct_decl(bool is_pub);
   std::unique_ptr<AdtDecl> parse_enum_decl(bool is_pub);
+  std::unique_ptr<TraitDecl> parse_trait_decl(bool is_pub);
+  std::unique_ptr<ImplDecl> parse_impl_decl();
   TypeAnnotation parse_type_annotation();
 
   // Statements

@@ -16,6 +16,7 @@ deliberately minimal.
 - [Variables](/docs/syntax-types#variables)
 - [Functions](/docs/syntax-functions#functions)
 - [Generic functions](/docs/syntax-functions#generic-functions)
+- [Trait bounds](/docs/syntax-functions#trait-bounds)
 - [Return](/docs/syntax-functions#return)
 - [If / Else](/docs/syntax-control-flow#if--else)
 - [For loop](/docs/syntax-control-flow#for-loop)

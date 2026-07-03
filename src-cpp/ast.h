@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -242,6 +243,7 @@ struct StructDecl : Decl {
   std::vector<StructField> fields;
   bool is_pub = false;
   std::vector<std::string> type_params; // generic type params like <T, U>
+  std::map<std::string, std::vector<std::string>> type_param_bounds; // T -> [Trait1, Trait2]
 };
 
 // Algebraic data types (tagged unions / Rust-style enums)
@@ -323,6 +325,8 @@ struct FnDecl : Decl {
   bool is_variadic = false;
   // Generic type parameter names, e.g. ["T", "U"] for `fn foo<T, U>(...)`.
   std::vector<std::string> type_params;
+  // Trait bounds on type params: T -> [Trait1, Trait2]
+  std::map<std::string, std::vector<std::string>> type_param_bounds;
   bool is_pub = false;
 };
 
@@ -330,4 +334,33 @@ struct ClosureExpr : Expr {
   std::vector<Param> params;
   TypeAnnotation return_type;
   std::vector<std::unique_ptr<Stmt>> body;
+};
+
+// Trait method signature (declaration only, no body)
+struct TraitMethodSig {
+  std::string name;
+  std::vector<Param> params;
+  TypeAnnotation return_type;
+};
+
+// Trait declaration: trait Name { fn method(...) -> T; ... }
+struct TraitDecl : Decl {
+  std::string name;
+  std::vector<TraitMethodSig> methods;
+  bool is_pub = false;
+};
+
+// Impl block: impl Type { ... } or impl Trait for Type { ... }
+struct ImplDecl : Decl {
+  std::string trait_name; // empty for inherent impl
+  std::string type_name;
+  std::vector<std::unique_ptr<FnDecl>> methods;
+  bool is_pub = false;
+};
+
+// Method call expression: obj.method(args)
+struct MethodCallExpr : Expr {
+  std::unique_ptr<Expr> object;
+  std::string method_name;
+  std::vector<std::unique_ptr<Expr>> args;
 };

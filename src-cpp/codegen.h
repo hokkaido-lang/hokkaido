@@ -51,6 +51,15 @@ class CodeGen {
   // Enum variant info: enum name -> vector of (variant_name, fields_vector)
   std::map<std::string, std::vector<std::pair<std::string, std::vector<StructField>>>> enum_variants;
 
+  // Impl method registry: (type_name, method_name) -> mangled function name
+  std::map<std::pair<std::string, std::string>, std::string> impl_methods;
+  // Impl method return types: mangled_name -> return type annotation
+  std::map<std::string, TypeAnnotation> impl_method_ret_types;
+  // Trait declarations: trait_name -> method signatures
+  std::map<std::string, std::vector<TraitMethodSig>> trait_decls;
+  // Type impl registry: (type_name, trait_name) -> true (for bound checking)
+  std::map<std::pair<std::string, std::string>, bool> type_impls;
+
   // Generic function templates (name -> AST)
   std::map<std::string, FnDecl *> generic_templates;
   // Monomorphized instantiations (mangled_name -> cloned FnDecl)
@@ -73,6 +82,9 @@ private:
 
   // Top-level codegen
   bool gen_main_body(const std::vector<std::unique_ptr<Decl>> &decls);
+
+  // Impl registration
+  bool register_impl_decl(ImplDecl *decl);
 
   // Struct declarations
   void register_struct_decl(StructDecl *decl);

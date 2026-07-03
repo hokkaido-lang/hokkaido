@@ -334,6 +334,8 @@ Token Lexer::lex_identifier(int l, int c) {
   if (id == "void") return {TokenType::Void, id, 0, l, c};
   if (id == "char") return {TokenType::Char, id, 0, l, c};
   if (id == "struct") return {TokenType::Struct, id, 0, l, c};
+  if (id == "trait") return {TokenType::Trait, id, 0, l, c};
+  if (id == "impl") return {TokenType::Impl, id, 0, l, c};
   if (id == "true") return {TokenType::True, id, 1.0, l, c};
   if (id == "false") return {TokenType::False, id, 0.0, l, c};
 

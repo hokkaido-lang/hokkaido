@@ -20,6 +20,8 @@ bool CodeGen::generate(const std::vector<std::unique_ptr<Decl>> &decls) {
       register_struct_decl(sd);
     } else if (auto *ed = dynamic_cast<AdtDecl *>(decl.get())) {
       register_enum_decl(ed);
+    } else if (auto *tr = dynamic_cast<TraitDecl *>(decl.get())) {
+      trait_decls[tr->name] = tr->methods;
     }
   }
 
@@ -57,6 +59,13 @@ bool CodeGen::generate(const std::vector<std::unique_ptr<Decl>> &decls) {
       }
       Function::Create(FT, Function::ExternalLinkage, llvm_name, &M);
       fn_decls.push_back(fn);
+    }
+  }
+
+  // Register trait impls and inherent impls
+  for (auto &decl : decls) {
+    if (auto *im = dynamic_cast<ImplDecl *>(decl.get())) {
+      if (!register_impl_decl(im)) return false;
     }
   }
 
@@ -254,6 +263,27 @@ bool CodeGen::monomorphize_and_codegen(FnDecl *template_decl,
 
   substitute_in(template_decl->return_type);
 
+  // Verify trait bounds on type parameters
+  for (size_t i = 0; i < template_decl->type_params.size() && i < type_args.size(); i++) {
+    auto &tp_name = template_decl->type_params[i];
+    auto &tp_type = type_args[i];
+    auto bit = template_decl->type_param_bounds.find(tp_name);
+    if (bit != template_decl->type_param_bounds.end()) {
+      for (auto &bound_trait : bit->second) {
+        std::string type_key;
+        if (tp_type.kind == TypeKind::Struct)
+          type_key = tp_type.struct_name;
+        else
+          type_key = mangle_ann(tp_type);
+        if (type_impls.find({type_key, bound_trait}) == type_impls.end()) {
+          errs() << "Error: type '" << type_key << "' does not implement trait '"
+                 << bound_trait << "' required by bound on '" << tp_name << "'\n";
+          return false;
+        }
+      }
+    }
+  }
+
   std::function<void(std::vector<std::unique_ptr<Stmt>>&)> walk_body;
   std::function<void(Expr*)> walk_expr;
   walk_expr = [&](Expr *expr) {
@@ -283,6 +313,10 @@ bool CodeGen::monomorphize_and_codegen(FnDecl *template_decl,
       walk_expr(compound->value.get());
     } else if (auto *field = dynamic_cast<FieldAccessExpr *>(expr)) {
       walk_expr(field->object.get());
+    } else if (auto *mcall = dynamic_cast<MethodCallExpr *>(expr)) {
+      walk_expr(mcall->object.get());
+      for (auto &arg : mcall->args)
+        walk_expr(arg.get());
     } else if (auto *deref = dynamic_cast<DerefExpr *>(expr)) {
       walk_expr(deref->operand.get());
     } else if (auto *addr = dynamic_cast<AddressOfExpr *>(expr)) {

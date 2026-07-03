@@ -366,3 +366,64 @@ bool CodeGen::gen_fn_body(FnDecl *decl, Function *fn) {
   named_type_anns = std::move(saved_type_anns);
   return true;
 }
+
+// -------------------------------------------------------------------------
+// Impl registration
+// -------------------------------------------------------------------------
+
+bool CodeGen::register_impl_decl(ImplDecl *decl) {
+  for (auto &method : decl->methods) {
+    // Determine mangled function name
+    std::string mangled_name;
+    if (!decl->trait_name.empty()) {
+      mangled_name = "impl_" + decl->trait_name + "_for_" + decl->type_name + "_" + method->name;
+    } else {
+      mangled_name = "impl_" + decl->type_name + "_" + method->name;
+    }
+
+    // Substitute Self -> type_name for trait impls
+    if (!decl->trait_name.empty()) {
+      TypeAnnotation self_type = {TypeKind::Struct, 0, 0, decl->type_name};
+      for (auto &p : method->params) {
+        substitute_type_params_recursive(p.type_ann, {"Self"}, {self_type});
+      }
+      substitute_type_params_recursive(method->return_type, {"Self"}, {self_type});
+    }
+
+    // Create LLVM function
+    std::vector<Type *> param_types;
+    for (auto &p : method->params)
+      param_types.push_back(get_llvm_type(p.type_ann));
+
+    FunctionType *FT = FunctionType::get(
+        get_llvm_type(method->return_type), param_types, method->is_variadic);
+    Function::Create(FT, Function::ExternalLinkage, mangled_name, &M);
+
+    // Register in impl lookup maps
+    impl_methods[{decl->type_name, method->name}] = mangled_name;
+    impl_method_ret_types[mangled_name] = method->return_type;
+
+    // Codegen the method body
+    auto saved_named_values = named_values;
+    auto saved_named_types = named_types;
+    auto saved_named_type_anns = named_type_anns;
+    auto saved_insert_block = Builder.GetInsertBlock();
+
+    bool ok = gen_fn_body(method.get(), M.getFunction(mangled_name));
+
+    if (saved_insert_block)
+      Builder.SetInsertPoint(saved_insert_block);
+    named_values = std::move(saved_named_values);
+    named_types = std::move(saved_named_types);
+    named_type_anns = std::move(saved_named_type_anns);
+
+    if (!ok) return false;
+  }
+
+  // Register trait impl relationship
+  if (!decl->trait_name.empty()) {
+    type_impls[{decl->type_name, decl->trait_name}] = true;
+  }
+
+  return true;
+}

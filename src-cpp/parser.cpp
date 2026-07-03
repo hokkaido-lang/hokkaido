@@ -92,12 +92,20 @@ std::vector<std::unique_ptr<Decl>> Parser::parse_program(std::string known_packa
       if (!parse_import_decl(decls)) break;
     } else if (cur_tok.type == TokenType::Namespace) {
       if (!parse_namespace_decl(decls)) break;
+    } else if (cur_tok.type == TokenType::Impl) {
+      auto decl = parse_impl_decl();
+      if (decl) decls.push_back(std::move(decl));
+      else break;
+    } else if (cur_tok.type == TokenType::Trait) {
+      auto decl = parse_trait_decl(is_pub);
+      if (decl) decls.push_back(std::move(decl));
+      else break;
     } else if (cur_tok.type == TokenType::Extern) {
       auto decl = parse_extern_fn_decl();
       if (decl) decls.push_back(std::move(decl));
       else break;
     } else {
-      set_error("expected declaration (let, fn, struct, enum, include, import, namespace, extern)");
+      set_error("expected declaration (let, fn, struct, enum, impl, trait, include, import, namespace, extern)");
       break;
     }
     skip_newlines();
@@ -233,6 +241,11 @@ void Parser::prefix_decl_names(std::vector<std::unique_ptr<Decl>> &decls,
       st->name = prefix + "::" + st->name;
     } else if (auto *adt = dynamic_cast<AdtDecl *>(d.get())) {
       adt->name = prefix + "::" + adt->name;
+    } else if (auto *tr = dynamic_cast<TraitDecl *>(d.get())) {
+      tr->name = prefix + "::" + tr->name;
+    } else if (auto *im = dynamic_cast<ImplDecl *>(d.get())) {
+      im->trait_name = prefix + "::" + im->trait_name;
+      im->type_name = prefix + "::" + im->type_name;
     }
   }
 }
@@ -322,8 +335,12 @@ TypeAnnotation Parser::parse_type_annotation() {
       ann.tuple_types = std::move(elem_types);
     }
   } else if (cur_tok.type == TokenType::Identifier) {
-    // Check if this is a type parameter name
-    if (type_param_names.find(cur_tok.text) != type_param_names.end()) {
+    // Check if this is a type parameter name or Self
+    if (cur_tok.text == "Self") {
+      ann = {TypeKind::TypeParam};
+      ann.struct_name = "Self";
+      next_token();
+    } else if (type_param_names.find(cur_tok.text) != type_param_names.end()) {
       ann = {TypeKind::TypeParam};
       ann.struct_name = cur_tok.text;
       next_token();
@@ -424,6 +441,7 @@ std::unique_ptr<StructDecl> Parser::parse_struct_decl(bool is_pub) {
   next_token();
 
   std::vector<std::string> type_params;
+  std::map<std::string, std::vector<std::string>> type_param_bounds;
   if (cur_tok.type == TokenType::Less) {
     next_token();
     while (cur_tok.type != TokenType::Greater && cur_tok.type != TokenType::Eof) {
@@ -438,9 +456,30 @@ std::unique_ptr<StructDecl> Parser::parse_struct_decl(bool is_pub) {
         set_error("expected type parameter name");
         return nullptr;
       }
-      type_params.push_back(cur_tok.text);
-      type_param_names.insert(cur_tok.text);
+      std::string tp_name = cur_tok.text;
+      type_params.push_back(tp_name);
+      type_param_names.insert(tp_name);
       next_token();
+
+      // Parse optional trait bound: T: TraitName
+      if (cur_tok.type == TokenType::Colon) {
+        next_token(); // consume ':'
+        std::vector<std::string> bounds;
+        while (true) {
+          if (cur_tok.type != TokenType::Identifier) {
+            set_error("expected trait name in type parameter bound");
+            return nullptr;
+          }
+          bounds.push_back(cur_tok.text);
+          next_token();
+          if (cur_tok.type == TokenType::Plus) {
+            next_token();
+          } else {
+            break;
+          }
+        }
+        type_param_bounds[tp_name] = bounds;
+      }
     }
     if (cur_tok.type != TokenType::Greater) {
       set_error("expected '>' to close generic type parameters");
@@ -496,6 +535,7 @@ std::unique_ptr<StructDecl> Parser::parse_struct_decl(bool is_pub) {
   decl->fields = std::move(fields);
   decl->is_pub = is_pub;
   decl->type_params = std::move(type_params);
+  decl->type_param_bounds = std::move(type_param_bounds);
   for (auto &p : decl->type_params)
     type_param_names.erase(p);
   return decl;
@@ -592,6 +632,199 @@ std::unique_ptr<AdtDecl> Parser::parse_enum_decl(bool is_pub) {
 }
 
 // -------------------------------------------------------------------------
+// Trait declarations
+// -------------------------------------------------------------------------
+
+std::unique_ptr<TraitDecl> Parser::parse_trait_decl(bool is_pub) {
+  next_token(); // consume 'trait'
+
+  if (cur_tok.type != TokenType::Identifier) {
+    set_error("expected trait name");
+    return nullptr;
+  }
+  std::string name = cur_tok.text;
+  known_structs.insert(name); // treat trait names as known for method call resolution
+  next_token();
+
+  skip_newlines();
+  if (cur_tok.type != TokenType::LBrace) {
+    set_error("expected '{' after trait name");
+    return nullptr;
+  }
+  next_token(); // consume '{'
+  skip_newlines();
+
+  std::vector<TraitMethodSig> methods;
+  while (cur_tok.type != TokenType::RBrace && cur_tok.type != TokenType::Eof) {
+    if (cur_tok.type != TokenType::Fn) {
+      set_error("expected 'fn' in trait declaration");
+      return nullptr;
+    }
+    next_token(); // consume 'fn'
+
+    if (cur_tok.type != TokenType::Identifier) {
+      set_error("expected method name in trait");
+      return nullptr;
+    }
+    TraitMethodSig sig;
+    sig.name = cur_tok.text;
+    next_token();
+
+    if (cur_tok.type != TokenType::LParen) {
+      set_error("expected '(' after method name in trait");
+      return nullptr;
+    }
+    next_token();
+
+    while (cur_tok.type != TokenType::RParen) {
+      if (!sig.params.empty()) {
+        if (cur_tok.type != TokenType::Comma) {
+          set_error("expected ',' or ')' in trait method params");
+          return nullptr;
+        }
+        next_token();
+      }
+      Param param;
+      if (cur_tok.type != TokenType::Identifier) {
+        set_error("expected parameter name in trait method");
+        return nullptr;
+      }
+      param.name = cur_tok.text;
+      next_token();
+
+      if (cur_tok.type != TokenType::Colon) {
+        set_error("expected ':' after parameter name");
+        return nullptr;
+      }
+      next_token();
+
+      param.type_ann = parse_type_annotation();
+      if (has_error) return nullptr;
+      sig.params.push_back(std::move(param));
+    }
+    next_token(); // consume ')'
+
+    if (cur_tok.type != TokenType::Arrow) {
+      set_error("expected '->' and return type in trait method");
+      return nullptr;
+    }
+    next_token();
+
+    sig.return_type = parse_type_annotation();
+    if (has_error) return nullptr;
+
+    methods.push_back(std::move(sig));
+    skip_newlines();
+  }
+
+  if (cur_tok.type != TokenType::RBrace) {
+    set_error("expected '}' to close trait declaration");
+    return nullptr;
+  }
+  next_token(); // consume '}'
+
+  auto decl = std::make_unique<TraitDecl>();
+  decl->name = name;
+  decl->methods = std::move(methods);
+  decl->is_pub = is_pub;
+  return decl;
+}
+
+// -------------------------------------------------------------------------
+// Impl blocks
+// -------------------------------------------------------------------------
+
+std::unique_ptr<ImplDecl> Parser::parse_impl_decl() {
+  next_token(); // consume 'impl'
+
+  if (cur_tok.type != TokenType::Identifier) {
+    set_error("expected type or trait name after 'impl'");
+    return nullptr;
+  }
+
+  // Read the first identifier (could be trait name or type name)
+  std::string first_name = cur_tok.text;
+  next_token();
+
+  // Handle namespaced identifiers: a::b::c
+  while (cur_tok.type == TokenType::ColonColon) {
+    next_token();
+    if (cur_tok.type != TokenType::Identifier) {
+      set_error("expected identifier after '::' in impl");
+      return nullptr;
+    }
+    first_name += "::" + cur_tok.text;
+    next_token();
+  }
+
+  skip_newlines();
+
+  std::string trait_name;
+  std::string type_name;
+
+  if (cur_tok.type == TokenType::For) {
+    // Trait impl: impl Trait for Type
+    trait_name = first_name;
+    next_token(); // consume 'for'
+    if (cur_tok.type != TokenType::Identifier) {
+      set_error("expected type name after 'for' in impl");
+      return nullptr;
+    }
+    type_name = cur_tok.text;
+    next_token();
+    while (cur_tok.type == TokenType::ColonColon) {
+      next_token();
+      if (cur_tok.type != TokenType::Identifier) {
+        set_error("expected identifier after '::' in impl type");
+        return nullptr;
+      }
+      type_name += "::" + cur_tok.text;
+      next_token();
+    }
+  } else {
+    // Inherent impl: impl Type
+    type_name = first_name;
+  }
+
+  skip_newlines();
+  if (cur_tok.type != TokenType::LBrace) {
+    set_error("expected '{' after impl type name");
+    return nullptr;
+  }
+  next_token(); // consume '{'
+  skip_newlines();
+
+  std::vector<std::unique_ptr<FnDecl>> methods;
+  while (cur_tok.type != TokenType::RBrace && cur_tok.type != TokenType::Eof) {
+    bool method_pub = false;
+    if (cur_tok.type == TokenType::Pub) {
+      method_pub = true;
+      next_token();
+    }
+    if (cur_tok.type != TokenType::Fn) {
+      set_error("expected function in impl block");
+      return nullptr;
+    }
+    auto method = parse_fn_decl(method_pub);
+    if (!method) return nullptr;
+    methods.push_back(std::move(method));
+    skip_newlines();
+  }
+
+  if (cur_tok.type != TokenType::RBrace) {
+    set_error("expected '}' to close impl block");
+    return nullptr;
+  }
+  next_token(); // consume '}'
+
+  auto decl = std::make_unique<ImplDecl>();
+  decl->trait_name = trait_name;
+  decl->type_name = type_name;
+  decl->methods = std::move(methods);
+  return decl;
+}
+
+// -------------------------------------------------------------------------
 // Namespace declarations
 // -------------------------------------------------------------------------
 //
@@ -651,10 +884,18 @@ bool Parser::parse_namespace_decl(std::vector<std::unique_ptr<Decl>> &decls) {
       if (!parse_include_decl(inner_decls)) return false;
     } else if (cur_tok.type == TokenType::Import) {
       if (!parse_import_decl(inner_decls)) return false;
+    } else if (cur_tok.type == TokenType::Impl) {
+      auto decl = parse_impl_decl();
+      if (!decl) return false;
+      inner_decls.push_back(std::move(decl));
+    } else if (cur_tok.type == TokenType::Trait) {
+      auto decl = parse_trait_decl(is_pub);
+      if (!decl) return false;
+      inner_decls.push_back(std::move(decl));
     } else if (cur_tok.type == TokenType::Namespace) {
       if (!parse_namespace_decl(inner_decls)) return false;
     } else {
-      set_error("expected declaration inside namespace (let, fn, struct, enum, include, import, namespace)");
+      set_error("expected declaration inside namespace (let, fn, struct, enum, impl, trait, include, import, namespace)");
       return false;
     }
     skip_newlines();
@@ -675,6 +916,11 @@ bool Parser::parse_namespace_decl(std::vector<std::unique_ptr<Decl>> &decls) {
       st->name = ns_name + "::" + st->name;
     } else if (auto *adt = dynamic_cast<AdtDecl *>(d.get())) {
       adt->name = ns_name + "::" + adt->name;
+    } else if (auto *tr = dynamic_cast<TraitDecl *>(d.get())) {
+      tr->name = ns_name + "::" + tr->name;
+    } else if (auto *im = dynamic_cast<ImplDecl *>(d.get())) {
+      im->trait_name = ns_name + "::" + im->trait_name;
+      im->type_name = ns_name + "::" + im->type_name;
     }
     decls.push_back(std::move(d));
   }
@@ -810,8 +1056,9 @@ std::unique_ptr<FnDecl> Parser::parse_fn_decl(bool is_pub) {
   std::string name = cur_tok.text;
   next_token();
 
-  // Optional generic type parameter list: <T, U>
+  // Optional generic type parameter list: <T, U> or <T: Trait, U: Bound>
   std::vector<std::string> type_params;
+  std::map<std::string, std::vector<std::string>> type_param_bounds;
   if (cur_tok.type == TokenType::Less) {
     next_token(); // consume '<'
     while (cur_tok.type != TokenType::Greater) {
@@ -835,6 +1082,27 @@ std::unique_ptr<FnDecl> Parser::parse_fn_decl(bool is_pub) {
       }
       type_params.push_back(tp_name);
       next_token();
+
+      // Parse optional trait bound: T: TraitName
+      if (cur_tok.type == TokenType::Colon) {
+        next_token(); // consume ':'
+        std::vector<std::string> bounds;
+        while (true) {
+          if (cur_tok.type != TokenType::Identifier) {
+            set_error("expected trait name in type parameter bound");
+            return nullptr;
+          }
+          bounds.push_back(cur_tok.text);
+          next_token();
+          // Support T: Trait1 + Trait2 syntax
+          if (cur_tok.type == TokenType::Plus) {
+            next_token();
+          } else {
+            break;
+          }
+        }
+        type_param_bounds[tp_name] = bounds;
+      }
     }
     next_token(); // consume '>'
   }
@@ -897,6 +1165,7 @@ std::unique_ptr<FnDecl> Parser::parse_fn_decl(bool is_pub) {
   decl->return_type = return_type;
   decl->body = std::move(body);
   decl->type_params = std::move(type_params);
+  decl->type_param_bounds = std::move(type_param_bounds);
   decl->is_pub = is_pub;
   // Pop type params from scope
   for (auto &tp : decl->type_params)
@@ -1487,6 +1756,7 @@ std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
     left = std::make_unique<SubscriptExpr>(std::move(left), std::move(index));
   }
   // Handle field access: obj.field or obj.0 (tuple positional access)
+  // and method call: obj.method(args)
   while (cur_tok.type == TokenType::Dot) {
     next_token(); // consume '.'
     if (cur_tok.type == TokenType::Number) {
@@ -1495,9 +1765,35 @@ std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
       next_token();
       left = std::make_unique<FieldAccessExpr>(std::move(left), field);
     } else if (cur_tok.type == TokenType::Identifier) {
-      std::string field = cur_tok.text;
+      std::string name = cur_tok.text;
       next_token();
-      left = std::make_unique<FieldAccessExpr>(std::move(left), field);
+      // If followed by '(', it's a method call: obj.method(args)
+      if (cur_tok.type == TokenType::LParen) {
+        auto mcall = std::make_unique<MethodCallExpr>();
+        mcall->object = std::move(left);
+        mcall->method_name = name;
+        next_token(); // consume '('
+        while (cur_tok.type != TokenType::RParen && cur_tok.type != TokenType::Eof) {
+          if (!mcall->args.empty()) {
+            if (cur_tok.type != TokenType::Comma) {
+              set_error("expected ',' or ')' in method arguments");
+              return nullptr;
+            }
+            next_token();
+          }
+          auto arg = parse_expr();
+          if (!arg) return nullptr;
+          mcall->args.push_back(std::move(arg));
+        }
+        if (cur_tok.type != TokenType::RParen) {
+          set_error("expected ')' to close method arguments");
+          return nullptr;
+        }
+        next_token(); // consume ')'
+        left = std::move(mcall);
+      } else {
+        left = std::make_unique<FieldAccessExpr>(std::move(left), name);
+      }
     } else {
       set_error("expected field name or index after '.'");
       return nullptr;

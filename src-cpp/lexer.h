@@ -9,6 +9,7 @@
 enum class TokenType {
   Eof,
   Let, Fn, Lambda, Return, Asm, If, Else, For, Break, Continue, Atomic, Struct, Include, Namespace, Extern,
+  Trait, Impl,
   Pub, Import, Package,
   Match, Enum,
   Null,

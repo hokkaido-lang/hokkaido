@@ -169,11 +169,38 @@ fn main() -> int {
 }
 ```
 
+### Trait bounds
+
+A type parameter can be constrained to types that implement a specific trait using
+colon syntax:
+
+```
+fn double<T: Area>(x: T) -> int64 {
+    return x.area() * 2
+}
+```
+
+Multiple bounds are supported with `+`:
+
+```
+fn process<T: Area + Describe>(x: T) -> int64 {
+    return x.area() + x.value()
+}
+```
+
+When a generic function with trait bounds is monomorphized, the compiler verifies
+that the concrete type argument implements all required traits. A compile error is
+reported if the bound is not satisfied.
+
+Traits and impls are defined with:
+- [`trait` declarations](/docs/syntax-data-structures#traits) for defining method signatures
+- [`impl` blocks](/docs/syntax-data-structures#impl-blocks-and-method-calls) for implementing
+  traits on types or adding inherent methods
+
 ### Current limitations
 
 - Generic enums are not yet supported (struct generics work — see
   [Generic structs](/docs/syntax-data-structures#generic-structs)).
-- Type parameters cannot have bounds or constraints (trait system not yet implemented).
 - Type parameters cannot be used in array sizes (e.g. `int[N]` is not valid).
 
 ## Return

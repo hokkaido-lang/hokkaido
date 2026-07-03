@@ -1,0 +1,159 @@
+// Phase 5b — Traits, Impls, Method Calls, and Trait Bounds
+// Exit code: 370 (= 300 + 50 + 15 + 5)
+
+// --- 1. Inherent impl with method call ---
+struct Point {
+    x: int64,
+    y: int64,
+}
+
+impl Point {
+    fn area(self: Point) -> int64 {
+        return self.x * self.y
+    }
+    fn double_area(self: Point) -> int64 {
+        return (self.x * 2) * (self.y * 2)
+    }
+}
+
+fn test_inherent_impl() -> int64 {
+    let p: Point = Point { x: 10, y: 20 }
+    let a: int64 = p.area()
+    if a != 200 {
+        return 1
+    }
+    let da: int64 = p.double_area()
+    if da != 800 {
+        return 2
+    }
+    return 0
+}
+
+// --- 2. Trait decl + impl ---
+trait Area {
+    fn area(self: Self) -> int64
+}
+
+impl Area for Point {
+    fn area(self: Point) -> int64 {
+        return self.x * self.y
+    }
+}
+
+fn test_trait_impl() -> int64 {
+    let p: Point = Point { x: 3, y: 7 }
+    let a: int64 = p.area()
+    if a != 21 {
+        return 1
+    }
+    return 0
+}
+
+// --- 3. Method with args ---
+struct Foo {
+    val: int64,
+}
+
+impl Foo {
+    fn get(self: Foo) -> int64 {
+        return self.val
+    }
+    fn add(self: Foo, n: int64) -> int64 {
+        return self.val + n
+    }
+}
+
+fn test_method_with_args() -> int64 {
+    let f: Foo = Foo { val: 42 }
+    let v: int64 = f.get()
+    if v != 42 {
+        return 1
+    }
+    let s: int64 = f.add(8)
+    if s != 50 {
+        return 2
+    }
+    return 0
+}
+
+// --- 4. Generic function with trait bound ---
+struct Rect {
+    w: int64,
+    h: int64,
+}
+
+impl Area for Rect {
+    fn area(self: Rect) -> int64 {
+        return self.w * self.h
+    }
+}
+
+fn double_area<T: Area>(x: T) -> int64 {
+    return x.area() * 2
+}
+
+fn test_generic_trait_bound() -> int64 {
+    let r: Rect = Rect { w: 3, h: 4 }
+    let da: int64 = double_area::<Rect>(r)
+    if da != 24 {
+        return 1
+    }
+    let p: Point = Point { x: 5, y: 6 }
+    let pa: int64 = double_area::<Point>(p)
+    if pa != 60 {
+        return 2
+    }
+    return 0
+}
+
+// --- 5. Multiple trait methods ---
+trait Describe {
+    fn name(self: Self) -> int64
+    fn value(self: Self) -> int64
+}
+
+struct Widget {
+    id: int64,
+    data: int64,
+}
+
+impl Describe for Widget {
+    fn name(self: Widget) -> int64 {
+        return self.id
+    }
+    fn value(self: Widget) -> int64 {
+        return self.data
+    }
+}
+
+fn test_multi_method_trait() -> int64 {
+    let w: Widget = Widget { id: 7, data: 42 }
+    let n: int64 = w.name()
+    if n != 7 {
+        return 1
+    }
+    let v: int64 = w.value()
+    if v != 42 {
+        return 2
+    }
+    return 0
+}
+
+fn main() -> int64 {
+    let r1: int64 = test_inherent_impl()
+    if r1 != 0 { return 300 + 1 }
+
+    let r2: int64 = test_trait_impl()
+    if r2 != 0 { return 300 + r2 }
+
+    let r3: int64 = test_method_with_args()
+    if r3 != 0 { return 300 + 10 + r3 }
+
+    let r4: int64 = test_multi_method_trait()
+    if r4 != 0 { return 300 + 20 + r4 }
+
+    let r5: int64 = test_generic_trait_bound()
+    if r5 != 0 { return 300 + 30 + r5 }
+
+    return 300 + 50 + 15 + 5
+}

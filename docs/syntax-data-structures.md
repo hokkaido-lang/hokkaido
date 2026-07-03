@@ -127,7 +127,78 @@ compile time (monomorphization), keyed by a mangled name (e.g. `Pair$i64`).
 
 **Current limitations:**
 - Generic enums are not yet supported.
-- Trait bounds on type parameters (`<T: Display>`) are not yet supported.
+
+### Traits
+
+A trait defines a set of method signatures that types can implement. Traits enable
+polymorphic generic functions through trait bounds.
+
+```
+trait TraitName {
+    fn method1(self: Self, param1: type1) -> returntype
+    fn method2(self: Self) -> returntype
+}
+```
+
+The `Self` type refers to the type that will implement the trait.
+
+Example:
+
+```
+trait Area {
+    fn area(self: Self) -> int64
+}
+```
+
+A trait declaration contains only method signatures (no bodies). The actual
+implementation is provided in an `impl` block.
+
+### Impl blocks and method calls
+
+An `impl` block associates functions with a struct type. These functions are called
+as *methods* using dot syntax: `obj.method(args)`.
+
+#### Inherent impls
+
+An inherent impl attaches methods directly to a type without requiring a trait:
+
+```
+impl TypeName {
+    fn method_name(self: TypeName, param1: type1, ...) -> returntype {
+        // body can access self fields
+    }
+}
+```
+
+Example:
+
+```
+struct Point { x: int64, y: int64 }
+
+impl Point {
+    fn magnitude(self: Point) -> int64 {
+        return self.x + self.y
+    }
+}
+
+let p: Point = Point { x: 10, y: 20 }
+let m: int64 = p.magnitude()     // 30
+```
+
+The `self` parameter is always the first parameter and must have the impl type.
+When calling `obj.method(args)`, `obj` is automatically passed as `self`.
+
+#### Trait impls
+
+A trait impl implements a trait for a type, enabling trait-bounded polymorphism:
+
+```
+impl TraitName for TypeName {
+    fn method_name(self: TypeName, ...) -> returntype {
+        // body
+    }
+}
+```
 
 ### Declaration
 

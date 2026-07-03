@@ -12,7 +12,7 @@ the same line have the same precedence and associate left-to-right.
 
 | Precedence | Operators                          | Category              |
 |------------|------------------------------------|-----------------------|
-| 1          | `()` `[]` `::<>` `.`               | Call / index / turbofish / field access |
+| 1          | `()` `[]` `::<>` `.`               | Call / index / turbofish / method call / field access |
 | 2          | `*` (deref) `&` (addr) `-` (neg) `~` (bitnot) `!` (not) | Unary prefix     |
 | 3          | `*` `/` `%`                        | Multiplicative        |
 | 4          | `+` `-`                            | Additive              |
@@ -315,11 +315,23 @@ conflicts with the less-than operator.
 
 ### Method-call syntax
 
-There is no method-call syntax. All functions are called with the function name first.
-Struct or enum "methods" use a flat function or are placed in a namespace:
+Methods defined in [impl blocks](/docs/syntax-data-structures#impl-blocks-and-method-calls)
+are called with dot syntax:
 
 ```
-namespace point {
+obj.method(arg1, arg2)
+```
+
+The `obj` expression is automatically passed as the first argument (`self`) to the method.
+Method calls chain naturally with field access:
+
+```
+let a: int64 = point.area()
+let x: int64 = point.get_x()
+```
+
+Method calls have the same precedence as field access and function calls (highest
+precedence group).
     fn distance(p: Point, q: Point) -> float64 { /* ... */ }
 }
 let d = point::distance(p, q)

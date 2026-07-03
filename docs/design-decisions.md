@@ -112,8 +112,9 @@ extern fn free(ptr: int8*) -> void
 ## 3. Generics and Trait Bounds
 
 **Decision:** Defer trait-like bounds on type parameters to a future major
-version. Phase 5a implements generic structs without bounds; generic enums
-and trait bounds remain deferred.
+version. Phase 5a implements generic structs without bounds; Phase 5b
+implements traits, impls, method calls, and trait bounds on generics.
+Generic enums remain deferred.
 
 ### Rationale
 
@@ -132,6 +133,10 @@ compatible extension.
 ### What this means for Phase 5
 
 - Generic structs: `struct Pair<A, B> { first: A, second: B }` — works (Phase 5a).
+- Traits: `trait Area { fn area(self: Self) -> int64 }` — works (Phase 5b).
+- Impl blocks: `impl Area for Rect { ... }` and `impl Point { ... }` — works (Phase 5b).
+- Method calls: `obj.method(args)` — works (Phase 5b).
+- Trait bounds: `fn double<T: Area>(x: T) -> int64` — works (Phase 5b).
 - Generic enums: `enum Option<T> { Some { value: T }, None {} }` — deferred.
 - Type parameters on struct/enum fields can be used in function signatures
   (e.g., `fn first<A, B>(p: Pair<A, B>) -> A`).
@@ -352,7 +357,7 @@ atomic_op  ::= "xchg" | "add" | "sub" | "and" | "or" | "xor"
 |---|----------|--------|---------|
 | 1 | Unsigned integer types | New distinct types (`uint8/16/32/64`) | Phase 1 (completed), LLVM instruction selection |
 | 2 | Dynamic memory | Built-in `alloc<T>` / `free` intrinsics | Phases 3, 6 |
-| 3 | Generic trait bounds | Deferred to future major version | Phase 5 scope reduced; operator overloading deferred |
+| 3 | Generic trait bounds | Deferred to future major version | Phase 5b scope reduced; operator overloading deferred |
 | 4 | `if` expression | New `IfExpr` node (coexists with `IfStmt`) | Phase 2 (completed) |
 | 5 | BNF freeze | BNF in this document is canonical for Phases 1–3 | Parser implementation |
 | 6 | String type | Opaque pointer (`int8*`) | All phases |

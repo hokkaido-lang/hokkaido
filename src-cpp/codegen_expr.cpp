@@ -164,6 +164,23 @@ TypeAnnotation CodeGen::resolve_expr_type(Expr *expr) {
     }
     return {TypeKind::Void};
   }
+  if (auto *mcall = dynamic_cast<MethodCallExpr *>(expr)) {
+    TypeAnnotation obj_type = resolve_expr_type(mcall->object.get());
+    std::string type_name;
+    if (obj_type.kind == TypeKind::Struct)
+      type_name = obj_type.struct_name;
+    else if (obj_type.kind == TypeKind::Enum)
+      type_name = obj_type.struct_name;
+    else
+      return {TypeKind::Void};
+    auto it = impl_methods.find({type_name, mcall->method_name});
+    if (it != impl_methods.end()) {
+      auto rit = impl_method_ret_types.find(it->second);
+      if (rit != impl_method_ret_types.end())
+        return rit->second;
+    }
+    return {TypeKind::Void};
+  }
   return {TypeKind::Void};
 }
 
@@ -1073,6 +1090,52 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
     return Builder.CreateCall(callee, args);
   }
 
+  if (auto *mcall = dynamic_cast<MethodCallExpr *>(expr)) {
+    TypeAnnotation obj_type = resolve_expr_type(mcall->object.get());
+    std::string type_name;
+    if (obj_type.kind == TypeKind::Struct)
+      type_name = obj_type.struct_name;
+    else if (obj_type.kind == TypeKind::Enum)
+      type_name = obj_type.struct_name;
+    else {
+      errs() << "Error: method call on non-struct/enum type\n";
+      return nullptr;
+    }
+    auto it = impl_methods.find({type_name, mcall->method_name});
+    if (it == impl_methods.end()) {
+      errs() << "Error: type '" << type_name << "' has no method named '"
+             << mcall->method_name << "'\n";
+      return nullptr;
+    }
+    Function *callee = M.getFunction(it->second);
+    if (!callee) {
+      errs() << "Error: method '" << mcall->method_name << "' for type '"
+             << type_name << "' has no compiled function\n";
+      return nullptr;
+    }
+
+    Type *obj_llvm_type = get_llvm_type(obj_type);
+    Value *obj_val = eval_expr(mcall->object.get(), obj_llvm_type);
+    if (!obj_val) return nullptr;
+
+    if (callee->arg_size() != 1 + mcall->args.size()) {
+      errs() << "Error: wrong number of arguments for method '"
+             << mcall->method_name << "' (expected "
+             << (callee->arg_size() - 1) << ", got " << mcall->args.size() << ")\n";
+      return nullptr;
+    }
+
+    std::vector<Value *> margs;
+    margs.push_back(obj_val); // self
+    for (size_t i = 0; i < mcall->args.size(); i++) {
+      Type *param_type = callee->getArg(i + 1)->getType();
+      Value *arg = eval_expr(mcall->args[i].get(), param_type);
+      if (!arg) return nullptr;
+      margs.push_back(arg);
+    }
+    return Builder.CreateCall(callee, margs);
+  }
+
   if (auto *atm = dynamic_cast<AtomicExpr *>(expr)) {
     if (atm->op == AtomicOp::Fence) {
       Builder.CreateFence(AtomicOrdering::SequentiallyConsistent);
@@ -1270,6 +1333,12 @@ void CodeGen::discover_captures(Expr *expr,
   }
   if (auto *field = dynamic_cast<FieldAccessExpr *>(expr)) {
     discover_captures(field->object.get(), param_names, captures);
+    return;
+  }
+  if (auto *mcall = dynamic_cast<MethodCallExpr *>(expr)) {
+    discover_captures(mcall->object.get(), param_names, captures);
+    for (auto &arg : mcall->args)
+      discover_captures(arg.get(), param_names, captures);
     return;
   }
   if (auto *deref = dynamic_cast<DerefExpr *>(expr)) {
