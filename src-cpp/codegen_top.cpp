@@ -398,3 +398,57 @@ bool CodeGen::monomorphize_and_codegen(FnDecl *template_decl,
 
   return ok;
 }
+
+llvm::GlobalVariable *CodeGen::get_fnval_wrapper(const std::string &fn_name,
+                                                   llvm::Function *f) {
+  auto it = fnval_globals.find(fn_name);
+  if (it != fnval_globals.end())
+    return it->second;
+
+  std::string wrapper_name = "__fnval_wrapper_" + fn_name;
+  std::string global_name = "__fnval_s_" + fn_name;
+
+  // Build wrapper function type: Ret (i8*, ParamTypes...)
+  std::vector<Type *> wrapper_param_types;
+  wrapper_param_types.push_back(PointerType::getUnqual(Context));
+  for (auto &arg : f->args())
+    wrapper_param_types.push_back(arg.getType());
+
+  Type *ret_type = f->getReturnType();
+  FunctionType *wrapper_ft = FunctionType::get(ret_type, wrapper_param_types, false);
+  Function *wrapper = Function::Create(wrapper_ft, Function::InternalLinkage,
+                                        wrapper_name, &M);
+
+  // Emit wrapper body — save/restore builder insert point
+  BasicBlock *saved_bb = Builder.GetInsertBlock();
+  BasicBlock *bb = BasicBlock::Create(Context, "entry", wrapper);
+  Builder.SetInsertPoint(bb);
+
+  std::vector<Value *> call_args;
+  size_t ai = 1; // skip context arg (index 0)
+  for (auto &arg : f->args()) {
+    call_args.push_back(wrapper->getArg(ai));
+    ai++;
+  }
+  Value *result = Builder.CreateCall(f, call_args, "fnval_call");
+  if (ret_type->isVoidTy())
+    Builder.CreateRetVoid();
+  else
+    Builder.CreateRet(result);
+
+  // Restore builder insert point
+  if (saved_bb)
+    Builder.SetInsertPoint(saved_bb);
+
+  // Create global constant { i8* } pointing to the wrapper
+  Constant *bitcast_wrapper = ConstantExpr::getBitCast(wrapper,
+      PointerType::getUnqual(Context));
+  StructType *fnval_st = StructType::create(Context, {PointerType::getUnqual(Context)},
+                                             global_name);
+  Constant *init_val = ConstantStruct::get(fnval_st, {bitcast_wrapper});
+  GlobalVariable *gv = new GlobalVariable(M, fnval_st, true,
+      GlobalVariable::InternalLinkage, init_val, global_name);
+
+  fnval_globals[fn_name] = gv;
+  return gv;
+}

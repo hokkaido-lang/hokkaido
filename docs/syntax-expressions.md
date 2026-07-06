@@ -200,6 +200,19 @@ let x: int = 42
 let p: int* = &x
 ```
 
+**Function references.** When `&` is applied to a function name, it creates a
+function value of the corresponding function type (see
+[Higher-Order Functions](/docs/syntax-functions#higher-order-functions)):
+
+```
+fn add_one(x: int) -> int { return x + 1 }
+let f: fn(int) -> int = &add_one
+let r: int = f(5)               // 6
+```
+
+Without the `&`, a bare function name is not a value — it can only appear in a
+call expression `add_one(...)`. The `&` is required to obtain a function value.
+
 ### Dereference
 
 The unary `*` operator reads or writes through a pointer.

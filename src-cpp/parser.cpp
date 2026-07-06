@@ -334,6 +334,44 @@ TypeAnnotation Parser::parse_type_annotation() {
       ann = {TypeKind::Tuple};
       ann.tuple_types = std::move(elem_types);
     }
+  } else if (cur_tok.type == TokenType::Fn) {
+    // Function type: fn(T1, T2, ...) -> Ret
+    next_token(); // consume 'fn'
+    if (cur_tok.type != TokenType::LParen) {
+      set_error("expected '(' after 'fn' in function type");
+      return ann;
+    }
+    next_token(); // consume '('
+    skip_newlines();
+    std::vector<TypeAnnotation> fn_param_types;
+    while (cur_tok.type != TokenType::RParen && cur_tok.type != TokenType::Eof) {
+      if (!fn_param_types.empty()) {
+        if (cur_tok.type != TokenType::Comma) {
+          set_error("expected ',' or ')' in function type parameter list");
+          return ann;
+        }
+        next_token();
+        skip_newlines();
+      }
+      fn_param_types.push_back(parse_type_annotation());
+      if (has_error) return ann;
+      skip_newlines();
+    }
+    if (cur_tok.type != TokenType::RParen) {
+      set_error("expected ')' to close function type parameter list");
+      return ann;
+    }
+    next_token(); // consume ')'
+    if (cur_tok.type != TokenType::Arrow) {
+      set_error("expected '->' and return type in function type");
+      return ann;
+    }
+    next_token(); // consume '->'
+    TypeAnnotation fn_ret_type = parse_type_annotation();
+    if (has_error) return ann;
+    ann = {TypeKind::Fn};
+    ann.tuple_types = std::move(fn_param_types);
+    ann.tuple_types.push_back(std::move(fn_ret_type));
   } else if (cur_tok.type == TokenType::Identifier) {
     // Check if this is a type parameter name or Self
     if (cur_tok.text == "Self") {

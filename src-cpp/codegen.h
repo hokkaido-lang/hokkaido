@@ -177,11 +177,16 @@ private:
   // Closure helpers
   int closure_counter = 0;
   void discover_captures(Expr *expr,
-                          const std::unordered_set<std::string> &param_names,
-                          std::vector<std::string> &captures);
+                           const std::unordered_set<std::string> &param_names,
+                           std::vector<std::string> &captures);
   void discover_captures_in_body(const std::vector<std::unique_ptr<Stmt>> &body,
-                                  const std::unordered_set<std::string> &param_names,
-                                  std::vector<std::string> &captures);
+                                   const std::unordered_set<std::string> &param_names,
+                                   std::vector<std::string> &captures);
+
+  // Function pointer wrapper helpers (for &fn_name expressions)
+  std::map<std::string, llvm::GlobalVariable *> fnval_globals;
+  llvm::GlobalVariable *get_fnval_wrapper(const std::string &fn_name,
+                                           llvm::Function *f);
 
   // Source file base directory, used to resolve .cub file paths.
   std::string base_dir;

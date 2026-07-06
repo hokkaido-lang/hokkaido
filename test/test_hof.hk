@@ -1,0 +1,45 @@
+// Hokkaido HOF (Higher-Order Function) Test
+// ==========================================
+
+// Test 1: function type annotation with fn(T) -> Ret
+fn add_one(x: int) -> int {
+    return x + 1
+}
+
+fn test_fn_type_param(f: fn(int) -> int, x: int) -> int {
+    return f(x)
+}
+
+// Test 2: &fn_name creates a function value
+fn test_fn_value() -> int {
+    return test_fn_type_param(&add_one, 41)
+}
+
+// Test 3: lambda passed directly
+fn test_lambda_hof() -> int {
+    return test_fn_type_param(lambda (x: int) -> int { return x + 2 }, 40)
+}
+
+// Test 4: lambda with capture passed to HOF
+fn test_capture_hof() -> int {
+    let offset: int = 3
+    return test_fn_type_param(lambda (x: int) -> int { return x + offset }, 39)
+}
+
+// Test 5: closures stored in fn-typed variables
+fn test_fn_variable() -> int {
+    let f: fn(int) -> int = &add_one
+    return f(42)
+}
+
+fn main() -> int {
+    let r1: int = test_fn_value()
+    let r2: int = test_lambda_hof()
+    let r3: int = test_capture_hof()
+    let r4: int = test_fn_variable()
+
+    let total: int = r1 + r2 + r3 + r4
+    // r1 = 42, r2 = 42, r3 = 42, r4 = 43
+    // total = 42 + 42 + 42 + 43 = 169
+    return total
+}

@@ -142,6 +142,41 @@ fn main() -> int64 {
 }
 ```
 
+### Function types
+
+A function type is written using the `fn` keyword followed by a parenthesized parameter
+type list and an optional return type:
+
+```
+fn(T1, T2) -> Ret      Function taking T1, T2 and returning Ret
+fn(T) -> Ret            Function taking T and returning Ret
+fn() -> Ret             Function taking no arguments and returning Ret
+fn(T1, T2)              Function taking T1, T2 and returning void
+```
+
+Internally, a function type value is an opaque pointer (`ptr`) to a closure struct
+containing a function pointer and any captured values. Function types can be used as
+parameter types, return types, and variable types:
+
+```
+let f: fn(int) -> int = &add_one
+let g: fn(int, int) -> int = lambda (x: int, y: int) -> int { return x + y }
+```
+
+Functions with matching signatures are interchangeable:
+
+```
+fn apply_twice(f: fn(int) -> int, x: int) -> int {
+    return f(f(x))
+}
+
+fn main() -> int {
+    return apply_twice(&add_one, 5)     // → 7
+}
+```
+
+See [Higher-Order Functions](/docs/syntax-functions#higher-order-functions) for details.
+
 ### Tuple types
 
 A tuple type is written as a comma-separated list of types inside parentheses:

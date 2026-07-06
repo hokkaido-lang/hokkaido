@@ -505,6 +505,26 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
   }
 
   if (auto *addr = dynamic_cast<AddressOfExpr *>(expr)) {
+    // Check for &fn_name — create a function pointer value
+    if (auto *id = dynamic_cast<IdentExpr *>(addr->operand.get())) {
+      std::string fname = id->name;
+      Function *f = M.getFunction(fname);
+      if (!f && fname == "main")
+        f = M.getFunction("__user_main");
+      if (f && !f->isIntrinsic()) {
+        llvm::GlobalVariable *gv = get_fnval_wrapper(fname, f);
+        if (!gv) {
+          errs() << "Error: failed to create function value for '" << fname << "'\n";
+          return nullptr;
+        }
+        // Use constant expression for global scope compatibility
+        if (Builder.GetInsertBlock())
+          return Builder.CreateBitCast(gv, PointerType::getUnqual(Context),
+                                       fname + ".fnval");
+        else
+          return ConstantExpr::getBitCast(gv, PointerType::getUnqual(Context));
+      }
+    }
     Type *ptr_type = nullptr;
     Value *lvalue_ptr = get_lvalue_ptr(addr->operand.get(), &ptr_type);
     if (!lvalue_ptr) {
@@ -932,7 +952,7 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
         named_values[closure->params[pi].name] = param_alloca;
         named_types[closure->params[pi].name] = closure->params[pi].type_ann.kind;
         auto &ta = closure->params[pi].type_ann;
-        if (ta.kind == TypeKind::Struct || ta.kind == TypeKind::Enum ||
+        if (ta.kind == TypeKind::Fn || ta.kind == TypeKind::Struct || ta.kind == TypeKind::Enum ||
             ta.kind == TypeKind::Tuple || ta.kind == TypeKind::Slice ||
             ta.pointer_depth > 0 || ta.array_size > 0)
           named_type_anns[closure->params[pi].name] = ta;
@@ -991,7 +1011,7 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
       }
     }
 
-    return Builder.CreateLoad(closure_st, closure_alloca, "lambda.val");
+    return Builder.CreateBitCast(closure_alloca, PointerType::getUnqual(Context), "lambda.ptr");
   }
 
   if (auto *call = dynamic_cast<CallExpr *>(expr)) {
@@ -999,19 +1019,16 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
     if (call->callee_expr) {
       TypeAnnotation callee_ann = resolve_expr_type(call->callee_expr.get());
       Type *callee_llvm = get_llvm_type(callee_ann);
-      if (!callee_llvm) callee_llvm = Type::getInt64Ty(Context);
+      if (!callee_llvm) callee_llvm = PointerType::getUnqual(Context);
 
-      Value *closure_val = eval_expr(call->callee_expr.get(), callee_llvm);
-      if (!closure_val) return nullptr;
+      Value *closure_ptr = eval_expr(call->callee_expr.get(), callee_llvm);
+      if (!closure_ptr) return nullptr;
 
-      Value *fn_i8 = Builder.CreateExtractValue(closure_val, {0}, "fn_ptr");
-
-      // Alloca a copy for a stable context pointer
-      AllocaInst *copy_alloca = Builder.CreateAlloca(closure_val->getType(),
-          nullptr, "clos_copy");
-      Builder.CreateStore(closure_val, copy_alloca);
-      Value *context_ptr = Builder.CreateBitCast(copy_alloca,
-          PointerType::getUnqual(Context), "context");
+      // Load fn_ptr from first field of closure struct: *(i8**)closure_ptr
+      Value *fn_ptr_ptr = Builder.CreateBitCast(closure_ptr,
+          PointerType::getUnqual(Context), "fn_ptr.ptr");
+      Value *fn_i8 = Builder.CreateLoad(PointerType::getUnqual(Context),
+          fn_ptr_ptr, "fn_ptr");
 
       Type *ret_type = get_llvm_type(callee_ann.tuple_types.back());
       if (!ret_type) ret_type = Type::getInt64Ty(Context);
@@ -1022,11 +1039,10 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
         call_param_types.push_back(get_llvm_type(callee_ann.tuple_types[pi]));
 
       FunctionType *call_ft = FunctionType::get(ret_type, call_param_types, false);
-      PointerType *fn_ptr_type = PointerType::getUnqual(Context);
-      Value *fn = Builder.CreateBitCast(fn_i8, fn_ptr_type, "fn");
+      Value *fn = Builder.CreateBitCast(fn_i8, PointerType::getUnqual(Context), "fn");
 
       std::vector<Value *> args;
-      args.push_back(context_ptr);
+      args.push_back(closure_ptr);
       for (size_t i = 0; i < call->args.size(); i++) {
         Type *arg_type = call_param_types.size() > i + 1
             ? call_param_types[i + 1] : Type::getInt64Ty(Context);
@@ -1058,6 +1074,62 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
 
     Function *callee = M.getFunction(actual_callee);
     if (!callee) {
+      // Try package-prefixed name (for recursive/cross-calls within packages)
+      BasicBlock *current_bb = Builder.GetInsertBlock();
+      if (current_bb) {
+        std::string cur_fn_name = current_bb->getParent()->getName().str();
+        size_t colon = cur_fn_name.rfind("::");
+        if (colon != std::string::npos) {
+          std::string prefix = cur_fn_name.substr(0, colon);
+          std::string prefixed = prefix + "::" + actual_callee;
+          callee = M.getFunction(prefixed);
+        }
+      }
+    }
+    if (!callee) {
+      // Not a known function — check if it's a variable holding a function value
+      auto fnv_it = named_values.find(actual_callee);
+      auto fnt_it = named_type_anns.find(actual_callee);
+      if (fnv_it != named_values.end() && fnt_it != named_type_anns.end() &&
+          fnt_it->second.kind == TypeKind::Fn) {
+        // Treat as expression-based call on a function-typed variable
+        TypeAnnotation &callee_ann = fnt_it->second;
+        Type *callee_llvm = get_llvm_type(callee_ann);
+        if (!callee_llvm) callee_llvm = PointerType::getUnqual(Context);
+
+        Value *closure_ptr = Builder.CreateLoad(callee_llvm, fnv_it->second,
+                                                actual_callee);
+        if (!closure_ptr) return nullptr;
+
+        // Load fn_ptr from first field
+        Value *fn_ptr_ptr = Builder.CreateBitCast(closure_ptr,
+            PointerType::getUnqual(Context), "fn_ptr.ptr");
+        Value *fn_i8 = Builder.CreateLoad(PointerType::getUnqual(Context),
+            fn_ptr_ptr, "fn_ptr");
+
+        Type *ret_type = get_llvm_type(callee_ann.tuple_types.back());
+        if (!ret_type) ret_type = Type::getInt64Ty(Context);
+
+        std::vector<Type *> call_param_types;
+        call_param_types.push_back(PointerType::getUnqual(Context));
+        for (size_t pi = 0; pi + 1 < callee_ann.tuple_types.size(); pi++)
+          call_param_types.push_back(get_llvm_type(callee_ann.tuple_types[pi]));
+
+        FunctionType *call_ft = FunctionType::get(ret_type, call_param_types, false);
+        Value *fn = Builder.CreateBitCast(fn_i8, PointerType::getUnqual(Context), "fn");
+
+        std::vector<Value *> args_v;
+        args_v.push_back(closure_ptr);
+        for (size_t i = 0; i < call->args.size(); i++) {
+          Type *arg_type = call_param_types.size() > i + 1
+              ? call_param_types[i + 1] : Type::getInt64Ty(Context);
+          Value *arg = eval_expr(call->args[i].get(), arg_type);
+          if (!arg) return nullptr;
+          args_v.push_back(arg);
+        }
+
+        return Builder.CreateCall(call_ft, fn, args_v, "call");
+      }
       errs() << "Error: undefined function '" << call->callee << "'\n";
       return nullptr;
     }

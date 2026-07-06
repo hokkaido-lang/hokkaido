@@ -235,7 +235,8 @@ base_type  ::= "int8" | "int16" | "int32" | "int64" | "int"
              | "bool" | "string" | "void" | "char"
              | "cubical"
              | ident                          // struct/enum/type-param name
-              | "(" type ("," type)* ")"       // tuple type
+             | "(" type ("," type)* ")"       // tuple type
+             | "fn" "(" (type ("," type)*)? ")" ("->" type)?  // function type
 ```
 
 Notes:
@@ -362,3 +363,4 @@ atomic_op  ::= "xchg" | "add" | "sub" | "and" | "or" | "xor"
 | 5 | BNF freeze | BNF in this document is canonical for Phases 1–3 | Parser implementation |
 | 6 | String type | Opaque pointer (`int8*`) | All phases |
 | 7 | Dynamic memory approach | Extern fn (`malloc`/`free`), not built-in syntax | Phase 3 (completed) |
+| 8 | Function types and HOFs | `fn(T1, T2) -> Ret` as opaque `i8*` pointer to closure struct; `&fn_name` for named-function values | `std/hof.hk` combined with Phase 4 (completed) |

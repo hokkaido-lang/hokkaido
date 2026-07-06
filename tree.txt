@@ -1,0 +1,88 @@
+.
+├── Cargo.lock
+├── Cargo.toml
+├── CMakeLists.txt
+├── default.nix
+├── docs <- document directory
+│   ├── cubical_surface_language.md
+│   ├── design-decisions.md
+│   ├── example-guess.md
+│   ├── index.astro
+│   ├── syntax-control-flow.md
+│   ├── syntax-data-structures.md
+│   ├── syntax-expressions.md
+│   ├── syntax-ffi-cubical.md
+│   ├── syntax-functions.md
+│   ├── syntax.md
+│   ├── syntax-modules.md
+│   └── syntax-types.md
+├── flake.lock
+├── flake.nix
+├── LICENSE
+├── README.md
+├── shell.nix
+├── src <- cubical backend lib directory
+│   ├── cubical
+│   │   ├── env.rs
+│   │   ├── equality.rs
+│   │   ├── ffi.rs
+│   │   ├── interval.rs
+│   │   ├── json.rs
+│   │   ├── mod.rs
+│   │   ├── nbe.rs
+│   │   ├── parser
+│   │   │   ├── grammar.rs
+│   │   │   ├── lexer.rs
+│   │   │   ├── mod.rs
+│   │   │   └── tests.rs
+│   │   ├── syntax.rs
+│   │   └── typechecker.rs
+│   └── lib.rs
+├── src-cpp <- main compiler source code
+│   ├── ast.h
+│   ├── codegen.cpp
+│   ├── codegen_decl.cpp
+│   ├── codegen_expr.cpp
+│   ├── codegen.h
+│   ├── codegen_init.cpp
+│   ├── codegen_pattern.cpp
+│   ├── codegen_stmt.cpp
+│   ├── codegen_top.cpp
+│   ├── codegen_types.cpp
+│   ├── cubical.cpp
+│   ├── cubical.h
+│   ├── lexer.cpp
+│   ├── lexer.h
+│   ├── main.cpp
+│   ├── parser.cpp
+│   └── parser.h
+└── test <- test files
+    ├── cubical_bool.cub
+    ├── cubical_list.cub
+    ├── cubical_pair.cub
+    ├── example_cffi.hk
+    ├── example.cub
+    ├── example.hk
+    ├── guessing_game.hk
+    ├── pkgtest
+    │   ├── hk.mod
+    │   ├── main_alias.hk
+    │   ├── main.hk
+    │   ├── main_multi.hk
+    │   └── util
+    │       ├── extra.hk
+    │       └── util.hk
+    ├── test_atomic.hk
+    ├── test_cubical_bool.hk
+    ├── test_cubical_comprehensive.hk
+    ├── test_cubical_file.hk
+    ├── test_cubical.hk
+    ├── test_cubical_pair.hk
+    ├── test_mod_break.hk
+    ├── test_phase1_comprehensive.hk
+    ├── test_phase1.hk
+    ├── test_phase2.hk
+    ├── test_phase3.hk
+    ├── test_phase4.hk
+    ├── test_phase5b.hk
+    └── test_phase5.hk

@@ -203,6 +203,119 @@ Traits and impls are defined with:
   [Generic structs](/docs/syntax-data-structures#generic-structs)).
 - Type parameters cannot be used in array sizes (e.g. `int[N]` is not valid).
 
+## Higher-order functions
+
+Functions can accept other functions as parameters and return them as values,
+using function type syntax `fn(T1, T2) -> Ret`.
+
+### Function type syntax
+
+```
+fn(int) -> int            // takes int, returns int
+fn(int, bool) -> void     // takes int and bool, returns nothing
+fn() -> int               // takes nothing, returns int
+```
+
+Function type values are opaque pointers to a closure struct. Any function
+or lambda with a matching signature can be used.
+
+### Creating function values
+
+**From a named function** with the `&` prefix:
+
+```
+fn add_one(x: int) -> int {
+    return x + 1
+}
+
+let f: fn(int) -> int = &add_one
+```
+
+**From a lambda expression** (creates a closure inline):
+
+```
+let f: fn(int) -> int = lambda (x: int) -> int { return x + 2 }
+```
+
+Lambdas can capture variables from their enclosing scope by value:
+
+```
+let offset: int = 3
+let f: fn(int) -> int = lambda (x: int) -> int { return x + offset }
+```
+
+### Calling function values
+
+A function-typed variable is called with the same `name(args)` syntax as a
+regular function:
+
+```
+let result: int = f(42)
+```
+
+### Passing closures to functions
+
+```
+fn apply_twice(f: fn(int) -> int, x: int) -> int {
+    return f(f(x))
+}
+
+fn main() -> int {
+    // With a named function:
+    let r1: int = apply_twice(&add_one, 5)        // 7
+
+    // With a lambda:
+    let r2: int = apply_twice(
+        lambda (x: int) -> int { return x * 2 }, 5
+    )                                              // 20
+
+    return r1 + r2
+}
+```
+
+### Restrictions
+
+- `&fn_name` creates a reference to a specific function; the `&` is required
+  (bare `fn_name` without `()` is not a value).
+- There is no implicit conversion from a bare function name to a function
+  value — the `&` is always needed.
+- A function-typed variable cannot be called if its type is incomplete
+  (e.g. `fn() ->` without a return type is a parse error).
+
+### Standard library HOFs
+
+The stdlib provides common higher-order functions for `int` in `std/hof.hk`:
+
+```
+import "std"
+
+fn add_one(x: int) -> int { return x + 1 }
+fn add(x: int, y: int) -> int { return x + y }
+
+fn main() -> int {
+    let r1: int = std::twice(&add_one, 5)             // 7
+    let r2: int = std::compose(&add_one, &add_one, 5) // 7
+    let r3: int = std::apply_n(&add_one, 10, 5)       // 15
+
+    let arr: int[5] = [1, 2, 3, 4, 5]
+    let r4: int = std::fold_int(&add, 0, arr, 5)      // 15
+    return r1 + r2 + r3 + r4
+}
+```
+
+Available functions in `std::`:
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `twice` | `(fn(int)->int, int) -> int` | Applies `f` twice |
+| `thrice` | `(fn(int)->int, int) -> int` | Applies `f` three times |
+| `compose` | `(fn(int)->int, fn(int)->int, int) -> int` | `f(g(x))` |
+| `apply_n` | `(fn(int)->int, int, int) -> int` | Applies `f` `n` times |
+| `fold_int` | `(fn(int,int)->int, int, int[], int) -> int` | Left fold over slice |
+| `any_int` | `(fn(int)->bool, int[], int) -> bool` | Any element matches? |
+| `all_int` | `(fn(int)->bool, int[], int) -> bool` | All elements match? |
+| `map_int_into` | `(fn(int)->int, int[], int[], int) -> int` | Map into existing array |
+
 ## Return
 
 The `return` statement exits the current function and optionally yields a value.
