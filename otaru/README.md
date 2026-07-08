@@ -7,9 +7,9 @@ otaru is a package manager and project scaffold for the [Hokkaido](https://githu
 ### Nix (flake)
 
 ```bash
-nix build github:jihoo/hokkaido#otaru    # standalone binary in result/bin/otaru
-nix profile install github:jihoo/hokkaido#otaru  # or install globally
-nix develop github:jihoo/hokkaido          # otaru is included in the dev shell
+nix build github:hokkaido-lang/hokkaido#otaru    # standalone binary in result/bin/otaru
+nix profile install github:hokkaido-lang/hokkaido#otaru  # or install globally
+nix develop github:hokkaido-lang/hokkaido          # otaru is included in the dev shell
 ```
 
 ### Nix (traditional)
@@ -23,10 +23,6 @@ nix-build -E 'with import <nixpkgs> {}; callPackage ./otaru/default.nix {}'
 ```bash
 cargo install --path otaru
 ```
-
-### Pre-built binary
-
-Download from the [Releases](https://github.com/jihoo/hokkaido/releases) page.
 
 ## Prerequisites
 
