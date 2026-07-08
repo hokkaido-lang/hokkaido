@@ -316,6 +316,50 @@ Available functions in `std::`:
 | `all_int` | `(fn(int)->bool, int[], int) -> bool` | All elements match? |
 | `map_int_into` | `(fn(int)->int, int[], int[], int) -> int` | Map into existing array |
 
+### Standard library memory operations
+
+The stdlib provides safe memory operations in `std/mem.hk` for working with
+raw byte buffers. These functions are safe — they operate on caller-provided
+valid pointers and do not manage allocation or deallocation.
+
+```
+import "std"
+
+fn main() -> int {
+    region R {
+        let buf: int8* = __region_alloc(32)
+
+        std::mem_set(buf, 42, 16)     // write sixteen 42s
+        std::mem_zero(buf + 16, 16)   // zero the second half
+
+        let check: int8* = __region_alloc(32)
+        std::mem_copy(check, buf, 32)
+
+        if std::mem_eq(buf, check, 32) {
+            std::mem_swap(buf, check, 8)   // swap 8 bytes
+            return 1
+        }
+    }
+    return 0
+}
+```
+
+Available functions in `std::mem`:
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `mem_copy` | `(int8*, int8*, int64) -> void` | Copy `n` bytes from `src` to `dst` (non-overlapping) |
+| `mem_set` | `(int8*, int8, int64) -> void` | Fill `n` bytes of `ptr` with `val` |
+| `mem_zero` | `(int8*, int64) -> void` | Zero `n` bytes at `ptr` |
+| `mem_eq` | `(int8*, int8*, int64) -> bool` | Compare `n` bytes for equality |
+| `mem_swap` | `(int8*, int8*, int64) -> void` | Exchange `n` bytes between two buffers |
+
+Heap allocation (`extern fn malloc`) and deallocation (`extern fn free`) are
+available via C FFI but are **inherently unsafe** — the language has no borrow
+checker to prevent double-free, use-after-free, or memory leaks. Prefer
+[region-based allocation](/docs/syntax-control-flow#region) for scoped memory
+that is freed automatically when the region exits.
+
 ## Return
 
 The `return` statement exits the current function and optionally yields a value.

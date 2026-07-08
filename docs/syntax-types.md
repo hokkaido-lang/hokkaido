@@ -302,9 +302,21 @@ let y: int = x       // consumes x — OK
 let z: int = x       // ERROR: linear variable 'x' has already been consumed
 ```
 
-Linear types are useful for representing unique ownership of a resource (e.g., a
-region-allocated pointer that must not be freed twice). The compiler tracks consumption
-through named variables; aliasing through pointers is not tracked.
+Linear types track variable *names*, not values. Copying to another variable
+bypasses the protection:
+
+```
+let p: linear int8* = __region_alloc(8)
+let q: int8* = p          // p consumed, q is unguarded
+*q = 42                   // q can be used freely
+*(p + 8)                  // ERROR: p already consumed
+```
+
+Because of this, linear types are **not suitable** for enforcing heap memory
+safety (double-free, use-after-free). The `std::mem` module intentionally
+avoids providing heap allocation wrappers — use `extern fn malloc`/`free`
+directly, with the understanding that it is inherently unsafe. For safe
+scoped allocation, use [region blocks](/docs/syntax-control-flow#region).
 
 Non-linear types are unaffected — they can be used multiple times as before.
 
