@@ -284,7 +284,7 @@ fn main() -> int {
 
 ### Standard library HOFs
 
-The stdlib provides common higher-order functions for `int` in `std/hof.hk`:
+The stdlib provides common higher-order functions for `int` in `std/functional.hk`:
 
 ```
 import "std"
