@@ -60,12 +60,12 @@ fn find_bundled_std() -> Option<String> {
             // Walk up the directory tree looking for std/hk.mod
             loop {
                 let candidate = dir.join("std");
-                if candidate.join("hk.mod").exists() && candidate.join("hof.hk").exists() {
+                if candidate.join("hk.mod").exists() {
                     return Some(candidate.to_string_lossy().to_string());
                 }
                 // Also check share/otaru/std (Nix layout)
                 let nix_candidate = dir.join("share/otaru/std");
-                if nix_candidate.join("hk.mod").exists() && nix_candidate.join("hof.hk").exists() {
+                if nix_candidate.join("hk.mod").exists() {
                     return Some(nix_candidate.to_string_lossy().to_string());
                 }
                 if !dir.pop() { break; }
