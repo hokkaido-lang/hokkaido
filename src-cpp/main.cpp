@@ -258,29 +258,6 @@ int main(int argc, char *argv[]) {
 
       bool HaveLdLld = find_ld_lld();
 
-      std::cout << "Object file written to: " << ObjPath << "\n\n";
-      std::cout << "hokkaido does not link executables itself. To produce '"
-                << OutputPath << "', link the object file yourself, e.g.:\n\n";
-
-      if (Freestanding) {
-        // No CRT, no libc: `main` is the raw ELF entry point, so the
-        // linker just needs to be told that directly. CRT/libc search
-        // doesn't apply here.
-        if (HaveLdLld) {
-          std::cout << "  ld.lld --entry=main -o " << OutputPath << " " << ObjPath;
-          for (auto &a : ExtraLinkArgs) std::cout << " " << a;
-          std::cout << "\n";
-        } else {
-          std::cout << "  clang -nostdlib -static -Wl,--entry=main " << ObjPath
-                     << " -o " << OutputPath;
-          for (auto &a : ExtraLinkArgs) std::cout << " " << a;
-          std::cout << "\n\n  ('ld.lld' was not found on PATH; this clang "
-                       "invocation tells it to skip CRT/libc and use 'main' "
-                       "as the raw entry point instead.)\n";
-        }
-        return 0;
-      }
-
       std::string CrtDir = find_crt_dir();
       std::string DynamicLinker = find_dynamic_linker();
 
