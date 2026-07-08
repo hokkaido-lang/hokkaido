@@ -234,7 +234,8 @@ void Parser::prefix_decl_names(std::vector<std::unique_ptr<Decl>> &decls,
                                 const std::string &prefix) {
   for (auto &d : decls) {
     if (auto *fn = dynamic_cast<FnDecl *>(d.get())) {
-      fn->name = prefix + "::" + fn->name;
+      if (!fn->is_extern)
+        fn->name = prefix + "::" + fn->name;
     } else if (auto *let = dynamic_cast<LetDecl *>(d.get())) {
       let->name = prefix + "::" + let->name;
     } else if (auto *st = dynamic_cast<StructDecl *>(d.get())) {

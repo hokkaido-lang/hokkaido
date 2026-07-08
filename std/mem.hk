@@ -1,0 +1,41 @@
+package std
+
+extern fn malloc(size: int64) -> int8*
+extern fn free(ptr: int8*) -> void
+extern fn calloc(nmemb: int64, size: int64) -> int8*
+extern fn realloc(ptr: int8*, size: int64) -> int8*
+extern fn memcpy(dst: int8*, src: int8*, n: int64) -> int8*
+extern fn memset(ptr: int8*, val: int8, n: int64) -> int8*
+
+pub fn heap_alloc(size: int64) -> linear int8* {
+    return malloc(size)
+}
+
+pub fn heap_alloc_zero(count: int64, size: int64) -> linear int8* {
+    return calloc(count, size)
+}
+
+pub fn heap_free(ptr: linear int8*) -> void {
+    free(ptr)
+    return
+}
+
+pub fn raw_free(ptr: int8*) -> void {
+    free(ptr)
+    return
+}
+
+pub fn mem_copy(dst: int8*, src: int8*, n: int64) -> void {
+    memcpy(dst, src, n)
+    return
+}
+
+pub fn mem_set(ptr: int8*, val: int8, n: int64) -> void {
+    memset(ptr, val, n)
+    return
+}
+
+pub fn mem_zero(ptr: int8*, n: int64) -> void {
+    memset(ptr, 0, n)
+    return
+}
