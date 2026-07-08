@@ -1,21 +1,70 @@
-hokkaido — LLVM-based compiler with cubical compile-time evaluation
+# hokkaido — LLVM-based compiler with cubical compile-time evaluation
 
-## installation
+## Packages
+
+This repository provides two tools:
+
+- **hokkaido** — the compiler (C++ with LLVM backend, Rust cubical backend)
+- **otaru** — the package manager and project scaffold (Rust)
+
+## Installation
+
+### Nix (flake)
+
+```sh
+# Both otaru + hokkaido (default)
+nix build github:hokkaido-lang/hokkaido
+nix profile install github:hokkaido-lang/hokkaido
+
+# Just the hokkaido compiler
+nix build github:hokkaido-lang/hokkaido#hokkaido
+nix profile install github:hokkaido-lang/hokkaido#hokkaido
+
+# Otaru explicitly (identical to default)
+nix build github:hokkaido-lang/hokkaido#otaru
+nix profile install github:hokkaido-lang/hokkaido#otaru
+```
+
+The Nix-built `otaru` bundles the `hokkaido` compiler automatically — everything works out of the box.
+
+### From source
+
+**Requirements:** clang, cmake, cargo, LLVM (19+)
+
 ```sh
 git clone https://github.com/hokkaido-lang/hokkaido.git
-mkdir build
-cd build
-cmake ..
-make
-```
-###
-**requirements**  
-clang  
-cargo  
-llvm   
+cd hokkaido
 
-## Hokkaido language syntax:  
-[Docs](docs/syntax.md)
-  
-## LICENSE
-[LICENSE](LICENSE)
+# Build the compiler
+mkdir build && cd build
+cmake .. && make
+
+# Build the package manager
+cd ../otaru
+cargo build --release
+```
+
+After building, add `build/` to your `PATH` or set `HOKKAIDO_HOME`:
+
+```sh
+export HOKKAIDO_HOME=/path/to/hokkaido/build
+```
+
+## Quick start
+
+```sh
+otaru new myapp
+cd myapp
+otaru run     # builds and runs src/main.hk
+```
+
+The `std/` library (HOFs like `twice`, `compose`, `fold_int`, ...) is embedded in `otaru` and automatically prepared in new projects.
+
+## Docs
+
+- [Language syntax](docs/syntax.md)
+- [Function types and HOFs](docs/syntax-functions.md)
+
+## License
+
+[Apache License 2.0](LICENSE)

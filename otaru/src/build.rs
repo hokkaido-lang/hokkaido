@@ -2,6 +2,11 @@ use std::path::Path;
 use std::process::Command;
 
 pub fn run() {
+    compile_and_link();
+}
+
+/// Compile all .hk sources and link into an executable in build/
+pub fn compile_and_link() -> String {
     let manifest_path = Path::new("otaru.toml");
     if !manifest_path.exists() {
         eprintln!("Error: otaru.toml not found (not in an otaru project)");
@@ -17,16 +22,14 @@ pub fn run() {
         std::process::exit(1);
     }
 
-    // Find the hokkaido compiler
     let hokkaido = find_hokkaido();
 
-    // Create build directory
-    fs_extra::create_build_dir();
+    std::fs::create_dir_all("build").unwrap_or_else(|e| {
+        eprintln!("Error creating build/ directory: {}", e);
+        std::process::exit(1);
+    });
 
-    // Collect all .hk files from src/ and dependencies
     let mut hk_files: Vec<String> = Vec::new();
-
-    // Source files
     if let Ok(entries) = std::fs::read_dir(src_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -41,21 +44,17 @@ pub fn run() {
         std::process::exit(1);
     }
 
-    // Determine entry point (main.hk or the only file)
-    // hokkaido appends .o to the output path automatically
-    let obj_base = format!("build/{}", manifest.package.name);
+    let binary = format!("build/{}", manifest.package.name);
 
-    // The first .hk file (typically main.hk) is the entry
-    // We compile all src files together via include or separate compilation
-    // For now, compile the entry point which includes others
     let entry = hk_files.iter()
         .find(|f| f.contains("main"))
         .unwrap_or(&hk_files[0]);
 
+    // hokkaido appends .o to the output path
     let status = Command::new(&hokkaido)
         .arg(entry)
         .arg("-o")
-        .arg(&obj_base)
+        .arg(&binary)
         .status()
         .unwrap_or_else(|e| {
             eprintln!("Error running hokkaido: {}", e);
@@ -63,15 +62,43 @@ pub fn run() {
         });
 
     if !status.success() {
-        eprintln!("Build failed");
+        eprintln!("Compilation failed");
         std::process::exit(1);
     }
 
-    println!("Compiled {} -> {}.o", entry, obj_base);
+    let obj_path = format!("{}.o", binary);
+
+    // Link with clang
+    let link_status = Command::new("clang")
+        .arg(&obj_path)
+        .arg("-o")
+        .arg(&binary)
+        .status()
+        .unwrap_or_else(|e| {
+            eprintln!("Error linking with clang: {} (is clang installed?)", e);
+            std::process::exit(1);
+        });
+
+    if !link_status.success() {
+        eprintln!("Linking failed");
+        std::process::exit(1);
+    }
+
+    println!("Built: {}", binary);
+    binary
 }
 
 pub fn find_hokkaido() -> String {
-    // Check PATH first — hokkaido doesn't have --help, so check with "which" approach
+    // Check next to the running otaru binary (works when bundled via Nix)
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join("hokkaido");
+            if candidate.exists() {
+                return candidate.to_string_lossy().to_string();
+            }
+        }
+    }
+
     if let Ok(path) = std::env::var("PATH") {
         for dir in path.split(':') {
             let candidate = std::path::Path::new(dir).join("hokkaido");
@@ -81,7 +108,6 @@ pub fn find_hokkaido() -> String {
         }
     }
 
-    // Check common locations
     for candidate in &[
         "./build/hokkaido",
         "../build/hokkaido",
@@ -93,7 +119,6 @@ pub fn find_hokkaido() -> String {
         }
     }
 
-    // Check if HOKKAIDO_HOME is set
     if let Ok(home) = std::env::var("HOKKAIDO_HOME") {
         let path = std::path::Path::new(&home).join("hokkaido");
         if path.exists() {
@@ -106,8 +131,37 @@ pub fn find_hokkaido() -> String {
     std::process::exit(1);
 }
 
-mod fs_extra {
-    pub fn create_build_dir() {
-        let _ = std::fs::create_dir_all("build");
+pub fn find_std_dir() -> String {
+    // Try to find std/ relative to hokkaido compiler
+    let hokkaido = find_hokkaido();
+    let hokkaido_path = std::path::Path::new(&hokkaido);
+    if let Some(bin_dir) = hokkaido_path.parent() {
+        // Check: <bin_dir>/../std (e.g. repo layout: build/hokkaido → repo-root/std)
+        let candidate = bin_dir.join("../std");
+        if let Ok(canon) = candidate.canonicalize() {
+            if canon.is_dir() {
+                return canon.to_string_lossy().to_string();
+            }
+        }
+        // Check: <bin_dir>/../share/hokkaido/std (e.g. system install)
+        let candidate = bin_dir.join("../share/hokkaido/std");
+        if let Ok(canon) = candidate.canonicalize() {
+            if canon.is_dir() {
+                return canon.to_string_lossy().to_string();
+            }
+        }
     }
+
+    // Fall back to HOKKAIDO_HOME/../std
+    if let Ok(home) = std::env::var("HOKKAIDO_HOME") {
+        let candidate = std::path::Path::new(&home).join("../std");
+        if let Ok(canon) = candidate.canonicalize() {
+            if canon.is_dir() {
+                return canon.to_string_lossy().to_string();
+            }
+        }
+    }
+
+    eprintln!("Warning: std/ directory not found (stdlib features unavailable)");
+    String::new()
 }

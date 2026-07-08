@@ -1,4 +1,11 @@
-{ pkgs ? import <nixpkgs> {} }:
+{ pkgs ? import <nixpkgs> {}
+, hokkaido ? null
+}:
+
+let
+  hokkaido-bin = if hokkaido != null then hokkaido
+    else pkgs.callPackage ../default.nix { };
+in
 
 pkgs.rustPlatform.buildRustPackage {
   pname = "otaru";
@@ -8,6 +15,14 @@ pkgs.rustPlatform.buildRustPackage {
 
   cargoLock.lockFile = ./Cargo.lock;
 
+  # hokkaido binary is bundled so otaru can find it at runtime
+  buildInputs = [ hokkaido-bin ];
+
+  postInstall = ''
+    mkdir -p $out/bin
+    cp ${hokkaido-bin}/bin/hokkaido $out/bin/
+  '';
+
   meta = with pkgs.lib; {
     description = "Hokkaido package manager and project manager";
     longDescription = ''
@@ -16,7 +31,7 @@ pkgs.rustPlatform.buildRustPackage {
       running, dependency management, and more.
     '';
     homepage = "https://github.com/jihoo/hokkaido";
-    license = licenses.mit;
+    license = licenses.asl20;
     maintainers = [];
     mainProgram = "otaru";
   };

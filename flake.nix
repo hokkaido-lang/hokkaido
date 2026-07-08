@@ -11,12 +11,13 @@
       let
         pkgs = import nixpkgs { inherit system; };
         hokkaido = pkgs.callPackage ./default.nix { };
-        otaru = pkgs.callPackage ./otaru/default.nix { };
+        otaru = pkgs.callPackage ./otaru/default.nix { inherit hokkaido; };
       in
       {
         packages = {
-          default = hokkaido;
+          default = otaru;
           otaru = otaru;
+          hokkaido = hokkaido;
         };
 
         devShells.default = pkgs.mkShell {
