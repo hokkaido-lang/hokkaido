@@ -12,6 +12,8 @@ This repository provides two tools:
 ### Nix (flake)
 
 ```sh
+nix shell github:hokkaido-lang/hokkaido
+
 # Both otaru + hokkaido (default)
 nix build github:hokkaido-lang/hokkaido
 nix profile install github:hokkaido-lang/hokkaido
