@@ -10,13 +10,21 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
+        hokkaido = pkgs.callPackage ./default.nix { };
+        otaru = pkgs.callPackage ./otaru/default.nix { };
       in
       {
-        packages.default = pkgs.callPackage ./default.nix { };
+        packages = {
+          default = hokkaido;
+          otaru = otaru;
+        };
 
         devShells.default = pkgs.mkShell {
-          inputsFrom = [ self.packages.${system}.default ];
-          buildInputs = with pkgs; [ cmake ];
+          inputsFrom = [ hokkaido ];
+          buildInputs = with pkgs; [
+            cmake
+            otaru
+          ];
           shellHook = ''
             echo "--- Compiler Development Environment Loaded ---"
             echo "Using CMake and $(llvm-config --version)"
