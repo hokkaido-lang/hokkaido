@@ -365,16 +365,6 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
   }
 
   if (auto *id = dynamic_cast<IdentExpr *>(expr)) {
-    // Check linear type consumption
-    auto linear_ann_it = named_type_anns.find(id->name);
-    if (linear_ann_it != named_type_anns.end() && linear_ann_it->second.is_linear) {
-      if (consumed_linear_vars.count(id->name)) {
-        errs() << "Error: linear variable '" << id->name << "' has already been consumed\n";
-        return nullptr;
-      }
-      consumed_linear_vars.insert(id->name);
-    }
-
     auto it = named_values.find(id->name);
     if (it == named_values.end()) {
       auto gi = global_values.find(id->name);

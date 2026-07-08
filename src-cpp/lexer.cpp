@@ -337,7 +337,6 @@ Token Lexer::lex_identifier(int l, int c) {
   if (id == "trait") return {TokenType::Trait, id, 0, l, c};
   if (id == "impl") return {TokenType::Impl, id, 0, l, c};
   if (id == "region") return {TokenType::Region, id, 0, l, c};
-  if (id == "linear") return {TokenType::Linear, id, 0, l, c};
   if (id == "true") return {TokenType::True, id, 1.0, l, c};
   if (id == "false") return {TokenType::False, id, 0.0, l, c};
 

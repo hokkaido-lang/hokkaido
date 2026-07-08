@@ -40,7 +40,6 @@ deliberately minimal.
 - [Import](/docs/syntax-modules#import)
 - [Visibility (pub)](/docs/syntax-modules#visibility)
 - [Namespaces](/docs/syntax-modules#namespaces)
-- [Linear types](/docs/syntax-types#linear-types)
 - [Region](/docs/syntax-control-flow#region)
 - [Include](/docs/syntax-modules#include-low-level)
 - [C FFI](/docs/syntax-ffi-cubical#c-ffi)

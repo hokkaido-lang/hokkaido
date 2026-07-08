@@ -267,21 +267,37 @@ region Outer {
 }
 ```
 
-### Combining with linear types
+### Region lifetime tracking
 
-Region-allocated pointers can be declared `linear` to prevent double-free bugs:
+The compiler tracks region-allocated pointers and rejects returning them outside the
+region scope. This prevents the most common use-after-free bug — escaping a region
+pointer to the caller:
 
 ```
-region R {
-    let p: linear int* = __region_alloc(8)
-    p[0] = 42
-    let v: int = *p         // consumes p
-    return v
-    // p cannot be used again here
+fn bad() -> int8* {
+    region R {
+        let p: int8* = __region_alloc(8)
+        p[0] = 42
+        return p    // Error: region will be freed before the function returns
+    }
 }
 ```
 
+Propagation through `let` is also tracked:
+
+```
+fn also_bad() -> int8* {
+    region R {
+        let p: int8* = __region_alloc(8)
+        let q: int8* = p       // q inherits the region tag
+        return q               // Error: q points into the region
+    }
+}
+```
+
+This check works at compile time with zero runtime cost. It does not track pointers
+through pointer arithmetic, function calls, or writes to global variables — those
+patterns remain the programmer's responsibility.
+
 Regions are purely a scoped memory optimization — there is no garbage collection, no
-reference counting, and no borrow checker. The programmer is responsible for not using
-region-allocated pointers after the region exits (a use-after-free bug that the compiler
-does not currently prevent).
+reference counting, and no borrow checker.

@@ -291,8 +291,7 @@ stmt       ::= expr_stmt | let_stmt | return_stmt | if_stmt
              | for_stmt | break_stmt | continue_stmt
              | "region" ident block
 expr_stmt  ::= expr
-let_stmt   ::= "let" ident ":" linear_opt type "=" expr
-linear_opt ::= "linear"?
+let_stmt   ::= "let" ident ":" type "=" expr
 return_stmt ::= "return" expr?
 if_stmt    ::= "if" expr block ("else" (block | if_stmt))?
 for_stmt   ::= ("'" ident)? "for" "(" stmt? ";" expr? ";" expr? ")" block
@@ -366,4 +365,4 @@ atomic_op  ::= "xchg" | "add" | "sub" | "and" | "or" | "xor"
 | 6 | String type | Opaque pointer (`int8*`) | All phases |
 | 7 | Dynamic memory approach | Extern fn (`malloc`/`free`), not built-in syntax | Phase 3 (completed) |
 | 8 | Function types and HOFs | `fn(T1, T2) -> Ret` as opaque `i8*` pointer to closure struct; `&fn_name` for named-function values | `std/hof.hk` combined with Phase 4 (completed) |
-| 9 | Memory safety — regions + linear types | Stack-based bump-allocator region blocks (`region R { ... }`) + `linear` type qualifier (single-use per variable, easily bypassed, not suitable for heap safety) | Regions: safe scoped memory. Linear types: variable-name tracking only, no borrow checker. `std/mem.hk` provides safe memory operations (copy, set, zero, eq, swap) but no heap allocation wrappers — `malloc`/`free` via FFI is inherently unsafe |
+| 9 | Memory safety — regions + lifetime tracking | Stack-based bump-allocator region blocks (`region R { ... }`) with compile-time rejection of escaping region pointers (tracking through direct `let` assignment). `linear` keyword removed (it tracked variable names, not values — gave false confidence) | Regions: safe scoped memory with zero-cost compile-time escape detection. `std/mem.hk` provides safe memory operations (copy, set, zero, eq, swap). Heap allocation (`malloc`/`free` via FFI) remains inherently unsafe |

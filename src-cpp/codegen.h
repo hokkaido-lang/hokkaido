@@ -200,8 +200,10 @@ private:
   };
   std::vector<RegionInfo> region_stack;
 
-  // Linear type tracking: set of variable names that have been consumed
-  std::unordered_set<std::string> consumed_linear_vars;
+  // Region lifetime tracking: variables whose value comes from __region_alloc
+  // (i.e., they point into a region buffer). A return that references any of
+  // these is an error — the region will be freed before the function returns.
+  std::unordered_set<std::string> region_allocated_vars;
 
   // Loop state for break/continue
   struct LoopInfo {
@@ -213,4 +215,8 @@ private:
   bool gen_break_stmt(BreakStmt *stmt);
   bool gen_continue_stmt(ContinueStmt *stmt);
   bool gen_region_stmt(RegionStmt *stmt);
+
+  // Region lifetime tracking helpers
+  void track_region_alloc_init(const std::string &name, Expr *init_expr);
+  bool check_region_lifetime(ReturnStmt *stmt);
 };

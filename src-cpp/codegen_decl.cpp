@@ -19,7 +19,7 @@ bool CodeGen::alloc_and_store(const std::string &name, TypeKind kind,
   Builder.CreateStore(init, alloca);
   named_values[name] = alloca;
   named_types[name] = kind;
-  if (kind == TypeKind::Fn || kind == TypeKind::Struct || kind == TypeKind::Enum || kind == TypeKind::Tuple || kind == TypeKind::Slice || ann.pointer_depth > 0 || ann.is_linear)
+  if (kind == TypeKind::Fn || kind == TypeKind::Struct || kind == TypeKind::Enum || kind == TypeKind::Tuple || kind == TypeKind::Slice || ann.pointer_depth > 0)
     named_type_anns[name] = ann;
   return true;
 }
@@ -126,8 +126,11 @@ bool CodeGen::gen_let_decl(LetDecl *decl) {
   if (decl->type_ann.pointer_depth > 0) {
     init = eval_expr(decl->init_expr.get(), llvm_type);
     if (!init) return false;
-    return alloc_and_store(decl->name, decl->type_ann.kind, init, llvm_type,
-                            decl->type_ann);
+    if (!alloc_and_store(decl->name, decl->type_ann.kind, init, llvm_type,
+                          decl->type_ann))
+      return false;
+    track_region_alloc_init(decl->name, decl->init_expr.get());
+    return true;
   }
 
   switch (decl->type_ann.kind) {
@@ -246,8 +249,11 @@ bool CodeGen::gen_let_stmt(LetStmt *stmt) {
   if (stmt->type_ann.pointer_depth > 0) {
     init = eval_expr(stmt->init_expr.get(), llvm_type);
     if (!init) return false;
-    return alloc_and_store(stmt->name, stmt->type_ann.kind, init, llvm_type,
-                            stmt->type_ann);
+    if (!alloc_and_store(stmt->name, stmt->type_ann.kind, init, llvm_type,
+                          stmt->type_ann))
+      return false;
+    track_region_alloc_init(stmt->name, stmt->init_expr.get());
+    return true;
   }
 
   switch (stmt->type_ann.kind) {

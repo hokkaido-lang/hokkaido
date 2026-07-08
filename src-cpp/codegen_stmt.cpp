@@ -6,6 +6,35 @@
 using namespace llvm;
 
 // -------------------------------------------------------------------------
+// Region lifetime tracking
+// -------------------------------------------------------------------------
+
+void CodeGen::track_region_alloc_init(const std::string &name, Expr *init_expr) {
+  if (!init_expr) return;
+  if (auto *call = dynamic_cast<CallExpr *>(init_expr)) {
+    if (call->callee == "__region_alloc" && !call->callee_expr) {
+      if (!region_stack.empty())
+        region_allocated_vars.insert(name);
+    }
+  } else if (auto *id = dynamic_cast<IdentExpr *>(init_expr)) {
+    if (region_allocated_vars.count(id->name))
+      region_allocated_vars.insert(name);
+  }
+}
+
+bool CodeGen::check_region_lifetime(ReturnStmt *stmt) {
+  if (!stmt->value) return true;
+  if (auto *id = dynamic_cast<IdentExpr *>(stmt->value.get())) {
+    if (region_allocated_vars.count(id->name)) {
+      errs() << "Error: cannot return pointer '" << id->name
+             << "' — region will be freed before the function returns\n";
+      return false;
+    }
+  }
+  return true;
+}
+
+// -------------------------------------------------------------------------
 // Statements
 // -------------------------------------------------------------------------
 
@@ -35,6 +64,9 @@ bool CodeGen::gen_stmt(Stmt *stmt) {
 bool CodeGen::gen_return_stmt(ReturnStmt *stmt) {
   Function *fn = Builder.GetInsertBlock()->getParent();
   Type *ret_type = fn->getReturnType();
+
+  // Reject returning region-allocated pointers
+  if (!check_region_lifetime(stmt)) return false;
 
   if (ret_type->isVoidTy()) {
     Builder.CreateRetVoid();
