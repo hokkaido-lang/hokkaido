@@ -11,7 +11,10 @@
       let
         pkgs = import nixpkgs { inherit system; };
         hokkaido = pkgs.callPackage ./default.nix { };
-        otaru = pkgs.callPackage ./otaru/default.nix { inherit hokkaido; };
+        otaru = pkgs.callPackage ./otaru/default.nix {
+          inherit hokkaido;
+          std = ./std;
+        };
       in
       {
         packages = {

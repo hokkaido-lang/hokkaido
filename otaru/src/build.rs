@@ -130,38 +130,3 @@ pub fn find_hokkaido() -> String {
     eprintln!("Hint: set HOKKAIDO_HOME to the directory containing the hokkaido binary.");
     std::process::exit(1);
 }
-
-pub fn find_std_dir() -> String {
-    // Try to find std/ relative to hokkaido compiler
-    let hokkaido = find_hokkaido();
-    let hokkaido_path = std::path::Path::new(&hokkaido);
-    if let Some(bin_dir) = hokkaido_path.parent() {
-        // Check: <bin_dir>/../std (e.g. repo layout: build/hokkaido → repo-root/std)
-        let candidate = bin_dir.join("../std");
-        if let Ok(canon) = candidate.canonicalize() {
-            if canon.is_dir() {
-                return canon.to_string_lossy().to_string();
-            }
-        }
-        // Check: <bin_dir>/../share/hokkaido/std (e.g. system install)
-        let candidate = bin_dir.join("../share/hokkaido/std");
-        if let Ok(canon) = candidate.canonicalize() {
-            if canon.is_dir() {
-                return canon.to_string_lossy().to_string();
-            }
-        }
-    }
-
-    // Fall back to HOKKAIDO_HOME/../std
-    if let Ok(home) = std::env::var("HOKKAIDO_HOME") {
-        let candidate = std::path::Path::new(&home).join("../std");
-        if let Ok(canon) = candidate.canonicalize() {
-            if canon.is_dir() {
-                return canon.to_string_lossy().to_string();
-            }
-        }
-    }
-
-    eprintln!("Warning: std/ directory not found (stdlib features unavailable)");
-    String::new()
-}

@@ -4,7 +4,6 @@ pub mod build;
 pub mod run;
 pub mod add;
 pub mod install;
-pub mod std_embed;
 
 use clap::{Parser, Subcommand};
 

@@ -33,18 +33,67 @@ pub fn run(name: &str) {
     fs::write(project_dir.join("hk.mod"), "")
         .unwrap_or_else(|e| { eprintln!("Error writing hk.mod: {}", e); std::process::exit(1); });
 
-    // Write embedded std library
-    let std_dir = project_dir.join("std");
-    fs::create_dir_all(&std_dir)
-        .unwrap_or_else(|e| { eprintln!("Error creating std/ directory: {}", e); std::process::exit(1); });
-
-    for f in crate::std_embed::files() {
-        fs::write(std_dir.join(f.path), f.content)
-            .unwrap_or_else(|e| { eprintln!("Error writing std/{}: {}", f.path, e); std::process::exit(1); });
+    // Copy std library from the bundled location
+    let std_dir = find_bundled_std();
+    if let Some(src) = std_dir {
+        let dst = project_dir.join("std");
+        if let Err(e) = copy_dir(Path::new(&src), &dst) {
+            eprintln!("Warning: could not copy std library: {}", e);
+        } else {
+            println!("  std/ prepared");
+        }
+    } else {
+        eprintln!("Warning: std/ directory not found (stdlib features unavailable)");
+        eprintln!("Hint: install otaru via Nix or build from the hokkaido repository");
     }
 
-    println!("  std/ prepared");
     println!("Created project '{}'", name);
     println!("  cd {}", name);
     println!("  otaru build");
+}
+
+fn find_bundled_std() -> Option<String> {
+    // Check next to the running otaru binary
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let mut dir = parent.to_path_buf();
+            // Walk up the directory tree looking for std/hk.mod
+            loop {
+                let candidate = dir.join("std");
+                if candidate.join("hk.mod").exists() && candidate.join("hof.hk").exists() {
+                    return Some(candidate.to_string_lossy().to_string());
+                }
+                // Also check share/otaru/std (Nix layout)
+                let nix_candidate = dir.join("share/otaru/std");
+                if nix_candidate.join("hk.mod").exists() && nix_candidate.join("hof.hk").exists() {
+                    return Some(nix_candidate.to_string_lossy().to_string());
+                }
+                if !dir.pop() { break; }
+            }
+        }
+    }
+
+    // Fallback: HOKKAIDO_HOME points to build dir
+    if let Ok(home) = std::env::var("HOKKAIDO_HOME") {
+        let candidate = Path::new(&home).join("../std");
+        if candidate.exists() {
+            return Some(candidate.to_string_lossy().to_string());
+        }
+    }
+
+    None
+}
+
+fn copy_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        if ty.is_dir() {
+            copy_dir(&entry.path(), &dst.join(entry.file_name()))?;
+        } else {
+            fs::copy(entry.path(), dst.join(entry.file_name()))?;
+        }
+    }
+    Ok(())
 }
