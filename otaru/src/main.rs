@@ -21,10 +21,22 @@ enum Command {
         /// Project name
         name: String,
     },
-    /// Build the current project
-    Build,
-    /// Build and run the current project
-    Run,
+    /// Build the current project or a single file
+    Build {
+        /// Input .hk file (optional — if omitted, builds the project in src/)
+        file: Option<String>,
+        /// Freestanding mode (no CRT/libc, main becomes ELF entry point)
+        #[arg(long)]
+        freestanding: bool,
+    },
+    /// Build and run the current project or a single file
+    Run {
+        /// Input .hk file (optional — if omitted, runs the project in src/)
+        file: Option<String>,
+        /// Freestanding mode (no CRT/libc, main becomes ELF entry point)
+        #[arg(long)]
+        freestanding: bool,
+    },
     /// Add a dependency
     Add {
         /// Dependency name
@@ -47,8 +59,12 @@ fn main() {
 
     match &cli.command {
         Command::New { name } => new::run(name),
-        Command::Build => build::run(),
-        Command::Run => run::run(),
+        Command::Build { file, freestanding } => {
+            build::run(file.as_deref(), *freestanding);
+        }
+        Command::Run { file, freestanding } => {
+            run::run(file.as_deref(), *freestanding);
+        }
         Command::Add { name, git, path } => add::run(name, git.as_deref(), path.as_deref()),
         Command::Install => install::run(),
         Command::Clean => clean(),

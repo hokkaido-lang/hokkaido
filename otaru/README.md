@@ -1,16 +1,18 @@
 # otaru — Hokkaido Package Manager
 
-otaru is a package manager and project scaffold for the [Hokkaido](https://github.com/jihoo/hokkaido) compiler.
+otaru is a package manager and project scaffold for the [Hokkaido](https://github.com/hokkaido-lang/hokkaido) compiler.
 
 ## Installation
 
-### Nix (flake)
+### Nix (flake — recommended)
 
 ```bash
-nix build github:hokkaido-lang/hokkaido#otaru    # standalone binary in result/bin/otaru
-nix profile install github:hokkaido-lang/hokkaido#otaru  # or install globally
-nix develop github:hokkaido-lang/hokkaido          # otaru is included in the dev shell
+nix profile install github:hokkaido-lang/hokkaido          # otaru + hokkaido bundled (default)
+nix profile install github:hokkaido-lang/hokkaido#hokkaido # compiler only (optional)
+nix develop github:hokkaido-lang/hokkaido                   # dev shell (both + cmake)
 ```
+
+The Nix package bundles the hokkaido compiler and std library — no extra setup needed.
 
 ### Nix (traditional)
 
@@ -24,18 +26,23 @@ nix-build -E 'with import <nixpkgs> {}; callPackage ./otaru/default.nix {}'
 cargo install --path otaru
 ```
 
+With `cargo install`, you need the hokkaido compiler on `PATH` or `HOKKAIDO_HOME`.
+
 ## Prerequisites
 
-- The **hokkaido compiler** must be installed on your `PATH`, or pointed to via `HOKKAIDO_HOME`.
-- For `otaru run`: `clang` is needed at runtime to link the compiled object file into an executable.
+- **hokkaido compiler** — on `PATH`, in `HOKKAIDO_HOME`, or bundled (Nix)
+- **clang** — needed at runtime to link executables
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `otaru new <name>` | Scaffold a new Hokkaido project |
-| `otaru build` | Compile the current project via hokkaido |
-| `otaru run` | Build, link with clang, and run |
+| `otaru new <name>` | Scaffold a new Hokkaido project (includes std/) |
+| `otaru build` | Build the project in src/ |
+| `otaru build <file.hk>` | Compile a single file (no project needed) |
+| `otaru build --freestanding` | Build in freestanding mode (no CRT/libc) |
+| `otaru run` | Build project and run |
+| `otaru run <file.hk>` | Compile a single file and run |
 | `otaru add <name> --git <url>` | Add a git dependency |
 | `otaru add <name> --path <path>` | Add a local dependency |
 | `otaru install` | Clone/fetch all dependencies |
@@ -44,24 +51,53 @@ cargo install --path otaru
 ## Quick Start
 
 ```bash
-# Create a new project
+# Create a new project (std/ is automatically prepared)
 otaru new myapp
 cd myapp
 
-# Write some code
+# Write some code with std library
 cat > src/main.hk << 'EOF'
+import "std"
+
 extern fn putchar(c: int) -> int
 
+fn double(x: int) -> int {
+    return x * 2
+}
+
 fn main() -> int {
-    putchar(72)  # H
-    putchar(105) # i
-    putchar(10)  # newline
-    return 42
+    let x: int = std::twice(&double, 5)
+    putchar(48 + x / 10)  # 1
+    putchar(48 + x % 10)  # 0
+    putchar(10)
+    return x
 }
 EOF
 
 # Build and run
 otaru run
+```
+
+### Single-file workflow
+
+```bash
+# Compile and run any .hk file without a project
+cat > hello.hk << 'EOF'
+extern fn putchar(c: int) -> int
+fn main() -> int {
+    putchar(72); putchar(105); putchar(10)
+    return 0
+}
+EOF
+otaru run hello.hk
+```
+
+### Freestanding mode
+
+```bash
+# Build a freestanding object file (no CRT/libc)
+otaru build kernel.hk --freestanding
+# Produces build/kernel.o — link with ld.lld manually
 ```
 
 ## Project Structure
@@ -70,6 +106,9 @@ otaru run
 myapp/
 ├── otaru.toml         # Manifest (package name, version, deps)
 ├── hk.mod             # Marks the package root
+├── std/               # Standard library (prepared by otaru new)
+│   ├── hk.mod
+│   └── hof.hk
 └── src/
     └── main.hk        # Entry point
 ```

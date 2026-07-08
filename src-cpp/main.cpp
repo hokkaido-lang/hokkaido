@@ -261,39 +261,7 @@ int main(int argc, char *argv[]) {
       std::string CrtDir = find_crt_dir();
       std::string DynamicLinker = find_dynamic_linker();
 
-      if (HaveLdLld && !CrtDir.empty() && !DynamicLinker.empty()) {
-        // Equivalent to what `clang ObjPath -o OutputPath` does under the
-        // hood, minus the parts of clang we don't need (no C compilation
-        // happens here — the .o file above was already produced by LLVM).
-        // Order matters to the linker: crt1.o, crti.o, then user objects
-        // and libraries, then crtn.o.
-        std::cout << "  ld.lld -o " << OutputPath
-                   << " -dynamic-linker " << DynamicLinker
-                   << " " << CrtDir << "/crt1.o"
-                   << " " << CrtDir << "/crti.o"
-                   << " " << ObjPath
-                   << " -L" << CrtDir << " -lc";
-        for (auto &a : ExtraLinkArgs) std::cout << " " << a;
-        std::cout << " " << CrtDir << "/crtn.o\n";
-      } else {
-        // Couldn't find everything needed for a precise ld.lld invocation;
-        // clang is a much simpler one-liner that figures all of that out
-        // itself, so suggest that instead.
-        std::cout << "  clang " << ObjPath << " -o " << OutputPath;
-        for (auto &a : ExtraLinkArgs) std::cout << " " << a;
-        std::cout << "\n";
-        if (!HaveLdLld) {
-          std::cout << "\n  ('ld.lld' was not found on PATH.)\n";
-        }
-        if (CrtDir.empty() || DynamicLinker.empty()) {
-          std::cout << "  (Could not locate C runtime startup objects or "
-                       "the dynamic linker for a direct ld.lld invocation; "
-                       "install glibc development files, e.g. 'libc6-dev' "
-                       "on Debian/Ubuntu or 'glibc-devel' on Fedora/RHEL, "
-                       "or set HOKKAIDO_CRT_DIR and "
-                       "HOKKAIDO_DYNAMIC_LINKER.)\n";
-        }
-      }
+      
     }
     return 0;
   }

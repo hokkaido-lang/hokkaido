@@ -1,15 +1,90 @@
 use std::path::Path;
 use std::process::Command;
 
-pub fn run() {
-    compile_and_link();
+pub fn run(file: Option<&str>, freestanding: bool) {
+    if let Some(f) = file {
+        compile_single(f, freestanding);
+    } else {
+        compile_project(freestanding);
+    }
 }
 
-/// Compile all .hk sources and link into an executable in build/
-pub fn compile_and_link() -> String {
+/// Compile a single file or project and return the binary path (without extension)
+pub fn compile_single_or_project(file: Option<&str>, freestanding: bool) -> String {
+    if let Some(f) = file {
+        compile_single(f, freestanding)
+    } else {
+        compile_project(freestanding)
+    }
+}
+
+fn compile_single(file: &str, freestanding: bool) -> String {
+    let path = Path::new(file);
+    if !path.exists() {
+        eprintln!("Error: file '{}' not found", file);
+        std::process::exit(1);
+    }
+
+    let hokkaido = find_hokkaido();
+
+    std::fs::create_dir_all("build").unwrap_or_else(|e| {
+        eprintln!("Error creating build/ directory: {}", e);
+        std::process::exit(1);
+    });
+
+    let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+    let output_base = format!("build/{}", stem);
+
+    let mut cmd = Command::new(&hokkaido);
+    cmd.arg(file).arg("-o").arg(&output_base);
+    if freestanding {
+        cmd.arg("--freestanding");
+    }
+
+    let status = cmd.status().unwrap_or_else(|e| {
+        eprintln!("Error running hokkaido: {}", e);
+        std::process::exit(1);
+    });
+
+    if !status.success() {
+        eprintln!("Compilation failed");
+        std::process::exit(1);
+    }
+
+    let obj_path = format!("{}.o", output_base);
+
+    if freestanding {
+        println!("Compiled {} -> {} (freestanding)", file, obj_path);
+        println!("Warning: freestanding object files cannot be linked with clang.");
+        println!("Use ld.lld directly or a custom linker script.");
+        return output_base;
+    }
+
+    // Link with clang
+    let link_status = Command::new("clang")
+        .arg(&obj_path)
+        .arg("-o")
+        .arg(&output_base)
+        .status()
+        .unwrap_or_else(|e| {
+            eprintln!("Error linking with clang: {} (is clang installed?)", e);
+            std::process::exit(1);
+        });
+
+    if !link_status.success() {
+        eprintln!("Linking failed");
+        std::process::exit(1);
+    }
+
+    println!("Built: {}", output_base);
+    output_base
+}
+
+fn compile_project(freestanding: bool) -> String {
     let manifest_path = Path::new("otaru.toml");
     if !manifest_path.exists() {
         eprintln!("Error: otaru.toml not found (not in an otaru project)");
+        eprintln!("Hint: compile a single file with: otaru build <file.hk>");
         std::process::exit(1);
     }
 
@@ -50,16 +125,16 @@ pub fn compile_and_link() -> String {
         .find(|f| f.contains("main"))
         .unwrap_or(&hk_files[0]);
 
-    // hokkaido appends .o to the output path
-    let status = Command::new(&hokkaido)
-        .arg(entry)
-        .arg("-o")
-        .arg(&binary)
-        .status()
-        .unwrap_or_else(|e| {
-            eprintln!("Error running hokkaido: {}", e);
-            std::process::exit(1);
-        });
+    let mut cmd = Command::new(&hokkaido);
+    cmd.arg(entry).arg("-o").arg(&binary);
+    if freestanding {
+        cmd.arg("--freestanding");
+    }
+
+    let status = cmd.status().unwrap_or_else(|e| {
+        eprintln!("Error running hokkaido: {}", e);
+        std::process::exit(1);
+    });
 
     if !status.success() {
         eprintln!("Compilation failed");
@@ -67,6 +142,13 @@ pub fn compile_and_link() -> String {
     }
 
     let obj_path = format!("{}.o", binary);
+
+    if freestanding {
+        println!("Compiled {} -> {} (freestanding)", entry, obj_path);
+        println!("Warning: freestanding object files cannot be linked with clang.");
+        println!("Use ld.lld directly or a custom linker script.");
+        return binary;
+    }
 
     // Link with clang
     let link_status = Command::new("clang")

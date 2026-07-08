@@ -1,7 +1,17 @@
 use std::process::Command;
 
-pub fn run() {
-    let binary = crate::build::compile_and_link();
+pub fn run(file: Option<&str>, freestanding: bool) {
+    if freestanding {
+        eprintln!("Error: 'otaru run' does not support --freestanding mode.");
+        eprintln!("Build with 'otaru build --freestanding <file>' and link manually.");
+        std::process::exit(1);
+    }
+
+    let binary = if let Some(f) = file {
+        crate::build::compile_single_or_project(Some(f), false)
+    } else {
+        crate::build::compile_single_or_project(None, false)
+    };
 
     let run_status = Command::new(&binary)
         .status()
