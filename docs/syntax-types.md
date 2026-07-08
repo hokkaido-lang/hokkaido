@@ -285,6 +285,29 @@ let x: int = 1
 // x is 1 again here
 ```
 
+### Linear types
+
+A variable can be declared with the `linear` qualifier to enforce single-use semantics:
+
+```
+let p: linear T = expression
+```
+
+A linear variable must be consumed at most once. After the variable is used (read, passed
+to a function, or assigned to another variable), any subsequent use is a compile error:
+
+```
+let x: linear int = 42
+let y: int = x       // consumes x — OK
+let z: int = x       // ERROR: linear variable 'x' has already been consumed
+```
+
+Linear types are useful for representing unique ownership of a resource (e.g., a
+region-allocated pointer that must not be freed twice). The compiler tracks consumption
+through named variables; aliasing through pointers is not tracked.
+
+Non-linear types are unaffected — they can be used multiple times as before.
+
 ### Restrictions
 
 - A variable cannot have type `void`.

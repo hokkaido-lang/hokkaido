@@ -312,6 +312,42 @@ Value *CodeGen::get_lvalue_ptr(Expr *expr, Type **out_type) {
 // -------------------------------------------------------------------------
 
 Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
+  // Handle __region_alloc builtin: allocate from the current region
+  if (auto *call = dynamic_cast<CallExpr *>(expr)) {
+    if (call->callee == "__region_alloc" && !call->callee_expr) {
+      if (region_stack.empty()) {
+        errs() << "Error: __region_alloc called outside of a region\n";
+        return nullptr;
+      }
+      RegionInfo &ri = region_stack.back();
+      Value *size_val = eval_expr(call->args[0].get(), Type::getInt64Ty(Context));
+      if (!size_val) return nullptr;
+
+      // Load current bump pointer
+      Value *cur = Builder.CreateLoad(PointerType::getUnqual(Context), ri.current_ptr, "region.cur_load");
+      // Calculate new pointer: cur + size
+      Value *new_ptr = Builder.CreateGEP(Type::getInt8Ty(Context), cur, size_val, "region.new");
+      // Check for overflow: if new_ptr > end_ptr, trap
+      Value *past_end = Builder.CreateICmpUGT(new_ptr, ri.end_ptr, "region.oob");
+      // Store new pointer back
+      Builder.CreateStore(new_ptr, ri.current_ptr);
+
+      // If past end, insert a trap
+      Function *fn = Builder.GetInsertBlock()->getParent();
+      BasicBlock *ok_bb = BasicBlock::Create(Context, "region.ok", fn);
+      BasicBlock *trap_bb = BasicBlock::Create(Context, "region.trap", fn);
+      Builder.CreateCondBr(past_end, trap_bb, ok_bb);
+
+      Builder.SetInsertPoint(trap_bb);
+      // Call __trap or just unreachable
+      Builder.CreateUnreachable();
+
+      Builder.SetInsertPoint(ok_bb);
+      // Return the old current pointer (start of allocation)
+      return cur;
+    }
+  }
+
   if (auto *num = dynamic_cast<NumberExpr *>(expr)) {
     if (expected_type && expected_type->isFPOrFPVectorTy())
       return ConstantFP::get(expected_type, num->value);
@@ -329,6 +365,16 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
   }
 
   if (auto *id = dynamic_cast<IdentExpr *>(expr)) {
+    // Check linear type consumption
+    auto linear_ann_it = named_type_anns.find(id->name);
+    if (linear_ann_it != named_type_anns.end() && linear_ann_it->second.is_linear) {
+      if (consumed_linear_vars.count(id->name)) {
+        errs() << "Error: linear variable '" << id->name << "' has already been consumed\n";
+        return nullptr;
+      }
+      consumed_linear_vars.insert(id->name);
+    }
+
     auto it = named_values.find(id->name);
     if (it == named_values.end()) {
       auto gi = global_values.find(id->name);

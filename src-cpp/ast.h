@@ -42,6 +42,7 @@ struct TypeAnnotation {
   std::string struct_name; // for Struct, Enum, TypeParam kind
   std::vector<TypeAnnotation> tuple_types; // for Tuple kind / Fn (param types + return type last)
   std::vector<TypeAnnotation> type_args; // for generic types like Foo<int>
+  bool is_linear = false; // linear type (use-once semantics)
 };
 
 enum class BinOp {
@@ -296,6 +297,11 @@ struct BreakStmt : Stmt {
 
 struct ContinueStmt : Stmt {
   std::string label;
+};
+
+struct RegionStmt : Stmt {
+  std::string name;
+  std::vector<std::unique_ptr<Stmt>> body;
 };
 
 struct IfStmt : Stmt {

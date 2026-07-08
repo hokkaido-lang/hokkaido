@@ -256,6 +256,11 @@ void Parser::prefix_decl_names(std::vector<std::unique_ptr<Decl>> &decls,
 
 TypeAnnotation Parser::parse_type_annotation() {
   TypeAnnotation ann;
+  bool is_linear = false;
+  if (cur_tok.type == TokenType::Linear) {
+    is_linear = true;
+    next_token();
+  }
   if (cur_tok.type == TokenType::Void) {
     ann = {TypeKind::Void};
     next_token();
@@ -330,6 +335,7 @@ TypeAnnotation Parser::parse_type_annotation() {
     // A 1-tuple (T) is just T, not a tuple
     if (elem_types.size() == 1) {
       ann = elem_types[0];
+      ann.is_linear = is_linear;
     } else {
       ann = {TypeKind::Tuple};
       ann.tuple_types = std::move(elem_types);
@@ -370,6 +376,7 @@ TypeAnnotation Parser::parse_type_annotation() {
     TypeAnnotation fn_ret_type = parse_type_annotation();
     if (has_error) return ann;
     ann = {TypeKind::Fn};
+    ann.is_linear = is_linear;
     ann.tuple_types = std::move(fn_param_types);
     ann.tuple_types.push_back(std::move(fn_ret_type));
   } else if (cur_tok.type == TokenType::Identifier) {
@@ -401,9 +408,12 @@ TypeAnnotation Parser::parse_type_annotation() {
   } else {
     set_error("expected type (void, int8, int16, int32, int64, uint8, uint16, uint32, uint64, float, bool, string, char, cubical, tuple, or struct name)");
     ann = {TypeKind::Int64};
+    ann.is_linear = is_linear;
     has_error = true;
     return ann;
   }
+
+  ann.is_linear = is_linear;
 
   // Handle generic type arguments: Foo<int, float>
   if (cur_tok.type == TokenType::Less && ann.kind == TypeKind::Struct) {
@@ -1364,6 +1374,9 @@ std::unique_ptr<Stmt> Parser::parse_stmt() {
   if (cur_tok.type == TokenType::Continue) {
     return parse_continue_stmt();
   }
+  if (cur_tok.type == TokenType::Region) {
+    return parse_region_stmt();
+  }
   auto expr = parse_expr();
   if (!expr) return nullptr;
   return std::make_unique<ExprStmt>(std::move(expr));
@@ -1535,6 +1548,30 @@ std::unique_ptr<ContinueStmt> Parser::parse_continue_stmt() {
   }
   auto stmt = std::make_unique<ContinueStmt>();
   stmt->label = label;
+  return stmt;
+}
+
+std::unique_ptr<Stmt> Parser::parse_region_stmt() {
+  next_token(); // consume 'region'
+
+  std::string name;
+  if (cur_tok.type == TokenType::Identifier) {
+    name = cur_tok.text;
+    next_token();
+    skip_newlines();
+  }
+
+  if (cur_tok.type != TokenType::LBrace) {
+    set_error("expected '{' after region" + (name.empty() ? "" : " '" + name + "'"));
+    return nullptr;
+  }
+
+  auto body = parse_block();
+  if (has_error) return nullptr;
+
+  auto stmt = std::make_unique<RegionStmt>();
+  stmt->name = name;
+  stmt->body = std::move(body);
   return stmt;
 }
 

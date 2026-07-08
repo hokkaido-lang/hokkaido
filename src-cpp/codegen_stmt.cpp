@@ -22,6 +22,8 @@ bool CodeGen::gen_stmt(Stmt *stmt) {
     return gen_break_stmt(brk);
   if (auto *cont = dynamic_cast<ContinueStmt *>(stmt))
     return gen_continue_stmt(cont);
+  if (auto *region = dynamic_cast<RegionStmt *>(stmt))
+    return gen_region_stmt(region);
   if (auto *expr = dynamic_cast<ExprStmt *>(stmt)) {
     Value *v = eval_expr(expr->expr.get(), Type::getInt64Ty(Context));
     return v != nullptr;
@@ -164,4 +166,43 @@ bool CodeGen::gen_continue_stmt(ContinueStmt *stmt) {
   }
   errs() << "Error: no loop with label '" << stmt->label << "' for continue\n";
   return false;
+}
+
+bool CodeGen::gen_region_stmt(RegionStmt *stmt) {
+  Function *fn = Builder.GetInsertBlock()->getParent();
+
+  // Allocate a 4096-byte region buffer on the stack
+  llvm::Type *i8ty = llvm::Type::getInt8Ty(Context);
+  llvm::Type *i64ty = llvm::Type::getInt64Ty(Context);
+  llvm::Type *ptr_ty = llvm::PointerType::getUnqual(Context);
+  Value *buf_size = llvm::ConstantInt::get(i64ty, 4096);
+  AllocaInst *buffer = Builder.CreateAlloca(i8ty, buf_size, "region.buf");
+
+  // Separate alloca for the bump pointer (stores current allocation position)
+  AllocaInst *current_ptr_alloca = Builder.CreateAlloca(ptr_ty, nullptr, "region.cur");
+  Value *buf_start = Builder.CreatePointerCast(buffer, ptr_ty, "region.start");
+  Builder.CreateStore(buf_start, current_ptr_alloca);
+  // end_ptr = buffer + 4096
+  Value *end_ptr = Builder.CreateGEP(i8ty, buffer, buf_size, "region.end");
+
+  // Create an end block for after the region body
+  BasicBlock *end_bb = BasicBlock::Create(Context, "region.end", fn);
+
+  region_stack.push_back({buffer, current_ptr_alloca, end_ptr, end_bb});
+
+  for (auto &s : stmt->body) {
+    if (!gen_stmt(s.get())) {
+      region_stack.pop_back();
+      return false;
+    }
+  }
+
+  region_stack.pop_back();
+
+  // Branch to end block if not terminated
+  if (!Builder.GetInsertBlock()->getTerminator())
+    Builder.CreateBr(end_bb);
+
+  Builder.SetInsertPoint(end_bb);
+  return true;
 }

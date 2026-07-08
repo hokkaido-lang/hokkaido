@@ -230,3 +230,58 @@ is available.
 `match` is an expression. The body blocks evaluate to whatever they evaluate to, but
 currently the result is not unified across arms — each arm executes its body for side
 effects and/or `return`. A future version may allow match to yield a value.
+
+## Region
+
+A `region` block allocates a scoped bump-allocator arena on the stack. Memory allocated
+inside a region is automatically freed when the block exits (the alloca goes out of scope).
+
+```
+region R {
+    let p: int* = __region_alloc(8)     // allocate 8 bytes from region R
+    p[0] = 42
+    p[1] = 99
+    return *p
+}                                       // R is freed here — all allocations invalidated
+```
+
+### `__region_alloc(n)`
+
+The built-in `__region_alloc(n)` function allocates `n` bytes in the innermost enclosing
+region. It returns a pointer (`void*` equivalent — assignable to `T*`). If the region overflows
+its 4096-byte buffer, the program traps (LLVM `unreachable`). The buffer size is fixed per
+region block.
+
+### Nesting
+
+Regions can be nested. Each region has its own bump pointer; allocating from `__region_alloc`
+uses the innermost enclosing region:
+
+```
+region Outer {
+    let a: int* = __region_alloc(8)
+    region Inner {
+        let b: int* = __region_alloc(8)     // from Inner's buffer
+    }
+    let c: int* = __region_alloc(8)         // from Outer's buffer (Inner is freed)
+}
+```
+
+### Combining with linear types
+
+Region-allocated pointers can be declared `linear` to prevent double-free bugs:
+
+```
+region R {
+    let p: linear int* = __region_alloc(8)
+    p[0] = 42
+    let v: int = *p         // consumes p
+    return v
+    // p cannot be used again here
+}
+```
+
+Regions are purely a scoped memory optimization — there is no garbage collection, no
+reference counting, and no borrow checker. The programmer is responsible for not using
+region-allocated pointers after the region exits (a use-after-free bug that the compiler
+does not currently prevent).

@@ -19,7 +19,7 @@ bool CodeGen::alloc_and_store(const std::string &name, TypeKind kind,
   Builder.CreateStore(init, alloca);
   named_values[name] = alloca;
   named_types[name] = kind;
-  if (kind == TypeKind::Fn || kind == TypeKind::Struct || kind == TypeKind::Enum || kind == TypeKind::Tuple || kind == TypeKind::Slice || ann.pointer_depth > 0)
+  if (kind == TypeKind::Fn || kind == TypeKind::Struct || kind == TypeKind::Enum || kind == TypeKind::Tuple || kind == TypeKind::Slice || ann.pointer_depth > 0 || ann.is_linear)
     named_type_anns[name] = ann;
   return true;
 }

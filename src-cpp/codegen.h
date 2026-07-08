@@ -191,6 +191,18 @@ private:
   // Source file base directory, used to resolve .cub file paths.
   std::string base_dir;
 
+  // Region state
+  struct RegionInfo {
+    llvm::AllocaInst *buffer;
+    llvm::Value *current_ptr;
+    llvm::Value *end_ptr;
+    llvm::BasicBlock *end_bb;
+  };
+  std::vector<RegionInfo> region_stack;
+
+  // Linear type tracking: set of variable names that have been consumed
+  std::unordered_set<std::string> consumed_linear_vars;
+
   // Loop state for break/continue
   struct LoopInfo {
     std::string label;
@@ -200,4 +212,5 @@ private:
   std::vector<LoopInfo> loop_stack;
   bool gen_break_stmt(BreakStmt *stmt);
   bool gen_continue_stmt(ContinueStmt *stmt);
+  bool gen_region_stmt(RegionStmt *stmt);
 };

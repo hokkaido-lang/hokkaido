@@ -82,6 +82,7 @@ private:
   std::unique_ptr<ForStmt> parse_for_stmt();
   std::unique_ptr<BreakStmt> parse_break_stmt();
   std::unique_ptr<ContinueStmt> parse_continue_stmt();
+  std::unique_ptr<Stmt> parse_region_stmt();
 
   // Expressions
   std::unique_ptr<Expr> parse_expr();
