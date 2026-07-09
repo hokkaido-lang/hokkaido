@@ -60,8 +60,6 @@ cd myapp
 otaru run     # builds and runs src/main.hk
 ```
 
-The `std/` library (HOFs like `twice`, `compose`, `fold_int`, ...) is embedded in `otaru` and automatically prepared in new projects.
-
 ## Docs
 
 - [Language syntax](docs/syntax.md)
