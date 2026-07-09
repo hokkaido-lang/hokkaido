@@ -72,6 +72,7 @@ private:
   std::unique_ptr<TraitDecl> parse_trait_decl(bool is_pub);
   std::unique_ptr<ImplDecl> parse_impl_decl();
   TypeAnnotation parse_type_annotation();
+  TypeAnnotation parse_ref_type(); // parse &T or &mut T
 
   // Statements
   std::vector<std::unique_ptr<Stmt>> parse_block();

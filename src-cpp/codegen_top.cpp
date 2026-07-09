@@ -208,6 +208,10 @@ std::string CodeGen::mangle_ann(const TypeAnnotation &ann) {
       }
       case TypeKind::Slice:
         return "slice_" + mangle_ann(a.tuple_types[0]);
+      case TypeKind::Ref:
+        return "ref_" + mangle_ann(a.tuple_types[0]);
+      case TypeKind::MutRef:
+        return "mutref_" + mangle_ann(a.tuple_types[0]);
       case TypeKind::Fn: {
         std::string s = "fn";
         for (size_t pi = 0; pi + 1 < a.tuple_types.size(); pi++)
@@ -319,8 +323,8 @@ bool CodeGen::monomorphize_and_codegen(FnDecl *template_decl,
         walk_expr(arg.get());
     } else if (auto *deref = dynamic_cast<DerefExpr *>(expr)) {
       walk_expr(deref->operand.get());
-    } else if (auto *addr = dynamic_cast<AddressOfExpr *>(expr)) {
-      walk_expr(addr->operand.get());
+    } else if (auto *borrow = dynamic_cast<BorrowExpr *>(expr)) {
+      walk_expr(borrow->operand.get());
     } else if (auto *sub = dynamic_cast<SubscriptExpr *>(expr)) {
       walk_expr(sub->array.get());
       walk_expr(sub->index.get());

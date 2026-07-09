@@ -355,10 +355,13 @@ Available functions in `std::mem`:
 | `mem_swap` | `(int8*, int8*, int64) -> void` | Exchange `n` bytes between two buffers |
 
 Heap allocation (`extern fn malloc`) and deallocation (`extern fn free`) are
-available via C FFI but are **inherently unsafe** — the language has no borrow
-checker to prevent double-free, use-after-free, or memory leaks. Prefer
+available via C FFI but are **inherently unsafe** — the borrow checker does not
+track raw pointer lifetimes, so double-free, use-after-free, and memory leaks
+are not caught at compile time. Prefer
 [region-based allocation](/docs/syntax-control-flow#region) for scoped memory
-that is freed automatically when the region exits.
+that is freed automatically when the region exits. Prefer
+[borrow-checked references](/docs/syntax-expressions#borrow-checking) for safe
+aliasing of stack-allocated data.
 
 ## Return
 

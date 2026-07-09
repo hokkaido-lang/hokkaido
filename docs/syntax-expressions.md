@@ -13,7 +13,7 @@ the same line have the same precedence and associate left-to-right.
 | Precedence | Operators                          | Category              |
 |------------|------------------------------------|-----------------------|
 | 1          | `()` `[]` `::<>` `.`               | Call / index / turbofish / method call / field access |
-| 2          | `*` (deref) `&` (addr) `-` (neg) `~` (bitnot) `!` (not) | Unary prefix     |
+| 2          | `*` (deref) `&` (borrow) `&mut` (mut borrow) `-` (neg) `~` (bitnot) `!` (not) | Unary prefix     |
 | 3          | `*` `/` `%`                        | Multiplicative        |
 | 4          | `+` `-`                            | Additive              |
 | 5          | `<<` `>>`                          | Shift                 |
@@ -186,18 +186,26 @@ first to obtain a pointer, then the right-hand side is evaluated, and finally th
 (or load-modify-store for compound) is performed. The lvalue expression is evaluated
 exactly once — there is no double evaluation.
 
-## Pointers
+## References and Pointers
 
-Pointers are typed references to memory locations.
+Tuplex has two families of indirection: **references** (safe, borrow-checked) and
+**raw pointers** (unsafe, no borrow checking).
 
-### Address-of
+Reference types use `&T` and `&mut T` syntax. Raw pointer types use `T*` syntax.
+Both compile down to LLVM pointers, but references are subject to compile-time
+borrow checking (see [Borrow checking](#borrow-checking) below).
 
-The unary `&` operator takes any lvalue (variable, array element, struct field,
-dereference) and produces a pointer to it.
+### Borrow expressions
+
+| Expression   | Description                                                       |
+|--------------|-------------------------------------------------------------------|
+| `&expr`      | Borrows `expr` immutably (shared reference `&T`).                 |
+| `&mut expr`  | Borrows `expr` mutably (exclusive reference `&mut T`).            |
 
 ```
 let x: int = 42
-let p: int* = &x
+let r: &int = &x                // shared reference to x
+let rw: &mut int = &mut x       // mutable reference to x
 ```
 
 **Function references.** When `&` is applied to a function name, it creates a
@@ -215,42 +223,92 @@ call expression `add_one(...)`. The `&` is required to obtain a function value.
 
 ### Dereference
 
-The unary `*` operator reads or writes through a pointer.
+The unary `*` operator reads or writes through a reference or raw pointer.
 
 ```
-let val: int = *p            // read: val = 42
-*p = 99                      // write: x is now 99
+let val: int = *r            // read: val = 42
+*r = 99                      // write: x is now 99
 ```
 
 Dereference can be the target of assignment, including compound assignment:
 
 ```
-*p = 100
-*p += 5                      // x is now 105
+*r = 100
+*r += 5                      // x is now 105
 ```
 
-### Null pointers
+### Borrow checking
 
-`null` is a keyword that evaluates to a null pointer of any pointer type. Dereferencing
-a null pointer is undefined behavior (typically a segfault).
+The borrow checker enforces these rules during compilation:
+
+| Rule | Description |
+|------|-------------|
+| **Exclusivity** | At any given time, you may have either *one* mutable reference or *any number* of shared references to a value, but not both. |
+| **Liveness** | References must never outlive the value they refer to (enforced lexically). |
+| **Ownership freeze** | The original value cannot be read or written while it is borrowed — the owner is frozen until the reference goes out of scope. |
+
+The checker runs on every function before code generation. It tracks the scope depth
+of each borrow in a per-function borrow graph and rejects programs that violate any
+of the rules above.
+
+```
+let mut x: int = 42
+let r1: &mut int = &mut x
+let r2: &mut int = &mut x   // ERROR: cannot borrow `x` as mutable more than once
+```
+
+A valid program that respects the borrow rules:
+
+```
+let mut x: int = 42
+{
+    let r: &mut int = &mut x
+    *r = 10
+}
+// `r` is no longer live here; `x` is usable again
+let y: int = x               // OK
+```
+
+### Region blocks
+
+A `region { ... }` block creates a memory region that lives for the duration of the
+block. Allocations inside the block are freed when the block exits.
+
+```
+region {
+    let p: int* = __region_alloc(int, 1)
+    *p = 42
+}
+// p is no longer valid here — the region has been freed
+```
+
+The compiler rejects returning a region-allocated pointer outside its region block,
+preventing use-after-free errors.
+
+### Raw pointers
+
+Raw pointers use `T*` syntax and are not borrow-checked:
 
 ```
 let p: int* = null
 ```
 
-### Pointer arithmetic
-
-Pointer arithmetic is performed by integer addition/subtraction on pointer-typed
-expressions. The stride is always 1 element — no implicit scaling by element size.
-(Note: this is the reverse of C — `p + n` advances by `n` bytes, not `n * sizeof(T)`.
-This design choice simplifies low-level memory manipulation.)
+**Null pointers.** `null` is a keyword that evaluates to a null pointer of any raw
+pointer type. Dereferencing a null pointer is undefined behavior.
 
 ```
-let arr: int[4] = [10, 20, 30, 40]
-let p: int* = &arr[0]
-let a: int = *p              // 10
-let b: int = *(p + 8)        // 20 — advances 8 bytes (one int64)
-let c: int = *(p + 16)       // 30
+let p: int* = null
+```
+
+**Pointer arithmetic.** Pointer arithmetic is performed by integer
+addition/subtraction on pointer-typed expressions. The stride is always 1 element
+— no implicit scaling by element size. (Note: this is the reverse of C — `p + n`
+advances by `n` bytes, not `n * sizeof(T)`. This design choice simplifies low-level
+memory manipulation.)
+
+```
+let p: int* = null
+let q: int* = p + 8   // advances from null by 8 bytes
 ```
 
 ## Atomic operations

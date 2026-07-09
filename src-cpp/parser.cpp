@@ -257,6 +257,22 @@ void Parser::prefix_decl_names(std::vector<std::unique_ptr<Decl>> &decls,
 
 TypeAnnotation Parser::parse_type_annotation() {
   TypeAnnotation ann;
+
+  // Reference type: &T or &mut T
+  if (cur_tok.type == TokenType::Ampersand) {
+    next_token(); // consume '&'
+    bool is_mut = false;
+    if (cur_tok.type == TokenType::Mut) {
+      is_mut = true;
+      next_token(); // consume 'mut'
+    }
+    TypeAnnotation inner = parse_type_annotation();
+    if (has_error) return ann;
+    ann = {is_mut ? TypeKind::MutRef : TypeKind::Ref};
+    ann.tuple_types.push_back(std::move(inner));
+    return ann;
+  }
+
   if (cur_tok.type == TokenType::Void) {
     ann = {TypeKind::Void};
     next_token();
@@ -1988,10 +2004,15 @@ std::unique_ptr<Expr> Parser::parse_primary() {
     return std::make_unique<NullExpr>();
   }
   if (cur_tok.type == TokenType::Ampersand) {
-    next_token();
+    next_token(); // consume '&'
+    bool is_mut = false;
+    if (cur_tok.type == TokenType::Mut) {
+      is_mut = true;
+      next_token(); // consume 'mut'
+    }
     auto operand = parse_unary();
     if (!operand) return nullptr;
-    return std::make_unique<AddressOfExpr>(std::move(operand));
+    return std::make_unique<BorrowExpr>(std::move(operand), is_mut);
   }
   if (cur_tok.type == TokenType::LSquare) {
     return parse_array_literal();

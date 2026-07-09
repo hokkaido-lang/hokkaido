@@ -28,6 +28,8 @@ Type *CodeGen::get_llvm_type(TypeKind kind) {
     case TypeKind::String:  return PointerType::getUnqual(Context);
     case TypeKind::Char:    return Type::getInt8Ty(Context);
     case TypeKind::Cubical: return Type::getInt64Ty(Context);
+    case TypeKind::Ref:
+    case TypeKind::MutRef:  return PointerType::getUnqual(Context);
     case TypeKind::Tuple:   return nullptr; // must use annotation overload
     case TypeKind::Struct:  return nullptr; // must use annotation overload
     case TypeKind::Slice:
@@ -77,6 +79,13 @@ Type *CodeGen::get_llvm_type(const TypeAnnotation &ann) {
   }
   if (ann.kind == TypeKind::Slice) {
     return get_slice_type(ann.tuple_types[0]);
+  }
+  if (ann.kind == TypeKind::Ref || ann.kind == TypeKind::MutRef) {
+    // References are just pointers at the LLVM level
+    base = PointerType::getUnqual(Context);
+    for (int i = 0; i < ann.pointer_depth; i++)
+      base = PointerType::getUnqual(Context);
+    return base;
   }
   if (ann.kind == TypeKind::Fn) {
     std::vector<Type *> fn_param_types;
@@ -256,6 +265,10 @@ static std::string type_ann_to_string(const TypeAnnotation &ann) {
     }
     case TypeKind::Slice:
       return "slice_" + type_ann_to_string(ann.tuple_types[0]);
+    case TypeKind::Ref:
+      return "ref_" + type_ann_to_string(ann.tuple_types[0]);
+    case TypeKind::MutRef:
+      return "mutref_" + type_ann_to_string(ann.tuple_types[0]);
     case TypeKind::Fn: {
       std::string s = "fn";
       for (size_t pi = 0; pi + 1 < ann.tuple_types.size(); pi++)

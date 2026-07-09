@@ -313,6 +313,7 @@ Token Lexer::lex_identifier(int l, int c) {
   if (id == "break") return {TokenType::Break, id, 0, l, c};
   if (id == "continue") return {TokenType::Continue, id, 0, l, c};
   if (id == "match") return {TokenType::Match, id, 0, l, c};
+  if (id == "mut") return {TokenType::Mut, id, 0, l, c};
   if (id == "enum") return {TokenType::Enum, id, 0, l, c};
   if (id == "null") return {TokenType::Null, id, 0, l, c};
   if (id == "cubical") return {TokenType::Cubical, id, 0, l, c};

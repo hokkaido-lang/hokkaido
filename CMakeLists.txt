@@ -47,6 +47,7 @@ set(HOKKAIDO_SOURCES
     src-cpp/codegen_decl.cpp
     src-cpp/codegen_stmt.cpp
     src-cpp/codegen_pattern.cpp
+    src-cpp/borrow_checker.cpp
 )
 
 add_executable(hokkaido ${HOKKAIDO_SOURCES})

@@ -33,6 +33,8 @@ enum class TypeKind {
   TypeParam,
   Slice,
   Fn,
+  Ref,    // &T  — shared reference
+  MutRef, // &mut T — mutable reference
 };
 
 struct TypeAnnotation {
@@ -130,9 +132,11 @@ struct CompoundAssignExpr : Expr {
 
 struct NullExpr : Expr {};
 
-struct AddressOfExpr : Expr {
+struct BorrowExpr : Expr {
   std::unique_ptr<Expr> operand;
-  AddressOfExpr(std::unique_ptr<Expr> o) : operand(std::move(o)) {}
+  bool is_mut; // false = &T, true = &mut T
+  BorrowExpr(std::unique_ptr<Expr> o, bool m = false)
+    : operand(std::move(o)), is_mut(m) {}
 };
 
 struct DerefExpr : Expr {

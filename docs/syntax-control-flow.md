@@ -299,5 +299,10 @@ This check works at compile time with zero runtime cost. It does not track point
 through pointer arithmetic, function calls, or writes to global variables — those
 patterns remain the programmer's responsibility.
 
-Regions are purely a scoped memory optimization — there is no garbage collection, no
-reference counting, and no borrow checker.
+Region lifetime analysis is independent of the borrow checker. The borrow checker
+enforces safe reference usage (see [Borrow checking](/docs/syntax-expressions#borrow-checking));
+region lifetime checking prevents region-allocated pointers from outliving their region.
+Both run at compile time with zero runtime cost.
+
+Regions are purely a scoped memory optimization — there is no garbage collection and
+no reference counting.

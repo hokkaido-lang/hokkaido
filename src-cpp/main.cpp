@@ -25,6 +25,7 @@
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/TargetParser/Host.h"
 
+#include "borrow_checker.h"
 #include "codegen.h"
 #include "cubical.h"
 #include "lexer.h"
@@ -214,6 +215,20 @@ int main(int argc, char *argv[]) {
     if (!parser.ok()) {
       std::cerr << "Parse error: " << parser.error() << "\n";
       return 1;
+    }
+
+    // Run borrow checker on all function declarations
+    {
+      BorrowChecker bc;
+      for (auto &decl : decls) {
+        if (auto *fn = dynamic_cast<FnDecl *>(decl.get())) {
+          if (!fn->is_extern && fn->type_params.empty()) {
+            if (!bc.check_fn(fn->name, fn)) {
+              return 1;
+            }
+          }
+        }
+      }
     }
 
     CodeGen cg(Context, *M, Builder, Freestanding, filePath.parent_path().string());

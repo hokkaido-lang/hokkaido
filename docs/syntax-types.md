@@ -73,6 +73,25 @@ let p: Pair<int64> = Pair<int64> { first: 10, second: 20 }
 let nested: Pair<Pair<int64>> = Pair<Pair<int64>> { ... }
 ```
 
+### Reference types
+
+A reference type is written with the `&` prefix. References are like pointers but with
+safety guarantees enforced by the borrow checker at compile time. There are two kinds:
+
+| Type      | Description                          |
+|-----------|--------------------------------------|
+| `&T`      | Shared (immutable) reference to `T`  |
+| `&mut T`  | Mutable (exclusive) reference to `T` |
+
+```
+let x: int64 = 42
+let r: &int64 = &x         // shared reference to x
+let rw: &mut int64 = &mut x  // mutable reference to x
+```
+
+See [Borrow Checking](/docs/syntax-expressions#borrow-checking) for the rules governing
+reference usage.
+
 ### Pointer types
 
 A pointer type is written by appending `*` to the element type — one `*` per level of indirection:
@@ -84,16 +103,14 @@ int64**    Pointer to pointer to int64
 Point*     Pointer to a Point struct
 ```
 
-Examples:
+Raw pointers are not borrow-checked. They are typically obtained through FFI
+(`extern fn malloc`) or low-level memory operations.
 
 ```
-let x: int = 42
-let p: int* = &x           // pointer to x
-let pp: int** = &p         // pointer to pointer
-let val: int = *p          // dereference → 42
+let p: int8* = null
 ```
 
-See [Pointers](/docs/syntax-expressions#pointers) for more detail.
+See [Raw pointers](/docs/syntax-expressions#raw-pointers) for more detail.
 
 ### Array types
 

@@ -35,10 +35,12 @@ TypeAnnotation CodeGen::resolve_expr_type(Expr *expr) {
     }
     return {TypeKind::Void};
   }
-  if (auto *addr = dynamic_cast<AddressOfExpr *>(expr)) {
-    TypeAnnotation base = resolve_expr_type(addr->operand.get());
-    base.pointer_depth++;
-    return base;
+  if (auto *borrow = dynamic_cast<BorrowExpr *>(expr)) {
+    TypeAnnotation base = resolve_expr_type(borrow->operand.get());
+    TypeAnnotation ref_ann;
+    ref_ann.kind = borrow->is_mut ? TypeKind::MutRef : TypeKind::Ref;
+    ref_ann.tuple_types.push_back(base);
+    return ref_ann;
   }
   if (auto *deref = dynamic_cast<DerefExpr *>(expr)) {
     TypeAnnotation base = resolve_expr_type(deref->operand.get());
@@ -101,6 +103,10 @@ TypeAnnotation CodeGen::resolve_expr_type(Expr *expr) {
       if (ptr_ann.pointer_depth > 0) {
         ptr_ann.pointer_depth--;
         return ptr_ann;
+      }
+      if (ptr_ann.kind == TypeKind::Ref || ptr_ann.kind == TypeKind::MutRef) {
+        // Return the referent type
+        return ptr_ann.tuple_types[0];
       }
     }
     return {TypeKind::Int64};
@@ -540,9 +546,9 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
     return result;
   }
 
-  if (auto *addr = dynamic_cast<AddressOfExpr *>(expr)) {
+  if (auto *borrow = dynamic_cast<BorrowExpr *>(expr)) {
     // Check for &fn_name — create a function pointer value
-    if (auto *id = dynamic_cast<IdentExpr *>(addr->operand.get())) {
+    if (auto *id = dynamic_cast<IdentExpr *>(borrow->operand.get())) {
       std::string fname = id->name;
       Function *f = M.getFunction(fname);
       if (!f && fname == "main")
@@ -562,7 +568,7 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
       }
     }
     Type *ptr_type = nullptr;
-    Value *lvalue_ptr = get_lvalue_ptr(addr->operand.get(), &ptr_type);
+    Value *lvalue_ptr = get_lvalue_ptr(borrow->operand.get(), &ptr_type);
     if (!lvalue_ptr) {
       errs() << "Error: address-of requires an lvalue expression\n";
       return nullptr;
@@ -1255,11 +1261,15 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
       return nullptr;
     }
     TypeAnnotation ptr_ann = resolve_expr_type(atm->args[0].get());
-    if (ptr_ann.pointer_depth < 1) {
+    bool is_ref = (ptr_ann.kind == TypeKind::Ref || ptr_ann.kind == TypeKind::MutRef);
+    if (ptr_ann.pointer_depth < 1 && !is_ref) {
       errs() << "Error: first argument of atomic must be a pointer (&var or ptr)\n";
       return nullptr;
     }
-    ptr_ann.pointer_depth--;
+    if (is_ref)
+      ptr_ann = ptr_ann.tuple_types[0]; // get the referent type
+    else
+      ptr_ann.pointer_depth--;
     Type *val_type = get_llvm_type(ptr_ann);
     if (!val_type || (!val_type->isIntegerTy() && atm->op != AtomicOp::Xchg)) {
       errs() << "Error: atomic operations require integer pointer types\n";
@@ -1453,8 +1463,8 @@ void CodeGen::discover_captures(Expr *expr,
     discover_captures(deref->operand.get(), param_names, captures);
     return;
   }
-  if (auto *addr = dynamic_cast<AddressOfExpr *>(expr)) {
-    discover_captures(addr->operand.get(), param_names, captures);
+  if (auto *borrow = dynamic_cast<BorrowExpr *>(expr)) {
+    discover_captures(borrow->operand.get(), param_names, captures);
     return;
   }
   if (auto *sub = dynamic_cast<SubscriptExpr *>(expr)) {

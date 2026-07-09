@@ -353,6 +353,94 @@ atomic_op  ::= "xchg" | "add" | "sub" | "and" | "or" | "xor"
 
 ---
 
+## 6. Borrow Checker
+
+**Decision:** Implement a lexical borrow checker with per-variable borrow tracking,
+enforcing standard Rust-like aliasing rules:
+- One mutable reference XOR any number of shared references.
+- The original value is frozen (no read/write) while any borrow is active.
+- References must not outlive their referent (enforced by scope depth).
+
+The checker is a standalone AST-walking pass, run before code generation. It
+operates on `BorrowExpr` and `DerefExpr` AST nodes and `&T`/`&mut T` reference
+types.
+
+### Rationale
+
+| Option | Pros | Cons |
+|--------|------|------|
+| Lexical borrow checker | Simple implementation; fast (single pass); predictable error messages; matches Rust's borrow scoping for v1 | Conservative — borrows last until end of scope, not until last use (NLL); no support for reborrowing patterns |
+| Non-lexical lifetimes (NLL) | More precise; shorter borrow ranges; fewer false positives | Significantly more complex (requires dataflow analysis, liveness tracking); overkill for v1 |
+| No borrow checker — runtime refcounting | Simple compiler; familiar to GC-language users | Runtime overhead; refcount cycles; not zero-cost; breaks the "pay only for what you use" philosophy |
+
+A lexical checker provides immediate safety guarantees with minimal compiler
+complexity. NLL can be added as a future enhancement without changing the
+surface language.
+
+### Specification
+
+```
+let mut x: int = 42
+
+// Shared borrow — allowed
+let r1: &int = &x         // OK
+let r2: &int = &x         // OK (many shared borrows)
+
+// Mutable borrow — exclusive
+let rw: &mut int = &mut x  // OK, first mutable borrow
+
+// Violations:
+let r3: &int = &x          // ERROR: x is mutably borrowed
+let rw2: &mut int = &mut x // ERROR: x is mutably borrowed
+
+// Owner frozen while borrowed:
+x = 10                     // ERROR: x is borrowed
+let v: int = x             // ERROR: x is borrowed
+
+// Borrow ends at scope exit:
+{
+    let r: &mut int = &mut x
+    *r = 10
+}
+// Borrow released — x is usable again:
+let y: int = x             // OK
+```
+
+- Borrows are tracked per variable name (not per memory location).
+- The root variable of a borrow chain is resolved by walking through field
+  accesses, dereferences, and subscripts.
+- Closure bodies capture by value — borrow state is saved and restored around
+  closure calls (closures cannot borrow from their enclosing scope).
+- `region` blocks interact with the borrow checker only through `enter_scope`/
+  `exit_scope` — region pointer tracking is a separate pass.
+
+### Implementation
+
+- `BorrowChecker` class with `active_borrows` map (`var_name -> Vec<BorrowEntry>`)
+  and `current_depth` counter.
+- `check_shared_borrow()` / `check_mut_borrow()`: validate against active borrows.
+- `register_shared_borrow()` / `register_mut_borrow()`: record with current depth.
+- `release_borrows_at_depth()`: called on scope exit.
+- `check_var_read()` / `check_var_write()`: validate against active borrows.
+- Expression walker dispatches on all expression types (not just borrows) to
+  check variable accesses against active borrows.
+- Defined in `src-cpp/borrow_checker.h` and `src-cpp/borrow_checker.cpp`.
+- Integrated into the compilation pipeline in `main.cpp` — run on all
+  non-extern, non-generic function declarations before codegen.
+
+### Impact on later phases
+
+- Generics (Phase 5): the borrow checker currently skips generic function
+  declarations. Once monomorphization produces concrete instances, those
+  instances should be checked.
+- Closures (Phase 4): closures capture by value; borrow state save/restore is
+  already implemented. Lexical closures that capture references (if added later)
+  will need deeper borrow tracking through closure calls.
+- NLL (future): a flow-sensitive borrow checker can replace the lexical checker
+  with no surface-language changes.
+
+---
+
 ## Summary of Decisions
 
 | # | Decision | Choice | Impacts |
@@ -366,3 +454,4 @@ atomic_op  ::= "xchg" | "add" | "sub" | "and" | "or" | "xor"
 | 7 | Dynamic memory approach | Extern fn (`malloc`/`free`), not built-in syntax | Phase 3 (completed) |
 | 8 | Function types and HOFs | `fn(T1, T2) -> Ret` as opaque `i8*` pointer to closure struct; `&fn_name` for named-function values | `std/functional.hk` combined with Phase 4 (completed) |
 | 9 | Memory safety — regions + lifetime tracking | Stack-based bump-allocator region blocks (`region R { ... }`) with compile-time rejection of escaping region pointers (tracking through direct `let` assignment). `linear` keyword removed (it tracked variable names, not values — gave false confidence) | Regions: safe scoped memory with zero-cost compile-time escape detection. `std/mem.hk` provides safe memory operations (copy, set, zero, eq, swap). Heap allocation (`malloc`/`free` via FFI) remains inherently unsafe |
+| 10 | Borrow checker | Lexical borrow checker with per-variable borrow tracking, enforcing: one mutable XOR many shared; owner frozen while borrowed; references must not outlive their referent. Implemented as a standalone AST-walking pass run before code generation | Compile-time data race and use-after-free prevention for reference types (`&T`/`&mut T`). Independent of region lifetime tracking — regions handle scoped allocation safety, borrow checker handles aliasing discipline. Implemented in Phase 0. |
