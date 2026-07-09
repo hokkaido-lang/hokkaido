@@ -28,6 +28,9 @@ enum Command {
         /// Freestanding mode (no CRT/libc, main becomes ELF entry point)
         #[arg(long)]
         freestanding: bool,
+        /// Force rebuild, ignoring cached artifacts
+        #[arg(long, short)]
+        force: bool,
     },
     /// Build and run the current project or a single file
     Run {
@@ -36,6 +39,9 @@ enum Command {
         /// Freestanding mode (no CRT/libc, main becomes ELF entry point)
         #[arg(long)]
         freestanding: bool,
+        /// Force rebuild, ignoring cached artifacts
+        #[arg(long, short)]
+        force: bool,
     },
     /// Add a dependency
     Add {
@@ -59,11 +65,11 @@ fn main() {
 
     match &cli.command {
         Command::New { name } => new::run(name),
-        Command::Build { file, freestanding } => {
-            build::run(file.as_deref(), *freestanding);
+        Command::Build { file, freestanding, force } => {
+            build::run(file.as_deref(), *freestanding, *force);
         }
-        Command::Run { file, freestanding } => {
-            run::run(file.as_deref(), *freestanding);
+        Command::Run { file, freestanding, force } => {
+            run::run(file.as_deref(), *freestanding, *force);
         }
         Command::Add { name, git, path } => add::run(name, git.as_deref(), path.as_deref()),
         Command::Install => install::run(),
