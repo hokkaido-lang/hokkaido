@@ -3,21 +3,25 @@ use std::path::Path;
 use std::process::Command;
 use std::time::UNIX_EPOCH;
 
-pub fn run(file: Option<&str>, freestanding: bool, force: bool) {
+pub fn run(file: Option<&str>, freestanding: bool, force: bool, release: bool) {
     if let Some(f) = file {
-        compile_single(f, freestanding, force);
+        compile_single(f, freestanding, force, release);
     } else {
-        compile_project(freestanding, force);
+        compile_project(freestanding, force, release);
     }
 }
 
 /// Compile a single file or project and return the binary path (without extension)
-pub fn compile_single_or_project(file: Option<&str>, freestanding: bool, force: bool) -> String {
+pub fn compile_single_or_project(file: Option<&str>, freestanding: bool, force: bool, release: bool) -> String {
     if let Some(f) = file {
-        compile_single(f, freestanding, force)
+        compile_single(f, freestanding, force, release)
     } else {
-        compile_project(freestanding, force)
+        compile_project(freestanding, force, release)
     }
+}
+
+fn opt_flag(release: bool) -> &'static str {
+    if release { "-O2" } else { "-O0" }
 }
 
 fn file_metadata_token(path: &Path) -> String {
@@ -147,7 +151,11 @@ fn save_cache(cache_path: &Path, key: &str) {
     }
 }
 
-fn compile_single(file: &str, freestanding: bool, force: bool) -> String {
+fn cache_suffix(release: bool) -> &'static str {
+    if release { "release" } else { "debug" }
+}
+
+fn compile_single(file: &str, freestanding: bool, force: bool, release: bool) -> String {
     let path = Path::new(file);
     if !path.exists() {
         eprintln!("Error: file '{}' not found", file);
@@ -163,16 +171,14 @@ fn compile_single(file: &str, freestanding: bool, force: bool) -> String {
 
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
     let output_base = format!("build/{}", stem);
+    let cache_key = compute_cache_key(path.parent().unwrap_or(Path::new(".")), &hokkaido);
 
     // Incremental build check
     if !force {
-        let src_dir = path.parent().unwrap_or(Path::new("."));
-        let key = compute_cache_key(src_dir, &hokkaido);
-        let cache_path = build_dir.join(format!(".{}.hkbuildcache", stem));
+        let cache_path = build_dir.join(format!(".{}.hkbuildcache.{}", stem, cache_suffix(release)));
         if let Some(cached) = load_cache(&cache_path) {
-            if cached == key {
+            if cached == cache_key {
                 println!("Cached: {} (unchanged, skipping compilation)", file);
-                // Still need to link if needed
                 if freestanding {
                     return output_base;
                 }
@@ -182,13 +188,13 @@ fn compile_single(file: &str, freestanding: bool, force: bool) -> String {
                     println!("Built: {} (cached)", output_base);
                     return output_base;
                 }
-                // Object file missing — fall through to recompile
             }
         }
     }
 
     let mut cmd = Command::new(&hokkaido);
     cmd.arg(file).arg("-o").arg(&output_base);
+    cmd.arg(opt_flag(release));
     if freestanding {
         cmd.arg("--freestanding");
     }
@@ -205,10 +211,8 @@ fn compile_single(file: &str, freestanding: bool, force: bool) -> String {
 
     // Save cache
     if !force {
-        let src_dir = path.parent().unwrap_or(Path::new("."));
-        let key = compute_cache_key(src_dir, &hokkaido);
-        let cache_path = build_dir.join(format!(".{}.hkbuildcache", stem));
-        save_cache(&cache_path, &key);
+        let cache_path = build_dir.join(format!(".{}.hkbuildcache.{}", stem, cache_suffix(release)));
+        save_cache(&cache_path, &cache_key);
     }
 
     let obj_path = format!("{}.o", output_base);
@@ -225,7 +229,7 @@ fn compile_single(file: &str, freestanding: bool, force: bool) -> String {
     output_base
 }
 
-fn compile_project(freestanding: bool, force: bool) -> String {
+fn compile_project(freestanding: bool, force: bool, release: bool) -> String {
     let manifest_path = Path::new("otaru.toml");
     if !manifest_path.exists() {
         eprintln!("Error: otaru.toml not found (not in an otaru project)");
@@ -251,12 +255,13 @@ fn compile_project(freestanding: bool, force: bool) -> String {
 
     let binary = format!("build/{}", manifest.package.name);
 
+    let cache_key = compute_cache_key(src_dir, &hokkaido);
+
     // Incremental build check
     if !force {
-        let key = compute_cache_key(src_dir, &hokkaido);
-        let cache_path = Path::new("build/.hkbuildcache");
-        if let Some(cached) = load_cache(cache_path) {
-            if cached == key {
+        let cache_path = format!("build/.hkbuildcache.{}", cache_suffix(release));
+        if let Some(cached) = load_cache(Path::new(&cache_path)) {
+            if cached == cache_key {
                 let obj_path = format!("{}.o", binary);
                 if Path::new(&obj_path).exists() {
                     if !freestanding {
@@ -290,6 +295,7 @@ fn compile_project(freestanding: bool, force: bool) -> String {
 
     let mut cmd = Command::new(&hokkaido);
     cmd.arg(entry).arg("-o").arg(&binary);
+    cmd.arg(opt_flag(release));
     if freestanding {
         cmd.arg("--freestanding");
     }
@@ -306,8 +312,8 @@ fn compile_project(freestanding: bool, force: bool) -> String {
 
     // Save cache
     if !force {
-        let key = compute_cache_key(src_dir, &hokkaido);
-        save_cache(&Path::new("build/.hkbuildcache"), &key);
+        let cache_path = format!("build/.hkbuildcache.{}", cache_suffix(release));
+        save_cache(Path::new(&cache_path), &cache_key);
     }
 
     let obj_path = format!("{}.o", binary);

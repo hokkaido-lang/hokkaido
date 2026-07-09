@@ -31,6 +31,9 @@ enum Command {
         /// Force rebuild, ignoring cached artifacts
         #[arg(long, short)]
         force: bool,
+        /// Build in release mode (with optimizations, equivalent to -O2)
+        #[arg(long, short = 'r')]
+        release: bool,
     },
     /// Build and run the current project or a single file
     Run {
@@ -42,6 +45,9 @@ enum Command {
         /// Force rebuild, ignoring cached artifacts
         #[arg(long, short)]
         force: bool,
+        /// Build in release mode (with optimizations, equivalent to -O2)
+        #[arg(long, short = 'r')]
+        release: bool,
     },
     /// Add a dependency
     Add {
@@ -65,11 +71,11 @@ fn main() {
 
     match &cli.command {
         Command::New { name } => new::run(name),
-        Command::Build { file, freestanding, force } => {
-            build::run(file.as_deref(), *freestanding, *force);
+        Command::Build { file, freestanding, force, release } => {
+            build::run(file.as_deref(), *freestanding, *force, *release);
         }
-        Command::Run { file, freestanding, force } => {
-            run::run(file.as_deref(), *freestanding, *force);
+        Command::Run { file, freestanding, force, release } => {
+            run::run(file.as_deref(), *freestanding, *force, *release);
         }
         Command::Add { name, git, path } => add::run(name, git.as_deref(), path.as_deref()),
         Command::Install => install::run(),

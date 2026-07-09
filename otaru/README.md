@@ -38,10 +38,13 @@ With `cargo install`, you need the hokkaido compiler on `PATH` or `HOKKAIDO_HOME
 | Command | Description |
 |---------|-------------|
 | `otaru new <name>` | Scaffold a new Hokkaido project (includes std/) |
-| `otaru build` | Build the project in src/ |
+| `otaru build` | Build the project in src/ (debug mode) |
+| `otaru build --release` | Build with optimizations (`-O2`) |
+| `otaru build -f` | Force rebuild, ignoring cached artifacts |
 | `otaru build <file.hk>` | Compile a single file (no project needed) |
 | `otaru build --freestanding` | Build in freestanding mode (no CRT/libc) |
 | `otaru run` | Build project and run |
+| `otaru run --release` | Build with optimizations and run |
 | `otaru run <file.hk>` | Compile a single file and run |
 | `otaru add <name> --git <url>` | Add a git dependency |
 | `otaru add <name> --path <path>` | Add a local dependency |
@@ -112,6 +115,27 @@ myapp/
 └── src/
     └── main.hk        # Entry point
 ```
+
+## Incremental Builds
+
+otaru caches compilation results based on file content hashes (modification time + size).
+A build is skipped entirely when no inputs have changed:
+
+- Source files in `src/` and `deps/`
+- Standard library files
+- The `hokkaido` compiler binary itself
+
+Cache files are stored in `build/.hkbuildcache.{debug,release}`. Use `-f` / `--force` to bypass.
+
+### Optimization
+
+| Mode | Flag | Compiler flag | Use case |
+|------|------|--------------|----------|
+| Debug (default) | *(none)* | `-O0` | Fast compilation, no optimizations |
+| Release | `--release` / `-r` | `-O2` | Optimized binary, slower compilation |
+
+Debug and release builds have separate caches — switching modes does not invalidate the
+other's cache. Object file sizes are typically ~40% smaller with `--release`.
 
 ## Configuration
 

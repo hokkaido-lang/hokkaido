@@ -18,6 +18,8 @@
 #include "llvm/IR/Module.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"
+#include "llvm/Passes/OptimizationLevel.h"
+#include "llvm/Support/CodeGen.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
@@ -105,6 +107,7 @@ void print_usage() {
   std::cout << "Usage:\n";
   std::cout << "  hokkaido input.hk                  Print LLVM IR to stdout\n";
   std::cout << "  hokkaido input.hk -o output         Compile to an object file (output.o)\n";
+  std::cout << "  hokkaido input.hk -o output -O2     Compile with optimizations (O0, O1, O2, O3, Os, Oz)\n";
   std::cout << "  hokkaido input.hk -o output --freestanding\n";
   std::cout << "                                       Same, but with no CRT/libc dependency:\n";
   std::cout << "                                       'main' becomes the raw ELF entry point\n";
@@ -112,6 +115,14 @@ void print_usage() {
   std::cout << "                                       'extern fn' declarations are rejected,\n";
   std::cout << "                                       since there's no libc to resolve them.\n";
   std::cout << "  hokkaido input.cub                  Evaluate a .cub file\n\n";
+  std::cout << "Optimization levels:\n";
+  std::cout << "  -O0    No optimization (default, debug-friendly)\n";
+  std::cout << "  -O1    Light optimization, preserves debuggability\n";
+  std::cout << "  -O2    Standard optimizations (recommended for release)\n";
+  std::cout << "  -O3    Aggressive optimizations\n";
+  std::cout << "  -Os    Optimize for code size\n";
+  std::cout << "  -Oz    Aggressively optimize for code size\n";
+  std::cout << "  -O     Alias for -O2\n\n";
   std::cout << "hokkaido does not link executables itself — it only emits an object\n";
   std::cout << "file. After compiling, link it yourself with 'ld.lld', 'clang', or your\n";
   std::cout << "platform's usual linker. Run with -o to see a suggested link command for\n";
@@ -160,19 +171,13 @@ int main(int argc, char *argv[]) {
   // object". Building PIC here means `clang main.o -o main` works without
   // the caller needing to pass `-no-pie` themselves.
   auto RM = std::optional<Reloc::Model>(Reloc::Model::PIC_);
-  std::unique_ptr<TargetMachine> TM(
-      TheTarget->createTargetMachine(TargetTriple, CPU, "", opt, RM));
 
-  LLVMContext Context;
-  std::unique_ptr<Module> M = std::make_unique<Module>("hokkaido", Context);
-  M->setDataLayout(TM->createDataLayout());
-  M->setTargetTriple(TargetTriple);
-
-  IRBuilder<> Builder(Context);
-
-  // Parse optional -o flag, --freestanding, and any extra linker flags
-  // (e.g. -lm, -lcurl, -L/path) for linking against C libraries used by
-  // `extern fn` declarations.
+  // Parse optimization level (default: -O0 — no optimization, debug-friendly)
+  CodeGenOptLevel OptLevel = CodeGenOptLevel::None;
+  OptimizationLevel LLVMOptLevel = OptimizationLevel::O0;
+  // Parse optional -o flag, --freestanding, optimization flags, and any extra
+  // linker flags (e.g. -lm, -lcurl, -L/path) for linking against C libraries
+  // used by `extern fn` declarations.
   std::string OutputPath;
   bool Freestanding = false;
   std::vector<std::string> ExtraLinkArgs;
@@ -182,10 +187,47 @@ int main(int argc, char *argv[]) {
       OutputPath = argv[++i];
     } else if (Arg == "--freestanding") {
       Freestanding = true;
+    } else if (Arg == "-O") {
+      OptLevel = CodeGenOptLevel::Default;
+      LLVMOptLevel = OptimizationLevel::O2;
+    } else if (Arg.rfind("-O", 0) == 0) {
+      std::string Level = Arg.substr(2);
+      if (Level == "0") {
+        OptLevel = CodeGenOptLevel::None;
+        LLVMOptLevel = OptimizationLevel::O0;
+      } else if (Level == "1") {
+        OptLevel = CodeGenOptLevel::Less;
+        LLVMOptLevel = OptimizationLevel::O1;
+      } else if (Level == "2") {
+        OptLevel = CodeGenOptLevel::Default;
+        LLVMOptLevel = OptimizationLevel::O2;
+      } else if (Level == "3") {
+        OptLevel = CodeGenOptLevel::Aggressive;
+        LLVMOptLevel = OptimizationLevel::O3;
+      } else if (Level == "s") {
+        OptLevel = CodeGenOptLevel::Default;
+        LLVMOptLevel = OptimizationLevel::Os;
+      } else if (Level == "z") {
+        OptLevel = CodeGenOptLevel::Default;
+        LLVMOptLevel = OptimizationLevel::Oz;
+      } else {
+        std::cerr << "Warning: unknown optimization level '" << Arg << "', ignoring\n";
+      }
     } else {
       ExtraLinkArgs.push_back(Arg);
     }
   }
+
+  std::unique_ptr<TargetMachine> TM(
+      TheTarget->createTargetMachine(TargetTriple, CPU, "", opt, RM,
+                                     std::nullopt, OptLevel));
+
+  LLVMContext Context;
+  std::unique_ptr<Module> M = std::make_unique<Module>("hokkaido", Context);
+  M->setDataLayout(TM->createDataLayout());
+  M->setTargetTriple(TargetTriple);
+
+  IRBuilder<> Builder(Context);
 
   // Handle .cub files (direct cubical evaluation)
   if (filePath.extension() == ".cub" || filePath.extension() == ".uwuc") {
@@ -259,11 +301,19 @@ int main(int argc, char *argv[]) {
       PB.registerLoopAnalyses(LAM);
       PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
-      // TargetMachine::addPassesToEmitFile still requires the legacy PM
-      // for the codegen backend step. The new PM infrastructure above is
-      // ready for optimization passes as the compiler grows.
-      legacy::PassManager LPM;
+      // Register target-specific pass builder callbacks before building
+      // any optimization pipeline.
       TM->registerPassBuilderCallbacks(PB);
+
+      // Run LLVM optimization passes when optimization level > 0
+      if (OptLevel != CodeGenOptLevel::None) {
+        ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(LLVMOptLevel);
+        MPM.run(*M, MAM);
+      }
+
+      // TargetMachine::addPassesToEmitFile still requires the legacy PM
+      // for the codegen backend step.
+      legacy::PassManager LPM;
       if (TM->addPassesToEmitFile(LPM, Dest, nullptr, CodeGenFileType::ObjectFile)) {
         errs() << "Error: target does not support object emission\n";
         return 1;
