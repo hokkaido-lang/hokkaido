@@ -48,11 +48,18 @@ struct LSPCompletionItem {
   std::string insert_text;
 };
 
+/// Byte range of a top-level declaration in the source text.
+struct DeclRange {
+  std::unique_ptr<Decl> decl;
+  int start_offset = 0; // inclusive byte offset
+  int end_offset = 0;   // exclusive byte offset
+};
+
 struct LSPDocument {
   std::string uri;
   std::string text;
   int version = 0;
-  std::vector<std::unique_ptr<Decl>> ast;
+  std::vector<DeclRange> decl_ranges; // AST + byte ranges for incremental re-parse
   std::vector<LSPDiagnostic> diagnostics;
 
   // Symbol index for quick lookup
@@ -60,19 +67,9 @@ struct LSPDocument {
   std::vector<LSPSymbol> all_symbols;
 };
 
-struct SymbolIndex {
-  std::string name;
-  std::string kind;
-  std::string parent;
-  LSPLocation location;
-};
-
 class LSPServer {
   std::map<std::string, LSPDocument> documents;
   bool shutdown_requested = false;
-
-  // Buffer for reading Content-Length framed messages
-  std::string read_buf;
 
   // LSP helpers
   std::string read_message();
@@ -98,6 +95,8 @@ class LSPServer {
   // Internal helpers
   LSPDocument *get_document(const std::string &uri);
   void parse_document(LSPDocument &doc);
+  void parse_document_incremental(LSPDocument &doc,
+                                  const std::string &old_text);
   void build_symbol_index(LSPDocument &doc);
   void publish_diagnostics(const std::string &uri, LSPDocument &doc);
   void collect_decl_symbols(Decl *decl, LSPDocument &doc, const std::string &parent);

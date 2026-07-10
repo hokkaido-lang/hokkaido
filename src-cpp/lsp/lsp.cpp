@@ -1,7 +1,10 @@
 #include "lsp/lsp.h"
 
+#include <cctype>
+#include <cstring>
 #include <fstream>
 #include <iostream>
+#include <set>
 #include <sstream>
 
 #include "llvm/Support/JSON.h"
@@ -143,11 +146,163 @@ LSPDocument *LSPServer::get_document(const std::string &uri) {
   return nullptr;
 }
 
+// =========================================================================
+// Declaration boundary scanner for incremental parsing
+// =========================================================================
+
+/// Find the end offset of a top-level declaration starting at 'start'.
+/// Handles brace-delimited declarations (fn, struct, enum, impl, trait,
+/// namespace) by matching the first { at depth 0 to its matching }.
+/// For other declarations (let, import, include, extern, package),
+/// tracks balanced braces and ends at the first newline at depth 0.
+static int find_decl_end(const std::string &text, int start) {
+  bool in_string = false;
+  bool in_char = false;
+  int brace_depth = 0;
+  int text_len = (int)text.size();
+
+  // Determine whether this is a brace-delimited declaration keyword
+  int kw_start = start;
+  // Skip 'pub'
+  if (text.compare(kw_start, 3, "pub") == 0 &&
+      (kw_start + 3 >= text_len ||
+       (!isalnum(text[kw_start + 3]) && text[kw_start + 3] != '_'))) {
+    kw_start += 3;
+    while (kw_start < text_len &&
+           (text[kw_start] == ' ' || text[kw_start] == '\t'))
+      kw_start++;
+  }
+
+  bool brace_delimited = false;
+  {
+    int p = kw_start;
+    while (p < text_len && (isalpha(text[p]) || text[p] == '_')) p++;
+    std::string kw = text.substr(kw_start, p - kw_start);
+    brace_delimited =
+        (kw == "fn" || kw == "struct" || kw == "enum" || kw == "impl" ||
+         kw == "trait" || kw == "namespace");
+  }
+
+  for (int pos = start; pos < text_len; pos++) {
+    char c = text[pos];
+
+    if (c == '"' && !in_char) {
+      in_string = !in_string;
+      continue;
+    }
+    if (c == '\'' && !in_string) {
+      in_char = !in_char;
+      continue;
+    }
+    if (in_string || in_char)
+      continue;
+
+    // Skip line comments
+    if (c == '/' && pos + 1 < text_len) {
+      if (text[pos + 1] == '/') {
+        while (pos < text_len && text[pos] != '\n')
+          pos++;
+        continue;
+      }
+      if (text[pos + 1] == '*') {
+        pos += 2;
+        while (pos + 1 < text_len &&
+               !(text[pos] == '*' && text[pos + 1] == '/'))
+          pos++;
+        if (pos + 1 < text_len)
+          pos++;
+        continue;
+      }
+    }
+
+    if (c == '{') {
+      brace_depth++;
+    } else if (c == '}') {
+      if (brace_delimited && brace_depth == 1) {
+        // Closing the top-level brace block
+        return pos + 1;
+      }
+      brace_depth--;
+      if (brace_depth < 0)
+        brace_depth = 0;
+    }
+
+    // Non-brace declaration ends at newline when not inside braces
+    if (!brace_delimited && brace_depth == 0 && c == '\n') {
+      return pos + 1;
+    }
+  }
+
+  return text_len;
+}
+
+/// Scan the full source text and return byte ranges for each top-level
+/// declaration.
+static std::vector<std::pair<int, int>> find_decl_boundaries(
+    const std::string &text) {
+  std::vector<std::pair<int, int>> boundaries;
+  int pos = 0;
+  int text_len = (int)text.size();
+
+  static const char *decl_kw[] = {"fn",     "let",       "struct", "enum",
+                                  "impl",   "trait",     "namespace",
+                                  "package","include",   "import", "extern"};
+
+  while (pos < text_len) {
+    // Skip whitespace and blank lines
+    while (pos < text_len && (text[pos] == ' ' || text[pos] == '\t' ||
+                              text[pos] == '\n' || text[pos] == '\r'))
+      pos++;
+
+    if (pos >= text_len)
+      break;
+
+    int start = pos;
+
+    // Check for 'pub' prefix
+    int check = pos;
+    if (text.compare(check, 3, "pub") == 0 &&
+        (check + 3 >= text_len ||
+         (!isalnum(text[check + 3]) && text[check + 3] != '_'))) {
+      check += 3;
+      while (check < text_len &&
+             (text[check] == ' ' || text[check] == '\t'))
+        check++;
+    }
+
+    // Check for declaration-starting keywords
+    bool is_decl = false;
+    for (auto *kw : decl_kw) {
+      size_t klen = std::strlen(kw);
+      if (text.compare(check, klen, kw) == 0 &&
+          (check + (int)klen >= text_len ||
+           (!isalnum(text[check + klen]) && text[check + klen] != '_'))) {
+        is_decl = true;
+        break;
+      }
+    }
+
+    if (is_decl) {
+      int end = find_decl_end(text, start);
+      boundaries.push_back({start, end});
+      pos = end;
+    } else {
+      // Not a declaration - skip to next line
+      while (pos < text_len && text[pos] != '\n')
+        pos++;
+      if (pos < text_len)
+        pos++;
+    }
+  }
+
+  return boundaries;
+}
+
 void LSPServer::parse_document(LSPDocument &doc) {
   doc.diagnostics.clear();
   doc.symbols_by_name.clear();
   doc.all_symbols.clear();
-  doc.ast.clear();
+  doc.decl_ranges.clear();
 
   Lexer lexer(doc.text);
   std::string path = uri_to_path(doc.uri);
@@ -157,14 +312,27 @@ void LSPServer::parse_document(LSPDocument &doc) {
     base_dir = path.substr(0, slash);
 
   Parser parser(lexer, path, base_dir);
-  doc.ast = parser.parse_program();
+  auto ast = parser.parse_program();
+
+  // Build decl_ranges by pairing AST with text boundaries
+  auto boundaries = find_decl_boundaries(doc.text);
+  int decl_idx = 0;
+  for (auto &[start, end] : boundaries) {
+    DeclRange dr;
+    dr.start_offset = start;
+    dr.end_offset = end;
+    // Match AST decls to text boundaries (skip side-effect-only decls)
+    while (decl_idx < (int)ast.size()) {
+      dr.decl = std::move(ast[decl_idx]);
+      decl_idx++;
+      break; // Take one decl per boundary (some may produce no AST)
+    }
+    doc.decl_ranges.push_back(std::move(dr));
+  }
 
   // Build diagnostics from parser errors
   if (!parser.ok()) {
-    // Parser gives error like "error: msg\n --> file:line:col"
-    // We need to extract line and col for the diagnostic range
     std::string err = parser.error();
-    // Try to extract line:col from the error string
     int err_line = 0, err_col = 0;
     auto colon_pos = err.rfind(':');
     if (colon_pos != std::string::npos) {
@@ -179,7 +347,6 @@ void LSPServer::parse_document(LSPDocument &doc) {
 
     LSPDiagnostic diag;
     diag.range.start = {err_line, err_col};
-    // Make a 1-character range at the error position
     diag.range.end = {err_line, err_col + 1};
     diag.message = err;
     diag.severity = "Error";
@@ -189,9 +356,103 @@ void LSPServer::parse_document(LSPDocument &doc) {
   build_symbol_index(doc);
 }
 
+void LSPServer::parse_document_incremental(LSPDocument &doc,
+                                           const std::string &old_text) {
+  // Find first byte where old and new text differ
+  size_t min_len = std::min(old_text.size(), doc.text.size());
+  size_t diff_pos = 0;
+  while (diff_pos < min_len && old_text[diff_pos] == doc.text[diff_pos])
+    diff_pos++;
+
+  // No change or both empty
+  if (diff_pos == old_text.size() && diff_pos == doc.text.size())
+    return;
+
+  // If no existing decl_ranges, do full parse
+  if (doc.decl_ranges.empty()) {
+    parse_document(doc);
+    return;
+  }
+
+  // Find which declaration in the OLD text contains the change
+  int affected_idx = -1;
+  for (int i = 0; i < (int)doc.decl_ranges.size(); i++) {
+    if (doc.decl_ranges[i].end_offset > (int)diff_pos) {
+      affected_idx = i;
+      break;
+    }
+  }
+
+  // Change is past all decls (appending at EOF), parse from last decl
+  if (affected_idx < 0)
+    affected_idx = (int)doc.decl_ranges.size() - 1;
+
+  // Include one decl before the affected one for safety
+  if (affected_idx > 0)
+    affected_idx--;
+
+  // If re-parsing most of the file, just do full parse
+  if (affected_idx <= (int)doc.decl_ranges.size() / 4) {
+    parse_document(doc);
+    return;
+  }
+
+  // Extract new text from affected position to EOF
+  int start_offset = doc.decl_ranges[affected_idx].start_offset;
+  std::string reparse_text = doc.text.substr(start_offset);
+
+  Lexer re_lexer(reparse_text);
+  std::string path = uri_to_path(doc.uri);
+  std::string base_dir = ".";
+  auto slash = path.rfind('/');
+  if (slash != std::string::npos)
+    base_dir = path.substr(0, slash);
+
+  Parser re_parser(re_lexer, path, base_dir);
+  auto new_decls = re_parser.parse_program();
+
+  // If re-parse succeeded, replace affected decls
+  if (re_parser.ok() || !new_decls.empty()) {
+    // Remove affected decls from end
+    doc.decl_ranges.erase(
+        doc.decl_ranges.begin() + affected_idx,
+        doc.decl_ranges.end());
+
+    // Get boundaries for the new text
+    auto boundaries = find_decl_boundaries(doc.text);
+
+    // Find where to start in boundaries
+    int bi = 0;
+    while (bi < (int)boundaries.size() &&
+           boundaries[bi].first < start_offset)
+      bi++;
+
+    // Add new DeclRanges for the re-parsed portion
+    int new_idx = 0;
+    while (bi < (int)boundaries.size()) {
+      DeclRange dr;
+      dr.start_offset = boundaries[bi].first;
+      dr.end_offset = boundaries[bi].second;
+      if (new_idx < (int)new_decls.size()) {
+        dr.decl = std::move(new_decls[new_idx]);
+        new_idx++;
+      }
+      doc.decl_ranges.push_back(std::move(dr));
+      bi++;
+    }
+
+    // Rebuild symbol index from scratch
+    build_symbol_index(doc);
+  } else {
+    // Re-parse failed, fall back to full
+    parse_document(doc);
+  }
+}
+
 void LSPServer::build_symbol_index(LSPDocument &doc) {
-  for (auto &decl : doc.ast) {
-    collect_decl_symbols(decl.get(), doc, "");
+  for (auto &dr : doc.decl_ranges) {
+    if (dr.decl)
+      collect_decl_symbols(dr.decl.get(), doc, "");
   }
 }
 
@@ -396,6 +657,8 @@ void LSPServer::handle_did_change(const json::Object &params) {
   auto *doc = get_document(uri);
   if (!doc) return;
 
+  std::string old_text = doc->text;
+
   // Full sync: take the last change's text
   auto *changes = content_changes->getAsArray();
   if (changes && !changes->empty()) {
@@ -405,7 +668,8 @@ void LSPServer::handle_did_change(const json::Object &params) {
     }
   }
 
-  parse_document(*doc);
+  // Try incremental parse, falls back to full parse if needed
+  parse_document_incremental(*doc, old_text);
   publish_diagnostics(uri, *doc);
 }
 
@@ -427,7 +691,7 @@ json::Value LSPServer::handle_hover(const json::Object &params) {
   if (!pos || uri.empty()) return nullptr;
 
   auto *doc = get_document(uri);
-  if (!doc || doc->ast.empty()) return nullptr;
+  if (!doc || doc->decl_ranges.empty()) return nullptr;
 
   LSPPosition position;
   position.line = (int)pos->get("line")->getAsInteger().value_or(0);
@@ -547,7 +811,7 @@ json::Value LSPServer::handle_definition(const json::Object &params) {
   if (!pos || uri.empty()) return nullptr;
 
   auto *doc = get_document(uri);
-  if (!doc || doc->ast.empty()) return nullptr;
+  if (!doc || doc->decl_ranges.empty()) return nullptr;
 
   LSPPosition position;
   position.line = (int)pos->get("line")->getAsInteger().value_or(0);
@@ -588,7 +852,7 @@ json::Value LSPServer::handle_references(const json::Object &params) {
   if (!pos || uri.empty()) return nullptr;
 
   auto *doc = get_document(uri);
-  if (!doc || doc->ast.empty()) return nullptr;
+  if (!doc || doc->decl_ranges.empty()) return nullptr;
 
   LSPPosition position;
   position.line = (int)pos->get("line")->getAsInteger().value_or(0);
