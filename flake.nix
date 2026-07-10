@@ -15,12 +15,14 @@
           inherit hokkaido;
           std = ./std;
         };
+        hokup = pkgs.callPackage ./hokup/default.nix { };
       in
       {
         packages = {
           default = otaru;
           otaru = otaru;
           hokkaido = hokkaido;
+          hokup = hokup;
         };
 
         devShells.default = pkgs.mkShell {

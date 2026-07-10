@@ -37,6 +37,9 @@ jobs:
       - name: Build otaru via flake
         run: nix build .#otaru -L -o result-otaru
 
+      - name: Build hokup installer
+        run: nix build .#hokup -L -o result-hokup
+
       - name: Package binaries
         run: |
           mkdir -p dist/bin dist/share
@@ -46,6 +49,8 @@ jobs:
           # otaru package manager (already bundles its own copy of hokkaido + std)
           cp result-otaru/bin/otaru dist/bin/
           cp -r result-otaru/share/otaru dist/share/otaru
+          # hokup installer (for future updates)
+          cp result-hokup/bin/hokup dist/bin/
           tar -C dist -czf hokkaido-${{ matrix.asset_suffix }}.tar.gz bin share
 
       - name: Upload build artifact
