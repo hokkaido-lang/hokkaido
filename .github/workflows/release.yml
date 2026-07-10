@@ -32,14 +32,21 @@ jobs:
             experimental-features = nix-command flakes
 
       - name: Build hokkaido via flake
-        run: nix build .#hokkaido -L
+        run: nix build .#hokkaido -L -o result-hokkaido
+
+      - name: Build otaru via flake
+        run: nix build .#otaru -L -o result-otaru
 
       - name: Package binaries
         run: |
-          mkdir -p dist
-          cp result/bin/hokkaido dist/
-          cp result/bin/hok-lsp  dist/
-          tar -C dist -czf hokkaido-${{ matrix.asset_suffix }}.tar.gz hokkaido hok-lsp
+          mkdir -p dist/bin dist/share
+          # hokkaido compiler binaries (hok-lsp only ships from the hokkaido output)
+          cp result-hokkaido/bin/hokkaido dist/bin/
+          cp result-hokkaido/bin/hok-lsp  dist/bin/
+          # otaru package manager (already bundles its own copy of hokkaido + std)
+          cp result-otaru/bin/otaru dist/bin/
+          cp -r result-otaru/share/otaru dist/share/otaru
+          tar -C dist -czf hokkaido-${{ matrix.asset_suffix }}.tar.gz bin share
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
