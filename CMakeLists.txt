@@ -62,3 +62,22 @@ target_link_libraries(hokkaido PRIVATE
     dl
     m
 )
+
+# LSP server — separate binary
+set(HOK_LSP_SOURCES
+    src-cpp/lsp_main.cpp
+    src-cpp/lsp/lsp.cpp
+    src-cpp/lexer.cpp
+    src-cpp/parser.cpp
+)
+
+add_executable(hok-lsp ${HOK_LSP_SOURCES})
+
+target_include_directories(hok-lsp PRIVATE src-cpp)
+
+target_link_libraries(hok-lsp PRIVATE
+    ${llvm_libs}
+    pthread
+    dl
+    m
+)
