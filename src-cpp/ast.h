@@ -62,6 +62,9 @@ enum class AtomicOp {
 };
 
 struct Expr {
+  int line = 0;
+  int col = 0;
+  std::string file;
   virtual ~Expr() = default;
 };
 
@@ -169,6 +172,9 @@ struct FieldAccessExpr : Expr {
 // Pattern matching
 
 struct Pattern {
+  int line = 0;
+  int col = 0;
+  std::string file;
   virtual ~Pattern() = default;
 };
 
@@ -214,6 +220,9 @@ struct IfExpr : Expr {
 
 
 struct Decl {
+  int line = 0;
+  int col = 0;
+  std::string file;
   virtual ~Decl() = default;
 };
 
@@ -276,6 +285,9 @@ struct Param {
 };
 
 struct Stmt {
+  int line = 0;
+  int col = 0;
+  std::string file;
   virtual ~Stmt() = default;
 };
 

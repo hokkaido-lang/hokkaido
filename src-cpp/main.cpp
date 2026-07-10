@@ -251,11 +251,11 @@ int main(int argc, char *argv[]) {
       auto canonical = std::filesystem::weakly_canonical(filePath, ec);
       included_files->insert((ec ? filePath : canonical).string());
     }
-    Parser parser(lexer, filePath.parent_path().string(), included_files, imported_packages);
+    Parser parser(lexer, filePath.string(), filePath.parent_path().string(), included_files, imported_packages);
     auto decls = parser.parse_program();
 
     if (!parser.ok()) {
-      std::cerr << "Parse error: " << parser.error() << "\n";
+      std::cerr << parser.error() << "\n";
       return 1;
     }
 

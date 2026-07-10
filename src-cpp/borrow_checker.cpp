@@ -1,4 +1,5 @@
 #include "borrow_checker.h"
+#include "error.h"
 
 #include <algorithm>
 #include <iostream>
@@ -11,8 +12,10 @@
 void BorrowChecker::set_error(const std::string &msg, Expr *expr) {
   if (has_error_) return;
   has_error_ = true;
-  error_msg_ = msg;
-  (void)expr; // location info TBD
+  if (expr && expr->line > 0)
+    error_msg_ = error_at(expr->file, expr->line, expr->col, msg);
+  else
+    error_msg_ = "error: " + msg;
 }
 
 // -------------------------------------------------------------------------
@@ -343,7 +346,7 @@ bool BorrowChecker::check_fn(const std::string &fn_name, FnDecl *decl) {
   walk_body(decl->body);
 
   if (has_error_) {
-    std::cerr << "Borrow check error in function '" << fn_name << "': " << error_msg_ << "\n";
+    std::cerr << error_msg_ << "\n";
     return false;
   }
   return true;

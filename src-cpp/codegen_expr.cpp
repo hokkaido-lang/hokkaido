@@ -203,7 +203,7 @@ Value *CodeGen::get_lvalue_ptr(Expr *expr, Type **out_type) {
         if (out_type) *out_type = gi->second->getValueType();
         return gi->second;
       }
-      errs() << "Error: undefined variable '" << id->name << "'\n";
+      cg_error(errs(), id, "undefined variable '" + id->name + "'");
       return nullptr;
     }
     if (out_type) *out_type = it->second->getAllocatedType();
@@ -378,7 +378,7 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
         Type *gv_type = gi->second->getValueType();
         return Builder.CreateLoad(gv_type, gi->second, id->name);
       }
-      errs() << "Error: undefined variable '" << id->name << "'\n";
+      cg_error(errs(), id, "undefined variable '" + id->name + "'");
       return nullptr;
     }
     Type *alloc_type = it->second->getAllocatedType();
@@ -587,8 +587,8 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
         if (gi != global_values.end()) {
           ptr = Builder.CreateLoad(gi->second->getValueType(), gi->second, id->name);
         } else {
-          errs() << "Error: undefined variable '" << id->name << "'\n";
-          return nullptr;
+      cg_error(errs(), id, "undefined variable '" + id->name + "'");
+      return nullptr;
         }
       } else {
         ptr = Builder.CreateLoad(it->second->getAllocatedType(), it->second, id->name);
@@ -1172,17 +1172,17 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
 
         return Builder.CreateCall(call_ft, fn, args_v, "call");
       }
-      errs() << "Error: undefined function '" << call->callee << "'\n";
+      cg_error(errs(), call, "undefined function '" + call->callee + "'");
       return nullptr;
     }
     size_t fixed_params = callee->arg_size();
     if (callee->isVarArg()) {
       if (call->args.size() < fixed_params) {
-        errs() << "Error: too few arguments to '" << call->callee << "'\n";
+        cg_error(errs(), call, "too few arguments to '" + call->callee + "'");
         return nullptr;
       }
     } else if (fixed_params != call->args.size()) {
-      errs() << "Error: wrong number of arguments to '" << call->callee << "'\n";
+      cg_error(errs(), call, "wrong number of arguments to '" + call->callee + "'");
       return nullptr;
     }
     std::vector<Value *> args;

@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "error.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -16,8 +17,7 @@ void Parser::skip_newlines() {
 
 void Parser::set_error(const std::string &msg) {
   has_error = true;
-  error_msg = msg + " at line " + std::to_string(cur_tok.line) + ":" +
-              std::to_string(cur_tok.col);
+  error_msg = error_at(source_file, cur_tok.line, cur_tok.col, msg);
 }
 
 // -------------------------------------------------------------------------
@@ -206,7 +206,7 @@ bool Parser::parse_import_decl(std::vector<std::unique_ptr<Decl>> &decls) {
     std::string expected_pkg = (last_slash != std::string::npos) ? path.substr(last_slash + 1) : path;
 
     Lexer sub_lexer(content);
-    Parser sub_parser(sub_lexer, fs::path(file_path).parent_path().string(),
+    Parser sub_parser(sub_lexer, file_path, fs::path(file_path).parent_path().string(),
                       included_files, imported_packages);
     auto sub_decls = sub_parser.parse_program(expected_pkg);
 
@@ -584,7 +584,7 @@ std::unique_ptr<StructDecl> Parser::parse_struct_decl(bool is_pub) {
   }
   next_token(); // consume '}'
 
-  auto decl = std::make_unique<StructDecl>();
+  auto decl = make_decl<StructDecl>();
   decl->name = name;
   known_structs.insert(name);
   decl->fields = std::move(fields);
@@ -679,7 +679,7 @@ std::unique_ptr<AdtDecl> Parser::parse_enum_decl(bool is_pub) {
   }
   next_token(); // consume '}'
 
-  auto decl = std::make_unique<AdtDecl>();
+  auto decl = make_decl<AdtDecl>();
   decl->name = name;
   decl->variants = std::move(variants);
   decl->is_pub = is_pub;
@@ -778,7 +778,7 @@ std::unique_ptr<TraitDecl> Parser::parse_trait_decl(bool is_pub) {
   }
   next_token(); // consume '}'
 
-  auto decl = std::make_unique<TraitDecl>();
+  auto decl = make_decl<TraitDecl>();
   decl->name = name;
   decl->methods = std::move(methods);
   decl->is_pub = is_pub;
@@ -872,7 +872,7 @@ std::unique_ptr<ImplDecl> Parser::parse_impl_decl() {
   }
   next_token(); // consume '}'
 
-  auto decl = std::make_unique<ImplDecl>();
+  auto decl = make_decl<ImplDecl>();
   decl->trait_name = trait_name;
   decl->type_name = type_name;
   decl->methods = std::move(methods);
@@ -1026,7 +1026,7 @@ bool Parser::parse_include_decl(std::vector<std::unique_ptr<Decl>> &decls) {
   std::string content = ss.str();
 
   Lexer sub_lexer(content);
-  Parser sub_parser(sub_lexer, full_path.parent_path().string(), included_files, imported_packages);
+  Parser sub_parser(sub_lexer, full_path.string(), full_path.parent_path().string(), included_files, imported_packages);
   auto sub_decls = sub_parser.parse_program();
 
   if (!sub_parser.ok()) {
@@ -1089,7 +1089,7 @@ std::unique_ptr<LetDecl> Parser::parse_let_decl(bool is_pub) {
   std::unique_ptr<Expr> init;
   if (!parse_let_common(type_ann, name, init)) return nullptr;
 
-  auto decl = std::make_unique<LetDecl>();
+  auto decl = make_decl<LetDecl>();
   decl->type_ann = type_ann;
   decl->name = name;
   decl->is_pub = is_pub;
@@ -1214,7 +1214,7 @@ std::unique_ptr<FnDecl> Parser::parse_fn_decl(bool is_pub) {
   auto body = parse_block();
   if (has_error) return nullptr;
 
-  auto decl = std::make_unique<FnDecl>();
+  auto decl = make_decl<FnDecl>();
   decl->name = name;
   decl->params = std::move(params);
   decl->return_type = return_type;
@@ -1303,7 +1303,7 @@ std::unique_ptr<FnDecl> Parser::parse_extern_fn_decl() {
   TypeAnnotation return_type = parse_type_annotation();
   if (has_error) return nullptr;
 
-  auto decl = std::make_unique<FnDecl>();
+  auto decl = make_decl<FnDecl>();
   decl->name = name;
   decl->params = std::move(params);
   decl->return_type = return_type;
@@ -1386,7 +1386,7 @@ std::unique_ptr<Stmt> Parser::parse_stmt() {
   }
   auto expr = parse_expr();
   if (!expr) return nullptr;
-  return std::make_unique<ExprStmt>(std::move(expr));
+  return make_stmt<ExprStmt>(std::move(expr));
 }
 
 std::unique_ptr<LetStmt> Parser::parse_let_stmt() {
@@ -1397,7 +1397,7 @@ std::unique_ptr<LetStmt> Parser::parse_let_stmt() {
   std::unique_ptr<Expr> init;
   if (!parse_let_common(type_ann, name, init)) return nullptr;
 
-  auto stmt = std::make_unique<LetStmt>();
+  auto stmt = make_stmt<LetStmt>();
   stmt->type_ann = type_ann;
   stmt->name = name;
   stmt->init_expr = std::move(init);
@@ -1426,12 +1426,12 @@ std::unique_ptr<ReturnStmt> Parser::parse_return_stmt() {
       cur_tok.type == TokenType::Lambda) {
     auto expr = parse_expr();
     if (!expr) return nullptr;
-    auto stmt = std::make_unique<ReturnStmt>();
+    auto stmt = make_stmt<ReturnStmt>();
     stmt->value = std::move(expr);
     return stmt;
   }
 
-  return std::make_unique<ReturnStmt>(); // bare return (void)
+  return make_stmt<ReturnStmt>(); // bare return (void)
 }
 
 std::unique_ptr<IfStmt> Parser::parse_if_stmt() {
@@ -1463,7 +1463,7 @@ std::unique_ptr<IfStmt> Parser::parse_if_stmt() {
     }
   }
 
-  auto stmt = std::make_unique<IfStmt>();
+  auto stmt = make_stmt<IfStmt>();
   stmt->condition = std::move(cond);
   stmt->then_branch = std::move(then_branch);
   stmt->else_branch = std::move(else_branch);
@@ -1481,7 +1481,7 @@ std::unique_ptr<ForStmt> Parser::parse_for_stmt() {
   } else if (cur_tok.type != TokenType::Semicolon) {
     auto expr = parse_expr();
     if (!expr) return nullptr;
-    init = std::make_unique<ExprStmt>(std::move(expr));
+    init = make_stmt<ExprStmt>(std::move(expr));
   }
 
   if (cur_tok.type != TokenType::Semicolon) {
@@ -1514,7 +1514,7 @@ std::unique_ptr<ForStmt> Parser::parse_for_stmt() {
   auto body = parse_block();
   if (has_error) return nullptr;
 
-  auto stmt = std::make_unique<ForStmt>();
+  auto stmt = make_stmt<ForStmt>();
   stmt->init = std::move(init);
   stmt->condition = std::move(cond);
   stmt->update = std::move(update);
@@ -1535,7 +1535,7 @@ std::unique_ptr<BreakStmt> Parser::parse_break_stmt() {
     label = cur_tok.text;
     next_token();
   }
-  auto stmt = std::make_unique<BreakStmt>();
+  auto stmt = make_stmt<BreakStmt>();
   stmt->label = label;
   return stmt;
 }
@@ -1553,7 +1553,7 @@ std::unique_ptr<ContinueStmt> Parser::parse_continue_stmt() {
     label = cur_tok.text;
     next_token();
   }
-  auto stmt = std::make_unique<ContinueStmt>();
+  auto stmt = make_stmt<ContinueStmt>();
   stmt->label = label;
   return stmt;
 }
@@ -1576,7 +1576,7 @@ std::unique_ptr<Stmt> Parser::parse_region_stmt() {
   auto body = parse_block();
   if (has_error) return nullptr;
 
-  auto stmt = std::make_unique<RegionStmt>();
+  auto stmt = make_stmt<RegionStmt>();
   stmt->name = name;
   stmt->body = std::move(body);
   return stmt;
@@ -1622,7 +1622,7 @@ std::unique_ptr<Expr> Parser::parse_assignment() {
     next_token(); // consume the compound operator
     auto value = parse_assignment();
     if (!value) return nullptr;
-    return std::make_unique<CompoundAssignExpr>(std::move(left), compound_op, std::move(value));
+    return make_expr<CompoundAssignExpr>(std::move(left), compound_op, std::move(value));
   }
 
   if (cur_tok.type == TokenType::Equals) {
@@ -1633,7 +1633,7 @@ std::unique_ptr<Expr> Parser::parse_assignment() {
     next_token(); // consume '='
     auto value = parse_assignment(); // right-associative
     if (!value) return nullptr;
-    return std::make_unique<AssignExpr>(std::move(left), std::move(value));
+    return make_expr<AssignExpr>(std::move(left), std::move(value));
   }
   return left;
 }
@@ -1646,7 +1646,7 @@ std::unique_ptr<Expr> Parser::parse_logical_or() {
     next_token();
     auto right = parse_logical_and();
     if (!right) return nullptr;
-    left = std::make_unique<BinaryExpr>(std::move(left), BinOp::Or, std::move(right));
+    left = make_expr<BinaryExpr>(std::move(left), BinOp::Or, std::move(right));
   }
   return left;
 }
@@ -1659,7 +1659,7 @@ std::unique_ptr<Expr> Parser::parse_logical_and() {
     next_token();
     auto right = parse_bitwise_or();
     if (!right) return nullptr;
-    left = std::make_unique<BinaryExpr>(std::move(left), BinOp::And, std::move(right));
+    left = make_expr<BinaryExpr>(std::move(left), BinOp::And, std::move(right));
   }
   return left;
 }
@@ -1672,7 +1672,7 @@ std::unique_ptr<Expr> Parser::parse_bitwise_or() {
     next_token();
     auto right = parse_bitwise_xor();
     if (!right) return nullptr;
-    left = std::make_unique<BinaryExpr>(std::move(left), BinOp::BitOr, std::move(right));
+    left = make_expr<BinaryExpr>(std::move(left), BinOp::BitOr, std::move(right));
   }
   return left;
 }
@@ -1685,7 +1685,7 @@ std::unique_ptr<Expr> Parser::parse_bitwise_xor() {
     next_token();
     auto right = parse_bitwise_and();
     if (!right) return nullptr;
-    left = std::make_unique<BinaryExpr>(std::move(left), BinOp::Xor, std::move(right));
+    left = make_expr<BinaryExpr>(std::move(left), BinOp::Xor, std::move(right));
   }
   return left;
 }
@@ -1698,7 +1698,7 @@ std::unique_ptr<Expr> Parser::parse_bitwise_and() {
     next_token();
     auto right = parse_comparison();
     if (!right) return nullptr;
-    left = std::make_unique<BinaryExpr>(std::move(left), BinOp::BitAnd, std::move(right));
+    left = make_expr<BinaryExpr>(std::move(left), BinOp::BitAnd, std::move(right));
   }
   return left;
 }
@@ -1726,7 +1726,7 @@ std::unique_ptr<Expr> Parser::parse_comparison() {
     next_token();
     auto right = parse_shift();
     if (!right) return nullptr;
-    left = std::make_unique<BinaryExpr>(std::move(left), op, std::move(right));
+    left = make_expr<BinaryExpr>(std::move(left), op, std::move(right));
   }
   return left;
 }
@@ -1740,7 +1740,7 @@ std::unique_ptr<Expr> Parser::parse_shift() {
     next_token();
     auto right = parse_additive();
     if (!right) return nullptr;
-    left = std::make_unique<BinaryExpr>(std::move(left), op, std::move(right));
+    left = make_expr<BinaryExpr>(std::move(left), op, std::move(right));
   }
   return left;
 }
@@ -1754,7 +1754,7 @@ std::unique_ptr<Expr> Parser::parse_additive() {
     next_token();
     auto right = parse_multiplicative();
     if (!right) return nullptr;
-    left = std::make_unique<BinaryExpr>(std::move(left), op, std::move(right));
+    left = make_expr<BinaryExpr>(std::move(left), op, std::move(right));
   }
   return left;
 }
@@ -1771,7 +1771,7 @@ std::unique_ptr<Expr> Parser::parse_multiplicative() {
     next_token();
     auto right = parse_unary();
     if (!right) return nullptr;
-    left = std::make_unique<BinaryExpr>(std::move(left), op, std::move(right));
+    left = make_expr<BinaryExpr>(std::move(left), op, std::move(right));
   }
   return left;
 }
@@ -1781,19 +1781,19 @@ std::unique_ptr<Expr> Parser::parse_unary() {
     next_token();
     auto operand = parse_unary();
     if (!operand) return nullptr;
-    return std::make_unique<UnaryExpr>(UnaryOp::Neg, std::move(operand));
+    return make_expr<UnaryExpr>(UnaryOp::Neg, std::move(operand));
   }
   if (cur_tok.type == TokenType::BitNot) {
     next_token();
     auto operand = parse_unary();
     if (!operand) return nullptr;
-    return std::make_unique<UnaryExpr>(UnaryOp::BitNot, std::move(operand));
+    return make_expr<UnaryExpr>(UnaryOp::BitNot, std::move(operand));
   }
   if (cur_tok.type == TokenType::Star) {
     next_token();
     auto operand = parse_unary();
     if (!operand) return nullptr;
-    return std::make_unique<DerefExpr>(std::move(operand));
+    return make_expr<DerefExpr>(std::move(operand));
   }
   auto prim = parse_primary();
   if (!prim) return nullptr;
@@ -1803,7 +1803,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
 std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
   // Handle function call: expr(args) — expression-based calls (closures)
   if (cur_tok.type == TokenType::LParen) {
-    auto call = std::make_unique<CallExpr>();
+    auto call = make_expr<CallExpr>();
     call->callee_expr = std::move(left);
     next_token(); // consume '('
     while (cur_tok.type != TokenType::RParen && cur_tok.type != TokenType::Eof) {
@@ -1835,7 +1835,7 @@ std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
       return nullptr;
     }
     next_token(); // consume ']'
-    left = std::make_unique<SubscriptExpr>(std::move(left), std::move(index));
+    left = make_expr<SubscriptExpr>(std::move(left), std::move(index));
   }
   // Handle field access: obj.field or obj.0 (tuple positional access)
   // and method call: obj.method(args)
@@ -1845,13 +1845,13 @@ std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
       // Tuple positional access: .0, .1, etc.
       std::string field = std::to_string((int)cur_tok.num_val);
       next_token();
-      left = std::make_unique<FieldAccessExpr>(std::move(left), field);
+      left = make_expr<FieldAccessExpr>(std::move(left), field);
     } else if (cur_tok.type == TokenType::Identifier) {
       std::string name = cur_tok.text;
       next_token();
       // If followed by '(', it's a method call: obj.method(args)
       if (cur_tok.type == TokenType::LParen) {
-        auto mcall = std::make_unique<MethodCallExpr>();
+        auto mcall = make_expr<MethodCallExpr>();
         mcall->object = std::move(left);
         mcall->method_name = name;
         next_token(); // consume '('
@@ -1874,7 +1874,7 @@ std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
         next_token(); // consume ')'
         left = std::move(mcall);
       } else {
-        left = std::make_unique<FieldAccessExpr>(std::move(left), name);
+        left = make_expr<FieldAccessExpr>(std::move(left), name);
       }
     } else {
       set_error("expected field name or index after '.'");
@@ -1918,7 +1918,7 @@ std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
       }
       next_token(); // consume '{'
       skip_newlines();
-      auto ctor = std::make_unique<ConstructorExpr>();
+      auto ctor = make_expr<ConstructorExpr>();
       ctor->variant_name = variant_name;
       ctor->type_args = std::move(ctor_type_args);
       bool is_named = false;
@@ -1944,7 +1944,7 @@ std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
               set_error("cannot mix named and positional fields");
               return nullptr;
             }
-            field_val = std::make_unique<IdentExpr>(possible_name);
+            field_val = make_expr<IdentExpr>(possible_name);
           }
         } else {
           if (is_named && has_fields) {
@@ -1975,33 +1975,33 @@ std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
 
 std::unique_ptr<Expr> Parser::parse_primary() {
   if (cur_tok.type == TokenType::True) {
-    auto expr = std::make_unique<NumberExpr>(cur_tok.num_val);
+    auto expr = make_expr<NumberExpr>(cur_tok.num_val);
     next_token();
     return expr;
   }
   if (cur_tok.type == TokenType::False) {
-    auto expr = std::make_unique<NumberExpr>(cur_tok.num_val);
+    auto expr = make_expr<NumberExpr>(cur_tok.num_val);
     next_token();
     return expr;
   }
   if (cur_tok.type == TokenType::Number) {
-    auto expr = std::make_unique<NumberExpr>(cur_tok.num_val);
+    auto expr = make_expr<NumberExpr>(cur_tok.num_val);
     next_token();
     return expr;
   }
   if (cur_tok.type == TokenType::CharLiteral) {
-    auto expr = std::make_unique<CharExpr>((uint8_t)cur_tok.num_val);
+    auto expr = make_expr<CharExpr>((uint8_t)cur_tok.num_val);
     next_token();
     return expr;
   }
   if (cur_tok.type == TokenType::StringLiteral) {
-    auto expr = std::make_unique<StringExpr>(cur_tok.text);
+    auto expr = make_expr<StringExpr>(cur_tok.text);
     next_token();
     return expr;
   }
   if (cur_tok.type == TokenType::Null) {
     next_token();
-    return std::make_unique<NullExpr>();
+    return make_expr<NullExpr>();
   }
   if (cur_tok.type == TokenType::Ampersand) {
     next_token(); // consume '&'
@@ -2012,7 +2012,7 @@ std::unique_ptr<Expr> Parser::parse_primary() {
     }
     auto operand = parse_unary();
     if (!operand) return nullptr;
-    return std::make_unique<BorrowExpr>(std::move(operand), is_mut);
+    return make_expr<BorrowExpr>(std::move(operand), is_mut);
   }
   if (cur_tok.type == TokenType::LSquare) {
     return parse_array_literal();
@@ -2036,7 +2036,7 @@ std::unique_ptr<Expr> Parser::parse_primary() {
     if (cur_tok.type == TokenType::LParen) {
       return parse_call_rest(name);
     }
-    return std::make_unique<IdentExpr>(name);
+    return make_expr<IdentExpr>(name);
   }
   if (cur_tok.type == TokenType::Asm) {
     next_token(); // consume 'asm'
@@ -2049,7 +2049,7 @@ std::unique_ptr<Expr> Parser::parse_primary() {
       set_error("expected string literal in asm");
       return nullptr;
     }
-    auto expr = std::make_unique<AsmExpr>();
+    auto expr = make_expr<AsmExpr>();
     expr->asm_code = cur_tok.text;
     next_token();
     if (cur_tok.type != TokenType::RParen) {
@@ -2067,7 +2067,7 @@ std::unique_ptr<Expr> Parser::parse_primary() {
     skip_newlines();
     // If followed by a comma, this is a tuple expression
     if (cur_tok.type == TokenType::Comma) {
-      auto tup = std::make_unique<TupleExpr>();
+      auto tup = make_expr<TupleExpr>();
       tup->elements.push_back(std::move(first));
       while (cur_tok.type == TokenType::Comma) {
         next_token(); // consume ','
@@ -2120,7 +2120,7 @@ std::unique_ptr<Expr> Parser::parse_if_expr() {
     auto block_stmts = parse_block();
     if (has_error || block_stmts.empty()) return nullptr;
     // Wrap the last statement as an expression, or use the single expression
-    then_expr = std::make_unique<NumberExpr>(0);
+    then_expr = make_expr<NumberExpr>(0);
     // For blocks, we need to pick the last expression-stmt as the value.
     // Currently blocks produce void — this is a simplification.
     // We evaluate the last expr-stmt's expression.
@@ -2153,7 +2153,7 @@ std::unique_ptr<Expr> Parser::parse_if_expr() {
   } else if (cur_tok.type == TokenType::LBrace) {
     auto block_stmts = parse_block();
     if (has_error || block_stmts.empty()) return nullptr;
-    else_expr = std::make_unique<NumberExpr>(0);
+    else_expr = make_expr<NumberExpr>(0);
     if (auto *es = dynamic_cast<ExprStmt *>(block_stmts.back().get())) {
       else_expr = std::move(es->expr);
       block_stmts.pop_back();
@@ -2163,7 +2163,7 @@ std::unique_ptr<Expr> Parser::parse_if_expr() {
     if (!else_expr) return nullptr;
   }
 
-  auto expr = std::make_unique<IfExpr>();
+  auto expr = make_expr<IfExpr>();
   expr->condition = std::move(cond);
   expr->then_expr = std::move(then_expr);
   expr->else_expr = std::move(else_expr);
@@ -2186,7 +2186,7 @@ std::unique_ptr<Expr> Parser::parse_array_literal() {
     elements.push_back(std::move(el));
   }
   next_token(); // consume ']'
-  auto expr = std::make_unique<ArrayLitExpr>();
+  auto expr = make_expr<ArrayLitExpr>();
   expr->elements = std::move(elements);
   return expr;
 }
@@ -2209,7 +2209,7 @@ std::unique_ptr<Expr> Parser::parse_call_rest(const std::string &name) {
   }
   next_token(); // consume ')'
 
-  auto expr = std::make_unique<CallExpr>();
+  auto expr = make_expr<CallExpr>();
   expr->callee = name;
   expr->args = std::move(args);
   return expr;
@@ -2256,7 +2256,7 @@ std::unique_ptr<Expr> Parser::parse_turbofish_call(const std::string &name) {
   }
   next_token(); // consume ')'
 
-  auto expr = std::make_unique<CallExpr>();
+  auto expr = make_expr<CallExpr>();
   expr->callee = name;
   expr->args = std::move(args);
   expr->type_args = std::move(type_args);
@@ -2275,7 +2275,7 @@ std::unique_ptr<Expr> Parser::parse_match_expr() {
   next_token(); // consume '{'
   skip_newlines();
 
-  auto mexpr = std::make_unique<MatchExpr>();
+  auto mexpr = make_expr<MatchExpr>();
   mexpr->value = std::move(value);
 
   while (cur_tok.type != TokenType::RBrace && cur_tok.type != TokenType::Eof) {
@@ -2318,7 +2318,7 @@ std::unique_ptr<Expr> Parser::parse_lambda_expr() {
   }
   next_token(); // consume '('
 
-  auto closure = std::make_unique<ClosureExpr>();
+  auto closure = make_expr<ClosureExpr>();
   while (cur_tok.type != TokenType::RParen && cur_tok.type != TokenType::Eof) {
     if (!closure->params.empty()) {
       if (cur_tok.type != TokenType::Comma) {
@@ -2418,7 +2418,7 @@ std::unique_ptr<Expr> Parser::parse_atomic_expr() {
   }
   next_token(); // consume ')'
 
-  auto expr = std::make_unique<AtomicExpr>();
+  auto expr = make_expr<AtomicExpr>();
   expr->op = op;
   expr->args = std::move(args);
   return expr;
@@ -2430,7 +2430,7 @@ std::unique_ptr<Pattern> Parser::parse_pattern() {
     next_token();
     // Wildcard
     if (name == "_")
-      return std::make_unique<WildcardPattern>();
+      return make_pattern<WildcardPattern>();
     // Qualified enum variant: EnumName::VariantName or VariantName
     while (cur_tok.type == TokenType::ColonColon) {
       next_token(); // consume '::'
@@ -2446,7 +2446,7 @@ std::unique_ptr<Pattern> Parser::parse_pattern() {
     if (cur_tok.type == TokenType::LBrace) {
       next_token(); // consume '{'
       skip_newlines();
-      auto pat = std::make_unique<StructPattern>();
+      auto pat = make_pattern<StructPattern>();
       pat->struct_name = name;
       while (cur_tok.type != TokenType::RBrace && cur_tok.type != TokenType::Eof) {
         if (cur_tok.type != TokenType::Identifier) {
@@ -2464,7 +2464,7 @@ std::unique_ptr<Pattern> Parser::parse_pattern() {
           if (!field_pat) return nullptr;
         } else {
           // Shorthand: field_name acts as both the field name and variable binding
-          field_pat = std::make_unique<VariablePattern>(field_name);
+          field_pat = make_pattern<VariablePattern>(field_name);
         }
         pat->fields.push_back({field_name, std::move(field_pat)});
         skip_newlines();
@@ -2481,23 +2481,23 @@ std::unique_ptr<Pattern> Parser::parse_pattern() {
       return pat;
     }
     // Variable pattern
-    return std::make_unique<VariablePattern>(name);
+    return make_pattern<VariablePattern>(name);
   }
   if (cur_tok.type == TokenType::Number ||
       cur_tok.type == TokenType::True ||
       cur_tok.type == TokenType::False) {
-    auto expr = std::make_unique<NumberExpr>(cur_tok.num_val);
+    auto expr = make_expr<NumberExpr>(cur_tok.num_val);
     next_token();
-    return std::make_unique<LiteralPattern>(std::move(expr));
+    return make_pattern<LiteralPattern>(std::move(expr));
   }
   if (cur_tok.type == TokenType::StringLiteral) {
-    auto expr = std::make_unique<StringExpr>(cur_tok.text);
+    auto expr = make_expr<StringExpr>(cur_tok.text);
     next_token();
-    return std::make_unique<LiteralPattern>(std::move(expr));
+    return make_pattern<LiteralPattern>(std::move(expr));
   }
   if (cur_tok.type == TokenType::Null) {
     next_token();
-    return std::make_unique<LiteralPattern>(std::make_unique<NullExpr>());
+    return make_pattern<LiteralPattern>(make_expr<NullExpr>());
   }
   if (cur_tok.type == TokenType::Minus) {
     next_token();
@@ -2505,9 +2505,9 @@ std::unique_ptr<Pattern> Parser::parse_pattern() {
       set_error("expected number after '-' in pattern");
       return nullptr;
     }
-    auto expr = std::make_unique<NumberExpr>(-cur_tok.num_val);
+    auto expr = make_expr<NumberExpr>(-cur_tok.num_val);
     next_token();
-    return std::make_unique<LiteralPattern>(std::move(expr));
+    return make_pattern<LiteralPattern>(std::move(expr));
   }
   set_error("expected pattern");
   return nullptr;

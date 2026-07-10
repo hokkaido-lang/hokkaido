@@ -37,10 +37,10 @@ class Parser {
   void set_error(const std::string &msg);
 
 public:
-  Parser(Lexer &lex, std::string base_dir = "",
+  Parser(Lexer &lex, std::string source_file, std::string base_dir,
          std::shared_ptr<std::set<std::string>> included_files = nullptr,
          std::shared_ptr<std::set<std::string>> imported_packages = nullptr)
-      : lexer(lex), base_dir(std::move(base_dir)),
+      : lexer(lex), source_file(std::move(source_file)), base_dir(std::move(base_dir)),
         included_files(included_files ? std::move(included_files)
                                        : std::make_shared<std::set<std::string>>()),
         imported_packages(imported_packages ? std::move(imported_packages)
@@ -119,7 +119,45 @@ private:
   // Names of type parameters in scope (for generic function bodies).
   std::unordered_set<std::string> type_param_names;
 
+  // Source file path for error reporting.
+  std::string source_file;
 
+  // Helpers to create AST nodes with source location pre-filled.
+  template<typename T, typename... Args>
+  std::unique_ptr<T> make_expr(Args&&... args) {
+    auto node = std::make_unique<T>(std::forward<Args>(args)...);
+    node->line = cur_tok.line;
+    node->col = cur_tok.col;
+    node->file = source_file;
+    return node;
+  }
+
+  template<typename T, typename... Args>
+  std::unique_ptr<T> make_stmt(Args&&... args) {
+    auto node = std::make_unique<T>(std::forward<Args>(args)...);
+    node->line = cur_tok.line;
+    node->col = cur_tok.col;
+    node->file = source_file;
+    return node;
+  }
+
+  template<typename T, typename... Args>
+  std::unique_ptr<T> make_decl(Args&&... args) {
+    auto node = std::make_unique<T>(std::forward<Args>(args)...);
+    node->line = cur_tok.line;
+    node->col = cur_tok.col;
+    node->file = source_file;
+    return node;
+  }
+
+  template<typename T, typename... Args>
+  std::unique_ptr<T> make_pattern(Args&&... args) {
+    auto node = std::make_unique<T>(std::forward<Args>(args)...);
+    node->line = cur_tok.line;
+    node->col = cur_tok.col;
+    node->file = source_file;
+    return node;
+  }
 
   // Shared let helper
   bool parse_let_common(TypeAnnotation &ann, std::string &name,

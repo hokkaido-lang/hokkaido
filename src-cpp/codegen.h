@@ -11,9 +11,20 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include "ast.h"
 #include "cubical.h"
+#include "error.h"
+
+/// Write a compiler error with source location to the given output stream.
+/// If expr is non-null and has line info, includes file:line:col.
+inline void cg_error(llvm::raw_ostream &os, Expr *expr, const std::string &msg) {
+  if (expr && expr->line > 0)
+    os << error_at(expr->file, expr->line, expr->col, msg) << "\n";
+  else
+    os << "error: " << msg << "\n";
+}
 
 // =========================================================================
 // Hokkaido Language — Code Generator
