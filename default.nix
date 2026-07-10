@@ -25,7 +25,8 @@ pkgs.stdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
     mkdir -p $out/bin
-    cp hokkaido $out/bin/
+    cp hokkaido      $out/bin/
+    cp hok-lsp       $out/bin/
     runHook postInstall
   '';
 

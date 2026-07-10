@@ -2,9 +2,10 @@
 
 ## Packages
 
-This repository provides two tools:
+This repository provides three tools:
 
 - **hokkaido** — the compiler (C++ with LLVM backend, Rust cubical backend)
+- **hok-lsp** — the language server ([LSP](https://microsoft.github.io/language-server-protocol/)) for IDE support
 - **otaru** — the package manager and project scaffold (Rust)
 
 ## Installation
@@ -64,6 +65,7 @@ otaru run     # builds and runs src/main.hk
 
 - [Language syntax](docs/syntax.md)
 - [Function types and HOFs](docs/syntax-functions.md)
+- [LSP server](src-cpp/lsp/README.md)
 
 ## License
 
