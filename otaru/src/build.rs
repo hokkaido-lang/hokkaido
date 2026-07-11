@@ -11,13 +11,32 @@ pub fn run(file: Option<&str>, freestanding: bool, force: bool, release: bool) {
     }
 }
 
-/// Compile a single file or project and return the binary path (without extension)
-pub fn compile_single_or_project(file: Option<&str>, freestanding: bool, force: bool, release: bool) -> String {
+pub fn compile_single_or_project(
+    file: Option<&str>,
+    freestanding: bool,
+    force: bool,
+    release: bool,
+) -> String {
     if let Some(f) = file {
         compile_single(f, freestanding, force, release)
     } else {
         compile_project(freestanding, force, release)
     }
+}
+
+pub fn has_hk_files() -> bool {
+    let src_dir = Path::new("src");
+    if !src_dir.is_dir() {
+        return false;
+    }
+    if let Ok(entries) = std::fs::read_dir(src_dir) {
+        for entry in entries.flatten() {
+            if entry.path().extension().map_or(false, |e| e == "hk") {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn opt_flag(release: bool) -> &'static str {
@@ -66,15 +85,12 @@ fn fnv1a_hash(data: &[u8]) -> u64 {
 fn compute_cache_key(src_dir: &Path, hokkaido_bin: &str) -> String {
     let mut tokens: Vec<String> = Vec::new();
 
-    // Include the compiler binary metadata
     tokens.push(file_metadata_token(Path::new(hokkaido_bin)));
 
-    // Include all .hk files in src/
     for f in &collect_hk_files(src_dir) {
         tokens.push(file_metadata_token(f));
     }
 
-    // Include all .hk files in deps/ if it exists
     let deps_dir = Path::new("deps");
     if deps_dir.is_dir() {
         if let Ok(entries) = std::fs::read_dir(deps_dir) {
@@ -89,7 +105,6 @@ fn compute_cache_key(src_dir: &Path, hokkaido_bin: &str) -> String {
         }
     }
 
-    // Include standard library files
     if let Some(std_dir) = find_std_dir() {
         for f in &collect_hk_files(&std_dir) {
             tokens.push(file_metadata_token(f));
@@ -106,7 +121,6 @@ fn compute_cache_key(src_dir: &Path, hokkaido_bin: &str) -> String {
 }
 
 fn find_std_dir() -> Option<std::path::PathBuf> {
-    // Check next to the running otaru binary
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
             let mut dir = parent.to_path_buf();
@@ -173,9 +187,12 @@ fn compile_single(file: &str, freestanding: bool, force: bool, release: bool) ->
     let output_base = format!("build/{}", stem);
     let cache_key = compute_cache_key(path.parent().unwrap_or(Path::new(".")), &hokkaido);
 
-    // Incremental build check
     if !force {
-        let cache_path = build_dir.join(format!(".{}.hkbuildcache.{}", stem, cache_suffix(release)));
+        let cache_path = build_dir.join(format!(
+            ".{}.hkbuildcache.{}",
+            stem,
+            cache_suffix(release)
+        ));
         if let Some(cached) = load_cache(&cache_path) {
             if cached == cache_key {
                 println!("Cached: {} (unchanged, skipping compilation)", file);
@@ -184,7 +201,7 @@ fn compile_single(file: &str, freestanding: bool, force: bool, release: bool) ->
                 }
                 let obj_path = format!("{}.o", output_base);
                 if Path::new(&obj_path).exists() {
-                    link_with_clang(&obj_path, &output_base);
+                    link_with_clang(&[obj_path], &output_base, &None, release);
                     println!("Built: {} (cached)", output_base);
                     return output_base;
                 }
@@ -209,9 +226,12 @@ fn compile_single(file: &str, freestanding: bool, force: bool, release: bool) ->
         std::process::exit(1);
     }
 
-    // Save cache
     if !force {
-        let cache_path = build_dir.join(format!(".{}.hkbuildcache.{}", stem, cache_suffix(release)));
+        let cache_path = build_dir.join(format!(
+            ".{}.hkbuildcache.{}",
+            stem,
+            cache_suffix(release)
+        ));
         save_cache(&cache_path, &cache_key);
     }
 
@@ -224,7 +244,7 @@ fn compile_single(file: &str, freestanding: bool, force: bool, release: bool) ->
         return output_base;
     }
 
-    link_with_clang(&obj_path, &output_base);
+    link_with_clang(&[obj_path], &output_base, &None, release);
     println!("Built: {}", output_base);
     output_base
 }
@@ -238,7 +258,12 @@ fn compile_project(freestanding: bool, force: bool, release: bool) -> String {
     }
 
     let manifest = crate::manifest::Manifest::load(manifest_path)
-        .unwrap_or_else(|e| { eprintln!("{}", e); std::process::exit(1); });
+        .unwrap_or_else(|e| {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        });
+
+    let build_config = manifest.build;
 
     let src_dir = Path::new("src");
     if !src_dir.is_dir() {
@@ -257,7 +282,6 @@ fn compile_project(freestanding: bool, force: bool, release: bool) -> String {
 
     let cache_key = compute_cache_key(src_dir, &hokkaido);
 
-    // Incremental build check
     if !force {
         let cache_path = format!("build/.hkbuildcache.{}", cache_suffix(release));
         if let Some(cached) = load_cache(Path::new(&cache_path)) {
@@ -265,7 +289,11 @@ fn compile_project(freestanding: bool, force: bool, release: bool) -> String {
                 let obj_path = format!("{}.o", binary);
                 if Path::new(&obj_path).exists() {
                     if !freestanding {
-                        link_with_clang(&obj_path, &binary);
+                        let mut all_objects = vec![obj_path.clone()];
+                        if let Some(ref config) = build_config {
+                            all_objects.extend(compile_extra_sources(config, force, release));
+                        }
+                        link_with_clang(&all_objects, &binary, &build_config, release);
                     }
                     println!("Built: {} (cached)", binary);
                     return binary;
@@ -289,7 +317,8 @@ fn compile_project(freestanding: bool, force: bool, release: bool) -> String {
         std::process::exit(1);
     }
 
-    let entry = hk_files.iter()
+    let entry = hk_files
+        .iter()
         .find(|f| f.contains("main"))
         .unwrap_or(&hk_files[0]);
 
@@ -310,7 +339,6 @@ fn compile_project(freestanding: bool, force: bool, release: bool) -> String {
         std::process::exit(1);
     }
 
-    // Save cache
     if !force {
         let cache_path = format!("build/.hkbuildcache.{}", cache_suffix(release));
         save_cache(Path::new(&cache_path), &cache_key);
@@ -325,30 +353,86 @@ fn compile_project(freestanding: bool, force: bool, release: bool) -> String {
         return binary;
     }
 
-    link_with_clang(&obj_path, &binary);
+    let mut all_objects = vec![obj_path];
+    if let Some(ref config) = build_config {
+        all_objects.extend(compile_extra_sources(config, force, release));
+    }
+
+    link_with_clang(&all_objects, &binary, &build_config, release);
     println!("Built: {}", binary);
     binary
 }
 
-fn link_with_clang(obj_path: &str, output_base: &str) {
-    let link_status = Command::new("clang")
-        .arg(obj_path)
-        .arg("-o")
-        .arg(output_base)
-        .status()
-        .unwrap_or_else(|e| {
-            eprintln!("Error linking with clang: {} (is clang installed?)", e);
-            std::process::exit(1);
-        });
+fn compile_extra_sources(config: &crate::manifest::Build, force: bool, release: bool) -> Vec<String> {
+    if config.sources.is_empty() {
+        return Vec::new();
+    }
+    let sources = crate::cbuild::resolve_sources(&config.sources);
+    let mut objects = Vec::new();
+    for source in &sources {
+        let obj = crate::cbuild::compile_source(source, config, force, release);
+        objects.push(obj);
+    }
+    objects
+}
 
-    if !link_status.success() {
-        eprintln!("Linking failed");
+fn link_with_clang(
+    obj_paths: &[String],
+    output: &str,
+    config: &Option<crate::manifest::Build>,
+    release: bool,
+) {
+    let compiler = config
+        .as_ref()
+        .map(|c| c.compiler.as_str())
+        .unwrap_or("clang");
+
+    let mut cmd = Command::new(compiler);
+
+    for obj in obj_paths {
+        cmd.arg(obj);
+    }
+
+    cmd.arg("-o").arg(output);
+
+    if let Some(config) = config {
+        for flag in &config.ldflags {
+            cmd.arg(flag);
+        }
+
+        for dir in &config.lib_dirs {
+            cmd.arg(format!("-L{}", dir));
+        }
+
+        for lib in &config.link {
+            cmd.arg(format!("-l{}", lib));
+        }
+
+        for lib in &config.libraries {
+            let resolved = crate::cbuild::resolve_library(lib, &config.lib_dirs);
+            cmd.arg(&resolved);
+        }
+
+        if release {
+            cmd.arg("-O2");
+        }
+    }
+
+    let status = cmd.status().unwrap_or_else(|e| {
+        eprintln!(
+            "Error linking with {}: {} (is {} installed?)",
+            output, e, compiler
+        );
+        std::process::exit(1);
+    });
+
+    if !status.success() {
+        eprintln!("Linking failed: {}", output);
         std::process::exit(1);
     }
 }
 
 pub fn find_hokkaido() -> String {
-    // Check next to the running otaru binary (works when bundled via Nix)
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             let candidate = dir.join("hokkaido");

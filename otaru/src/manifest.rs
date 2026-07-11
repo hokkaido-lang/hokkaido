@@ -8,6 +8,8 @@ pub struct Manifest {
     pub package: Package,
     #[serde(default)]
     pub dependencies: BTreeMap<String, Dependency>,
+    #[serde(default)]
+    pub build: Option<Build>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -40,6 +42,47 @@ pub enum Dependency {
         #[serde(skip_serializing_if = "Option::is_none")]
         version: Option<String>,
     },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Build {
+    #[serde(default = "default_build_type", rename = "type")]
+    pub kind: String,
+
+    #[serde(default)]
+    pub sources: Vec<String>,
+
+    #[serde(default)]
+    pub include_dirs: Vec<String>,
+
+    #[serde(default = "default_compiler")]
+    pub compiler: String,
+
+    #[serde(default)]
+    pub cflags: Vec<String>,
+
+    #[serde(default)]
+    pub ldflags: Vec<String>,
+
+    #[serde(default)]
+    pub link: Vec<String>,
+
+    #[serde(default)]
+    pub libraries: Vec<String>,
+
+    #[serde(default)]
+    pub lib_dirs: Vec<String>,
+
+    #[serde(default)]
+    pub targets: Option<BTreeMap<String, Build>>,
+}
+
+fn default_build_type() -> String {
+    "executable".to_string()
+}
+
+fn default_compiler() -> String {
+    "cc".to_string()
 }
 
 impl Manifest {

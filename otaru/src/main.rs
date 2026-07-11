@@ -4,6 +4,7 @@ pub mod build;
 pub mod run;
 pub mod add;
 pub mod install;
+pub mod cbuild;
 
 use clap::{Parser, Subcommand};
 
@@ -23,7 +24,7 @@ enum Command {
     },
     /// Build the current project or a single file
     Build {
-        /// Input .hk file (optional — if omitted, builds the project in src/)
+        /// Input file (optional — if omitted, builds the project)
         file: Option<String>,
         /// Freestanding mode (no CRT/libc, main becomes ELF entry point)
         #[arg(long)]
@@ -34,6 +35,9 @@ enum Command {
         /// Build in release mode (with optimizations, equivalent to -O2)
         #[arg(long, short = 'r')]
         release: bool,
+        /// Build a specific target (for projects with [[build.targets]])
+        #[arg(long, short)]
+        target: Option<String>,
     },
     /// Build and run the current project or a single file
     Run {
@@ -71,13 +75,34 @@ fn main() {
 
     match &cli.command {
         Command::New { name } => new::run(name),
-        Command::Build { file, freestanding, force, release } => {
-            build::run(file.as_deref(), *freestanding, *force, *release);
+        Command::Build {
+            file,
+            freestanding,
+            force,
+            release,
+            target,
+        } => {
+            if build::has_hk_files() {
+                build::run(file.as_deref(), *freestanding, *force, *release);
+            } else if cbuild::is_c_project() {
+                cbuild::run(file.as_deref(), *force, *release, target.as_deref());
+            } else {
+                build::run(file.as_deref(), *freestanding, *force, *release);
+            }
         }
-        Command::Run { file, freestanding, force, release } => {
+        Command::Run {
+            file,
+            freestanding,
+            force,
+            release,
+        } => {
             run::run(file.as_deref(), *freestanding, *force, *release);
         }
-        Command::Add { name, git, path } => add::run(name, git.as_deref(), path.as_deref()),
+        Command::Add {
+            name,
+            git,
+            path,
+        } => add::run(name, git.as_deref(), path.as_deref()),
         Command::Install => install::run(),
         Command::Clean => clean(),
     }

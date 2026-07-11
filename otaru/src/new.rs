@@ -20,6 +20,7 @@ pub fn run(name: &str) {
             edition: "2024".to_string(),
         },
         dependencies: Default::default(),
+        build: None,
     };
     manifest.save(&project_dir.join("otaru.toml"))
         .unwrap_or_else(|e| { eprintln!("{}", e); std::process::exit(1); });
