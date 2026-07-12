@@ -19,38 +19,65 @@ import DocsLayout from "../../layouts/DocsLayout.astro";
     introduction to the language, then dive into specific topics:
   </p>
 
-  <h2>Documentation Sections</h2>
+  <h2>Language Reference</h2>
 
   <ul>
     <li>
       <strong><a href="/docs/syntax">Syntax Overview</a></strong> — Comments, basic structure, and a table of contents for the entire language.
     </li>
     <li>
-      <strong><a href="/docs/syntax-types">Types & Variables</a></strong> — Primitive types, pointer types, array types, variable declarations, scoping, and shadowing.
+      <strong><a href="/docs/syntax-types">Types & Variables</a></strong> — Primitive types, structs, enums, references, pointers, arrays, slices, tuples, function types, variables, scoping, and shadowing.
     </li>
     <li>
-      <strong><a href="/docs/syntax-functions">Functions</a></strong> — Function declarations, parameters, return types, generic functions, and monomorphization.
+      <strong><a href="/docs/syntax-functions">Functions</a></strong> — Function declarations, parameters, return types, generics, turbofish, monomorphization, trait bounds, higher-order functions, and closures.
     </li>
     <li>
-      <strong><a href="/docs/syntax-control-flow">Control Flow</a></strong> — If/else, for loops, break, continue, and match expressions.
+      <strong><a href="/docs/syntax-control-flow">Control Flow</a></strong> — If/else, for loops, break, continue, labeled break/continue, match, and region blocks.
     </li>
     <li>
-      <strong><a href="/docs/syntax-expressions">Expressions</a></strong> — Operator precedence, comparison, logical, bitwise, arithmetic, shift, assignment, pointers, and function calls.
+      <strong><a href="/docs/syntax-expressions">Expressions</a></strong> — Operator precedence, comparison, logical, bitwise, arithmetic, shift, assignment, references and pointers, borrow checking, region blocks, raw pointers, atomics, constructors, function calls, and if-expressions.
     </li>
     <li>
-      <strong><a href="/docs/syntax-data-structures">Data Structures</a></strong> — Arrays, structs, enums, and their memory layout.
+      <strong><a href="/docs/syntax-data-structures">Data Structures</a></strong> — Arrays, structs (including generics), traits, impl blocks and method calls, enums, and their memory layout.
     </li>
     <li>
-      <strong><a href="/docs/syntax-modules">Modules</a></strong> — Namespaces, qualified access, nested namespaces, and the include directive.
+      <strong><a href="/docs/syntax-modules">Modules</a></strong> — Go-style packages, imports, visibility (pub), namespaces, and include.
     </li>
     <li>
       <strong><a href="/docs/syntax-ffi-cubical">C FFI & Cubical</a></strong> — C FFI declarations, variadic parameters, freestanding mode, inline assembly, and compile-time cubical evaluation.
     </li>
+  </ul>
+
+  <h2>Cubical</h2>
+
+  <ul>
     <li>
       <strong><a href="/docs/cubical_surface_language">Cubical Surface Language</a></strong> — Full syntax reference for the cubical type theory surface language embedded in Hokkaido.
     </li>
+  </ul>
+
+  <h2>Tooling</h2>
+
+  <ul>
+    <li>
+      <strong><a href="/docs/stdlib">Standard Library</a></strong> — Higher-order functions (functional) and safe memory operations (mem).
+    </li>
+    <li>
+      <strong><a href="/docs/lsp">Language Server (hok-lsp)</a></strong> — IDE support: diagnostics, hover, completion, go-to-definition, find references, and document symbols.
+    </li>
+    <li>
+      <strong><a href="/docs/package-manager">Package Manager (otaru)</a></strong> — Project scaffolding, building, dependency management, and script execution.
+    </li>
+  </ul>
+
+  <h2>Examples & Design</h2>
+
+  <ul>
     <li>
       <strong><a href="/docs/example-guess">Example: Guessing Game</a></strong> — A complete number guessing game demonstrating C FFI, loops, conditionals, pointers, and I/O.
+    </li>
+    <li>
+      <strong><a href="/docs/design-decisions">Design Decisions</a></strong> — Rationale behind key design choices: unsigned types, memory strategy, generics, borrow checker, and more.
     </li>
   </ul>
 </DocsLayout>

@@ -225,15 +225,17 @@ struct Person {
 
 ### Construction
 
-Structs are constructed with curly braces using the struct name:
+Structs are constructed with curly braces using the struct name. Fields can be specified
+by name (in any order) or by position (in declaration order):
 
 ```
-let p: Point = Point { x: 10, y: 20 }
+let p: Point = Point { x: 10, y: 20 }       // named fields (any order)
+let q: Point = Point { 10, 20 }              // positional fields (declaration order)
 let person: Person = Person { name: "Alice", age: 30 }
 ```
 
-Fields must be specified in declaration order. There are no named field initializers
-at the call site — position matters.
+Named and positional fields cannot be mixed within a single constructor — the compiler
+emits an error if both forms appear.
 
 ### Field access
 
@@ -310,7 +312,17 @@ let c: Shape = Circle { radius: 1.0 }
 let r: Shape = Rect { w: 3.0, h: 4.0 }
 ```
 
-Fields must be provided in declaration order, by position.
+Fields can be specified by name (in any order) or by position (in declaration order):
+
+```
+let v: Option = Some { value: 42 }        // named field
+let v2: Option = Some { 42 }              // positional field
+let n: Option = None {}
+let c: Shape = Circle { radius: 1.0 }
+let r: Shape = Rect { 3.0, 4.0 }          // positional: w=3.0, h=4.0
+```
+
+Named and positional fields cannot be mixed within a single constructor.
 
 ### Memory layout
 

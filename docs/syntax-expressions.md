@@ -188,7 +188,7 @@ exactly once — there is no double evaluation.
 
 ## References and Pointers
 
-Tuplex has two families of indirection: **references** (safe, borrow-checked) and
+Hokkaido has two families of indirection: **references** (safe, borrow-checked) and
 **raw pointers** (unsafe, no borrow checking).
 
 Reference types use `&T` and `&mut T` syntax. Raw pointer types use `T*` syntax.
@@ -252,7 +252,7 @@ of each borrow in a per-function borrow graph and rejects programs that violate 
 of the rules above.
 
 ```
-let mut x: int = 42
+let x: int = 42
 let r1: &mut int = &mut x
 let r2: &mut int = &mut x   // ERROR: cannot borrow `x` as mutable more than once
 ```
@@ -260,7 +260,7 @@ let r2: &mut int = &mut x   // ERROR: cannot borrow `x` as mutable more than onc
 A valid program that respects the borrow rules:
 
 ```
-let mut x: int = 42
+let x: int = 42
 {
     let r: &mut int = &mut x
     *r = 10
@@ -403,9 +403,16 @@ let x: int64 = point.get_x()
 
 Method calls have the same precedence as field access and function calls (highest
 precedence group).
+
+### Static function calls
+
+Functions inside [namespaces](/docs/syntax-modules#namespaces) are called with `::` syntax:
+
+```
+namespace geometry {
     fn distance(p: Point, q: Point) -> float64 { /* ... */ }
 }
-let d = point::distance(p, q)
+let d = geometry::distance(p, q)
 ```
 
 ## If-expressions

@@ -380,7 +380,7 @@ surface language.
 ### Specification
 
 ```
-let mut x: int = 42
+let x: int = 42
 
 // Shared borrow — allowed
 let r1: &int = &x         // OK
@@ -446,7 +446,7 @@ let y: int = x             // OK
 | # | Decision | Choice | Impacts |
 |---|----------|--------|---------|
 | 1 | Unsigned integer types | New distinct types (`uint8/16/32/64`) | Phase 1 (completed), LLVM instruction selection |
-| 2 | Dynamic memory | Built-in `alloc<T>` / `free` intrinsics | Phases 3, 6 |
+| 2 | Dynamic memory | Extern fn (`malloc`/`free`), not built-in syntax | Phases 3, 6 |
 | 3 | Generic trait bounds | Deferred to future major version | Phase 5b scope reduced; operator overloading deferred |
 | 4 | `if` expression | New `IfExpr` node (coexists with `IfStmt`) | Phase 2 (completed) |
 | 5 | BNF freeze | BNF in this document is canonical for Phases 1–3 | Parser implementation |

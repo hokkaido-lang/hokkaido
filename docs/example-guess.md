@@ -32,7 +32,7 @@ fn main() -> int {
     for ;; {
         printf("Enter guess: ")
         scanf("%ld", &guess)
-        attempts = attempts + 1
+        attempts += 1
 
         if guess < secret {
             puts("Too low!")
@@ -48,11 +48,31 @@ fn main() -> int {
 }
 ```
 
-## Running it
+## Building and running
+
+### With otaru (recommended)
+
+```sh
+otaru new guess_game
+cd guess_game
+# paste the code above into src/main.hk
+otaru run
+```
+
+### Manual compilation
+
+```sh
+hokkaido guess.hk          # produces guess.o
+clang guess.o -o guess      # link with C runtime
+./guess
+```
+
+The `hokkaido` compiler produces an object file (`.o`). You must link it with a C
+compiler (`clang` or `gcc`) to resolve the C library calls (`printf`, `scanf`, etc.).
+
+### Example session
 
 ```
-$ hokkaido guess.hk
-$ clang guess.o -o guess
 $ ./guess
 Guess the number (1-100)!
 Enter guess: 50
@@ -65,22 +85,47 @@ Correct! You got it in 3 tries!
 
 ## What it demonstrates
 
-| Feature                | How it's used |
-|------------------------|---------------|
+| Feature | How it's used |
+|---------|---------------|
 | **C FFI (`extern fn`)** | Calls C standard library: `puts`, `printf`, `scanf`, `rand`, `srand`, `time` |
-| **Variadic FFI**        | `printf(fmt: string, ...)` and `scanf(fmt: string, ...)` accept a variable number of arguments |
-| **Pointers**            | `&t` passes the address of `t` to `time()`; `&guess` passes the address of `guess` to `scanf()` |
-| **For loop**            | Infinite loop `for ;;` with `break` to exit on correct guess |
-| **Break**               | Exits the loop when the correct number is guessed |
+| **Variadic FFI** | `printf(fmt: string, ...)` and `scanf(fmt: string, ...)` accept a variable number of arguments |
+| **Pointers** | `&t` passes the address of `t` to `time()`; `&guess` passes the address of `guess` to `scanf()` |
+| **For loop** | Infinite loop `for ;;` with `break` to exit on correct guess |
+| **Break** | Exits the loop when the correct number is guessed |
 | **If / else if / else** | Three-way branch for too-low / too-high / correct |
-| **Comparison**          | `!=`, `<`, `>` on integer values |
-| **Assignment**          | `attempts = attempts + 1` increments the counter |
-| **Compound assignment** | Could also write `attempts += 1` |
-| **Strings**             | String literals passed directly to C functions |
-| **Modulo operator**     | `rand() % 100 + 1` maps a random value to the range `1..100` |
+| **Comparison** | `<`, `>` on integer values to compare guesses |
+| **Compound assignment** | `attempts += 1` increments the attempt counter |
+| **Modulo operator** | `rand() % 100 + 1` maps a random value to the range `1..100` |
+| **String literals** | Passed directly to C functions as `string` (which maps to `char*`) |
+| **Process exit code** | `return 0` signals success to the operating system |
+
+## How it works
+
+1. **Seed the RNG** — `time(&t)` gets the current epoch time. `srand(t)` seeds the
+   pseudo-random number generator so each run produces different numbers.
+
+2. **Generate a secret** — `rand() % 100 + 1` produces a number in `1..100`.
+
+3. **Game loop** — An infinite `for ;;` loop reads guesses via `scanf`, compares
+   them to the secret, and provides hints until the correct number is guessed.
+
+4. **Exit** — `break` exits the loop, then `return 0` exits the program successfully.
 
 ## Notes
 
 - `%ld` in `scanf`/`printf` matches Hokkaido's 64-bit `int` type on x86-64 Linux.
+  On other platforms the format specifier may differ.
 - The game uses an infinite `for` loop with an explicit `break` when the correct
   number is guessed — no condition in the loop header.
+- The `string` type maps to C's `char*` when passed to extern functions, so string
+  literals work directly as arguments to `puts` and `printf`.
+
+## Try it yourself
+
+- **Limit attempts**: Add a maximum number of attempts and exit the loop when
+  exceeded.
+- **Input validation**: Check that the guess is in `1..100` before comparing.
+- **Reveal the answer**: Print `secret` after the player gives up or runs out
+  of attempts.
+- **Play again**: Wrap the game loop in an outer loop that asks "Play again?"
+  after each round.

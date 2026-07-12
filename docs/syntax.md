@@ -38,7 +38,12 @@ deliberately minimal.
 - [Function calls](/docs/syntax-expressions#function-calls)
 - [Arrays](/docs/syntax-data-structures#arrays)
 - [Structs](/docs/syntax-data-structures#structs)
+- [Generic structs](/docs/syntax-data-structures#generic-structs)
+- [Traits](/docs/syntax-data-structures#traits)
+- [Impl blocks and method calls](/docs/syntax-data-structures#impl-blocks-and-method-calls)
 - [Enums](/docs/syntax-data-structures#enums)
+- [Tuple types](/docs/syntax-types#tuple-types)
+- [Tuple expressions](/docs/syntax-expressions#tuple-expressions)
 - [Package declaration](/docs/syntax-modules#packages)
 - [Import](/docs/syntax-modules#import)
 - [Visibility (pub)](/docs/syntax-modules#visibility)
@@ -49,7 +54,12 @@ deliberately minimal.
 - [Freestanding mode](/docs/syntax-ffi-cubical#freestanding-mode)
 - [Inline assembly](/docs/syntax-ffi-cubical#inline-assembly)
 - [Cubical](/docs/syntax-ffi-cubical#cubical)
+- [Cubical Surface Language](/docs/cubical_surface_language)
+- [Standard Library](/docs/stdlib)
+- [Language Server](/docs/lsp)
+- [Package Manager](/docs/package-manager)
 - [Example: Number guessing game](/docs/example-guess)
+- [Design Decisions](/docs/design-decisions)
 
 ## Comments
 
