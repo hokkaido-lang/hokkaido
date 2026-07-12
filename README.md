@@ -30,41 +30,10 @@ nix profile install github:hokkaido-lang/hokkaido#otaru
 
 The Nix-built `otaru` bundles the `hokkaido` compiler automatically — everything works out of the box.
 
-### Using hokup (recommended for non-Nix users)
-
-[hokup](hokup/) is a toolchain installer and updater, similar to [rustup](https://rustup.rs/).
-
-```sh
-# Download the latest release tarball from GitHub:
-# https://github.com/hokkaido-lang/hokkaido/releases
-
-# Extract and run hokup to install (default: ~/.hokkaido)
-./hokup install
-
-# Or install to a custom directory
-./hokup install --path /opt/hokkaido
-```
-
-After installation, add the toolchain to your PATH:
-
-```sh
-# hokup automatically configures your shell profile,
-# but you can also set it manually:
-export HOKKAIDO_HOME=~/.hokkaido
-export PATH="$HOKKAIDO_HOME/bin:$PATH"
-```
-
-Once installed, you can update to the latest version anytime:
-
-```sh
-hokup update
-```
-
 The installation includes:
 - `hokkaido` — the compiler
 - `hok-lsp` — the language server
 - `otaru` — the package manager
-- `hokup` — the installer itself (for future updates)
 
 ### From source
 

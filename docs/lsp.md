@@ -36,8 +36,6 @@ Or with Nix:
 nix build github:hokkaido-lang/hokkaido
 ```
 
-The binary is installed alongside `hokkaido` when using `hokup` or `nix profile install`.
-
 ## Editor setup
 
 ### Neovim (vim.lsp)
