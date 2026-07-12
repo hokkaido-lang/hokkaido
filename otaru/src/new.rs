@@ -21,6 +21,7 @@ pub fn run(name: &str) {
         },
         dependencies: Default::default(),
         build: None,
+        scripts: Default::default(),
     };
     manifest.save(&project_dir.join("otaru.toml"))
         .unwrap_or_else(|e| { eprintln!("{}", e); std::process::exit(1); });

@@ -50,6 +50,9 @@ With `cargo install`, you need the hokkaido compiler on `PATH` or `HOKKAIDO_HOME
 | `otaru run` | Build and run |
 | `otaru run --release` | Build with optimizations and run |
 | `otaru clean` | Remove the `build/` directory |
+| `otaru exec` | List all scripts defined in `[scripts]` |
+| `otaru exec <name>` | Run a named shell script |
+| `otaru exec <name> <args>` | Run a script with arguments ($1, $2, etc.) |
 
 ### Hokkaido-specific
 
@@ -343,6 +346,16 @@ links the result together with any C object files and external libraries.
 | `lib_dirs` | string[] | `[]` | Library search paths (`-L`) |
 | `targets` | table | — | Named sub-targets (multi-target) |
 
+### `[scripts]` Reference
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `<name>` | string | Shell command to execute |
+
+- Arguments: `$1`, `$2`, ... are replaced with positional args from `otaru exec`
+- Multi-line: use triple-quoted strings (`"""..."""`) for complex commands
+- Run with: `otaru exec <name>` or `otaru exec` to list all
+
 ### Build types
 
 | Type | Output | Command |
@@ -351,6 +364,57 @@ links the result together with any C object files and external libraries.
 | `staticlib` | `build/lib<name>.a` | `ar rcs build/lib<name>.a ...` |
 | `sharedlib` | `build/lib<name>.so` | `cc -shared ... -o build/lib<name>.so` |
 | `object` | `build/<stem>.o` | `cc -c <source> -o build/<stem>.o` |
+
+## Scripts
+
+Define named shell commands in `[scripts]` and run them with `otaru exec`:
+
+```toml
+[scripts]
+clean = "rm -rf build"
+test = "./build/myapp --test"
+fmt = "clang-format -i src/*.c"
+lint = "cargo clippy"
+bench = "./build/bench --iterations 1000"
+```
+
+```bash
+otaru exec              # list all defined scripts
+otaru exec test         # run the "test" script
+otaru exec fmt          # run the "fmt" script
+```
+
+### Argument substitution
+
+Scripts support positional arguments via `$1`, `$2`, etc.:
+
+```toml
+[scripts]
+greet = "echo Hello, $1!"
+```
+
+```bash
+otaru exec greet World        # prints: Hello, World!
+otaru exec greet Alice        # prints: Hello, Alice!
+```
+
+### Combining with build commands
+
+Scripts can call other otaru commands or arbitrary shell:
+
+```toml
+[scripts]
+all = "otaru build --release && otaru exec test"
+release = "otaru build --release"
+deploy = """
+otaru build --release &&
+otaru exec test &&
+cp build/myapp /usr/local/bin/
+echo 'Deployed!'
+"""
+```
+
+Multi-line strings (triple-quotes) are supported for complex scripts.
 
 ## Library Resolution
 

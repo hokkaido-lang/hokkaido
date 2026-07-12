@@ -10,6 +10,8 @@ pub struct Manifest {
     pub dependencies: BTreeMap<String, Dependency>,
     #[serde(default)]
     pub build: Option<Build>,
+    #[serde(default)]
+    pub scripts: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
