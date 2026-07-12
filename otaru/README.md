@@ -345,6 +345,9 @@ links the result together with any C object files and external libraries.
 | `libraries` | string[] | `[]` | Explicit library file paths |
 | `lib_dirs` | string[] | `[]` | Library search paths (`-L`) |
 | `targets` | table | — | Named sub-targets (multi-target) |
+| `prebuild` | string | — | Shell command to run before compiling |
+| `llvm-config` | string | — | Path to `llvm-config` binary |
+| `llvm-components` | string[] | — | LLVM components (e.g. `["core", "support"]`) |
 
 ### `[scripts]` Reference
 
@@ -432,6 +435,52 @@ If not found, the name is passed to the linker as-is (equivalent to `-lfoo`).
 
 Libraries in `link = [...]` are always passed as `-l<name>` flags, letting the linker
 handle the search via its default paths and `-L` flags.
+
+## LLVM Discovery
+
+For projects linking against LLVM (compilers, language tools), use `llvm-config` to
+auto-resolve include dirs, compiler flags, and library flags:
+
+```toml
+[build]
+llvm-config = "llvm-config-21"              # or full path
+llvm-components = ["core", "support", "irreader", "codegen", "mc", "mcparser"]
+link = ["pthread", "dl", "m"]
+cflags = ["-std=c++17"]
+```
+
+otaru runs `llvm-config --cxxflags` to get include dirs and compiler flags, then
+`llvm-config --ldflags --libs <components>` to get linker flags and library names.
+The resolved flags are merged into your `[build]` configuration automatically.
+
+### Component naming
+
+LLVM component names match the CMake `llvm_map_components_to_libnames` syntax:
+- Core components: `support`, `core`, `irreader`, `codegen`, `target`, `mc`, `mcparser`, `asmparser`, `option`
+- Target backends: `X86`, `AArch64`, `ARM`, `WebAssembly`, `RISCV`, `Mips`, etc.
+
+Use `llvm-config --components` to list all available components.
+
+## Prebuild Steps
+
+Run a shell command before compiling (e.g., to build a Rust static library):
+
+```toml
+[build]
+prebuild = "cargo build --release"
+
+[[build.targets]]
+name = "mycompiler"
+type = "executable"
+sources = ["src/main.cpp"]
+libraries = ["target/release/libmylib.a"]
+```
+
+The prebuild command runs once before building each target. Use this for:
+- `cargo build --release` — build a Rust static library
+- `make -C vendor` — build an external dependency
+- `python generate.py` — code generation
+- `flex parser.l` / `bison grammar.y` — parser generation
 
 ## Incremental Builds
 

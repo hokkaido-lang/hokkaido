@@ -3,13 +3,133 @@ use std::process::Command;
 
 use crate::manifest::{Build, Manifest};
 
+pub struct LlvmInfo {
+    pub include_dirs: Vec<String>,
+    pub cflags: Vec<String>,
+    pub ldflags: Vec<String>,
+    pub libraries: Vec<String>,
+}
+
+pub fn resolve_llvm(config: &Build) -> Option<LlvmInfo> {
+    let llvm_bin = config.llvm_config.as_deref()?;
+
+    let mut include_dirs = Vec::new();
+    let mut cflags = Vec::new();
+    let mut ldflags = Vec::new();
+    let mut libraries = Vec::new();
+
+    if let Ok(output) = Command::new(llvm_bin).arg("--cxxflags").output() {
+        if output.status.success() {
+            let flags = String::from_utf8_lossy(&output.stdout);
+            for flag in flags.split_whitespace() {
+                if flag == "-fno-exceptions" {
+                    continue;
+                }
+                if let Some(path) = flag.strip_prefix("-I") {
+                    include_dirs.push(path.to_string());
+                } else {
+                    cflags.push(flag.to_string());
+                }
+            }
+        } else {
+            eprintln!(
+                "Warning: {} --cxxflags failed",
+                llvm_bin
+            );
+        }
+    } else {
+        eprintln!(
+            "Warning: could not run '{}' (is LLVM installed?)",
+            llvm_bin
+        );
+        return None;
+    }
+
+    let mut link_args = vec!["--ldflags".to_string(), "--libs".to_string()];
+    if let Some(components) = &config.llvm_components {
+        link_args.extend(components.iter().cloned());
+    }
+
+    if let Ok(output) = Command::new(llvm_bin).args(&link_args).output() {
+        if output.status.success() {
+            let flags = String::from_utf8_lossy(&output.stdout);
+            for flag in flags.split_whitespace() {
+                if let Some(path) = flag.strip_prefix("-L") {
+                    ldflags.push(format!("-L{}", path));
+                } else if let Some(name) = flag.strip_prefix("-l") {
+                    libraries.push(name.to_string());
+                } else {
+                    ldflags.push(flag.to_string());
+                }
+            }
+        } else {
+            eprintln!(
+                "Warning: {} --ldflags --libs failed",
+                llvm_bin
+            );
+        }
+    }
+
+    if let Ok(output) = Command::new(llvm_bin)
+        .arg("--system-libs")
+        .args(&link_args)
+        .output()
+    {
+        if output.status.success() {
+            let flags = String::from_utf8_lossy(&output.stdout);
+            for flag in flags.split_whitespace() {
+                if let Some(path) = flag.strip_prefix("-L") {
+                    ldflags.push(format!("-L{}", path));
+                } else if let Some(name) = flag.strip_prefix("-l") {
+                    if !libraries.contains(&name.to_string()) {
+                        libraries.push(name.to_string());
+                    }
+                } else {
+                    ldflags.push(flag.to_string());
+                }
+            }
+        }
+    }
+
+    Some(LlvmInfo {
+        include_dirs,
+        cflags,
+        ldflags,
+        libraries,
+    })
+}
+
+pub fn run_prebuild(config: &Build) {
+    if let Some(cmd) = &config.prebuild {
+        eprintln!("$ {}", cmd);
+        let status = Command::new("sh")
+            .arg("-c")
+            .arg(cmd)
+            .status()
+            .unwrap_or_else(|e| {
+                eprintln!("Error running prebuild command: {}", e);
+                std::process::exit(1);
+            });
+        if !status.success() {
+            eprintln!(
+                "Prebuild command failed (exit code: {})",
+                status.code().unwrap_or(-1)
+            );
+            std::process::exit(1);
+        }
+    }
+}
+
 pub fn run(file: Option<&str>, force: bool, release: bool, target: Option<&str>) {
     if let Some(f) = file {
         let path = Path::new(f);
         if path.exists() {
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             if ext == "hk" {
-                eprintln!("Error: {} is a Hokkaido file. Use 'otaru build {}' without the C build system.", f, f);
+                eprintln!(
+                    "Error: {} is a Hokkaido file. Use 'otaru build {}' without the C build system.",
+                    f, f
+                );
                 std::process::exit(1);
             }
             compile_single_file(f, force, release);
@@ -25,11 +145,10 @@ pub fn run(file: Option<&str>, force: bool, release: bool, target: Option<&str>)
         std::process::exit(1);
     }
 
-    let manifest = Manifest::load(manifest_path)
-        .unwrap_or_else(|e| {
-            eprintln!("{}", e);
-            std::process::exit(1);
-        });
+    let manifest = Manifest::load(manifest_path).unwrap_or_else(|e| {
+        eprintln!("{}", e);
+        std::process::exit(1);
+    });
 
     let build_config = manifest.build.as_ref().unwrap_or_else(|| {
         eprintln!("Error: no [build] section in otaru.toml");
@@ -48,10 +167,12 @@ pub fn run(file: Option<&str>, force: bool, release: bool, target: Option<&str>)
             eprintln!("Error: target '{}' not found", target_name);
             std::process::exit(1);
         });
-        build_target(target_name, target_config, force, release);
+        let merged = merge_target_config(build_config, target_config);
+        build_target(target_name, &merged, force, release);
     } else if let Some(targets) = &build_config.targets {
         for (name, config) in targets {
-            build_target(name, config, force, release);
+            let merged = merge_target_config(build_config, config);
+            build_target(name, &merged, force, release);
         }
     } else {
         let name = manifest.package.name.clone();
@@ -59,11 +180,81 @@ pub fn run(file: Option<&str>, force: bool, release: bool, target: Option<&str>)
     }
 }
 
+fn merge_target_config(parent: &Build, target: &Build) -> Build {
+    let mut merged = target.clone();
+    if merged.llvm_config.is_none() {
+        merged.llvm_config = parent.llvm_config.clone();
+    }
+    if merged.llvm_components.is_none() {
+        merged.llvm_components = parent.llvm_components.clone();
+    }
+    if merged.prebuild.is_none() {
+        merged.prebuild = parent.prebuild.clone();
+    }
+    if merged.compiler == "cc" && parent.compiler != "cc" {
+        merged.compiler = parent.compiler.clone();
+    }
+    for dir in &parent.include_dirs {
+        if !merged.include_dirs.contains(dir) {
+            merged.include_dirs.push(dir.clone());
+        }
+    }
+    for flag in &parent.cflags {
+        if !merged.cflags.contains(flag) {
+            merged.cflags.push(flag.clone());
+        }
+    }
+    for flag in &parent.ldflags {
+        if !merged.ldflags.contains(flag) {
+            merged.ldflags.push(flag.clone());
+        }
+    }
+    for lib in &parent.link {
+        if !merged.link.contains(lib) {
+            merged.link.push(lib.clone());
+        }
+    }
+    for lib in &parent.libraries {
+        if !merged.libraries.contains(lib) {
+            merged.libraries.push(lib.clone());
+        }
+    }
+    for dir in &parent.lib_dirs {
+        if !merged.lib_dirs.contains(dir) {
+            merged.lib_dirs.push(dir.clone());
+        }
+    }
+    merged
+}
+
 fn build_target(name: &str, config: &Build, force: bool, release: bool) {
     std::fs::create_dir_all("build").unwrap_or_else(|e| {
         eprintln!("Error creating build/ directory: {}", e);
         std::process::exit(1);
     });
+
+    run_prebuild(config);
+
+    let llvm = resolve_llvm(config);
+
+    let mut extra_cflags = Vec::new();
+    let mut extra_include_dirs = Vec::new();
+    if let Some(ref info) = llvm {
+        extra_include_dirs.extend(info.include_dirs.iter().cloned());
+        extra_cflags.extend(info.cflags.iter().cloned());
+    }
+
+    let mut effective_config = config.clone();
+    for dir in &extra_include_dirs {
+        if !effective_config.include_dirs.contains(dir) {
+            effective_config.include_dirs.push(dir.clone());
+        }
+    }
+    for flag in &extra_cflags {
+        if !effective_config.cflags.contains(flag) {
+            effective_config.cflags.push(flag.clone());
+        }
+    }
 
     let sources = resolve_sources(&config.sources);
     if sources.is_empty() {
@@ -73,14 +264,38 @@ fn build_target(name: &str, config: &Build, force: bool, release: bool) {
 
     let mut objects: Vec<String> = Vec::new();
     for source in &sources {
-        let obj = compile_source(source, config, force, release);
+        let obj = compile_source(source, &effective_config, force, release);
         objects.push(obj);
     }
+
+    let mut effective_ldflags = config.ldflags.clone();
+    let mut effective_link = config.link.clone();
+    let effective_libraries = config.libraries.clone();
+    let effective_lib_dirs = config.lib_dirs.clone();
+
+    if let Some(ref info) = llvm {
+        for flag in &info.ldflags {
+            if !effective_ldflags.contains(flag) {
+                effective_ldflags.push(flag.clone());
+            }
+        }
+        for lib in &info.libraries {
+            if !effective_link.contains(lib) {
+                effective_link.push(lib.clone());
+            }
+        }
+    }
+
+    let mut link_config = effective_config.clone();
+    link_config.ldflags = effective_ldflags;
+    link_config.link = effective_link;
+    link_config.libraries = effective_libraries;
+    link_config.lib_dirs = effective_lib_dirs;
 
     let output = match config.kind.as_str() {
         "executable" => {
             let output = format!("build/{}", name);
-            link_executable(&objects, &output, config, release);
+            link_executable(&objects, &output, &link_config, release);
             output
         }
         "staticlib" => {
@@ -90,7 +305,7 @@ fn build_target(name: &str, config: &Build, force: bool, release: bool) {
         }
         "sharedlib" => {
             let output = format!("build/lib{}.so", name);
-            link_sharedlib(&objects, &output, config, release);
+            link_sharedlib(&objects, &output, &link_config, release);
             output
         }
         "object" => {
@@ -207,7 +422,8 @@ pub fn compile_source(source: &Path, config: &Build, force: bool, release: bool)
     if !force && Path::new(&obj).exists() {
         if let Ok(obj_meta) = std::fs::metadata(&obj) {
             if let Ok(src_meta) = std::fs::metadata(source) {
-                if let (Ok(obj_time), Ok(src_time)) = (obj_meta.modified(), src_meta.modified())
+                if let (Ok(obj_time), Ok(src_time)) =
+                    (obj_meta.modified(), src_meta.modified())
                 {
                     if obj_time >= src_time {
                         if Path::new(&dep).exists() {
@@ -449,6 +665,18 @@ pub fn is_c_project() -> bool {
     if manifest_path.exists() {
         if let Ok(manifest) = Manifest::load(manifest_path) {
             return manifest.build.is_some();
+        }
+    }
+    false
+}
+
+pub fn has_build_targets() -> bool {
+    let manifest_path = Path::new("otaru.toml");
+    if manifest_path.exists() {
+        if let Ok(manifest) = Manifest::load(manifest_path) {
+            if let Some(build) = &manifest.build {
+                return build.targets.is_some();
+            }
         }
     }
     false

@@ -8,17 +8,7 @@ pub fn run(file: Option<&str>, freestanding: bool, force: bool, release: bool) {
         std::process::exit(1);
     }
 
-    if crate::build::has_hk_files() {
-        let binary = if let Some(f) = file {
-            crate::build::compile_single_or_project(Some(f), false, force, release)
-        } else {
-            crate::build::compile_single_or_project(None, false, force, release)
-        };
-        run_binary(&binary);
-        return;
-    }
-
-    if crate::cbuild::is_c_project() {
+    if crate::cbuild::has_build_targets() || crate::cbuild::is_c_project() {
         crate::cbuild::run(None, force, release, None);
 
         let manifest_path = Path::new("otaru.toml");
@@ -44,6 +34,16 @@ pub fn run(file: Option<&str>, freestanding: bool, force: bool, release: bool) {
             run_binary(&binary);
             return;
         }
+    }
+
+    if crate::build::has_hk_files() {
+        let binary = if let Some(f) = file {
+            crate::build::compile_single_or_project(Some(f), false, force, release)
+        } else {
+            crate::build::compile_single_or_project(None, false, force, release)
+        };
+        run_binary(&binary);
+        return;
     }
 
     let binary = if let Some(f) = file {

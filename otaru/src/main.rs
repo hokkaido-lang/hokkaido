@@ -91,10 +91,10 @@ fn main() {
             release,
             target,
         } => {
-            if build::has_hk_files() {
-                build::run(file.as_deref(), *freestanding, *force, *release);
-            } else if cbuild::is_c_project() {
+            if cbuild::has_build_targets() || cbuild::is_c_project() {
                 cbuild::run(file.as_deref(), *force, *release, target.as_deref());
+            } else if build::has_hk_files() {
+                build::run(file.as_deref(), *freestanding, *force, *release);
             } else {
                 build::run(file.as_deref(), *freestanding, *force, *release);
             }

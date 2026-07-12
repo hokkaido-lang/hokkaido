@@ -1,0 +1,63 @@
+[package]
+name = "hokkaido"
+version = "0.1.0"
+authors = ["Jihoo"]
+
+[hokkaido]
+version = "0.1.0"
+description = "Hokkaido programming language"
+
+# LLVM build configuration (replaces CMakeLists.txt)
+[build]
+prebuild = "cargo build --release"
+llvm-config = "/nix/store/238i6ljarh959f2dak1a8rsyiz6hnmgw-llvm-21.1.8-dev/bin/llvm-config"
+llvm-components = [
+    "support", "core", "irreader", "codegen", "target",
+    "mc", "mcparser", "asmparser", "option",
+    "AArch64", "AMDGPU", "ARM", "AVR", "BPF", "Hexagon",
+    "Lanai", "LoongArch", "Mips", "MSP430", "NVPTX",
+    "PowerPC", "RISCV", "Sparc", "SPIRV", "SystemZ",
+    "VE", "WebAssembly", "X86", "XCore",
+]
+link = ["pthread", "dl", "m"]
+
+# Main compiler executable
+[build.targets.hokkaido]
+type = "executable"
+compiler = "c++"
+cflags = ["-fexceptions"]
+sources = [
+    "src-cpp/main.cpp",
+    "src-cpp/cubical.cpp",
+    "src-cpp/lexer.cpp",
+    "src-cpp/parser.cpp",
+    "src-cpp/codegen.cpp",
+    "src-cpp/codegen_types.cpp",
+    "src-cpp/codegen_expr.cpp",
+    "src-cpp/codegen_top.cpp",
+    "src-cpp/codegen_init.cpp",
+    "src-cpp/codegen_decl.cpp",
+    "src-cpp/codegen_stmt.cpp",
+    "src-cpp/codegen_pattern.cpp",
+    "src-cpp/borrow_checker.cpp",
+]
+libraries = ["target/release/libcubical_c.a"]
+
+# LSP server binary
+[build.targets.hok-lsp]
+type = "executable"
+compiler = "c++"
+cflags = ["-fexceptions"]
+sources = [
+    "src-cpp/lsp_main.cpp",
+    "src-cpp/lsp/lsp.cpp",
+    "src-cpp/lexer.cpp",
+    "src-cpp/parser.cpp",
+]
+include_dirs = ["src-cpp"]
+
+[scripts]
+test = "otaru build -r --target hoklsp && otaru build -r --target hoklsp"
+run = "otaru build --target hokkaido && ./build/hokkaido"
+lsp = "otaru build --target hok-lsp && ./build/hok-lsp"
+clean = "rm -rf build"

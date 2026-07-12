@@ -77,6 +77,15 @@ pub struct Build {
 
     #[serde(default)]
     pub targets: Option<BTreeMap<String, Build>>,
+
+    #[serde(default)]
+    pub prebuild: Option<String>,
+
+    #[serde(default, rename = "llvm-config")]
+    pub llvm_config: Option<String>,
+
+    #[serde(default, rename = "llvm-components")]
+    pub llvm_components: Option<Vec<String>>,
 }
 
 fn default_build_type() -> String {
