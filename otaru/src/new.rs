@@ -82,76 +82,133 @@ pub fn run(name: &str, wasm: bool) {
     }
 
     if wasm {
-        // Create wasm32 directory with build instructions
         fs::create_dir_all(project_dir.join("wasm32"))
             .unwrap_or_else(|e| { eprintln!("Error creating wasm32/ directory: {}", e); std::process::exit(1); });
-        
-        // Create a simple HTML file for testing in browser
+
         let html_content = r#"<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>Hokkaido WebAssembly</title>
+<meta charset="utf-8">
+<title>Hokkaido WebAssembly</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+  #status { color: #666; }
+  #result { font-size: 1.5rem; font-weight: bold; }
+  #error { color: #c00; white-space: pre-wrap; }
+</style>
 </head>
 <body>
-    <h1>Hokkaido WebAssembly</h1>
-    <div id="output"></div>
-    <script>
-        async function run() {
-            const response = await fetch('main.wasm');
-            const bytes = await response.arrayBuffer();
-            const imports = {};
-            const { instance } = await WebAssembly.instantiate(bytes, imports);
-            const result = instance.exports._start();
-            document.getElementById('output').textContent = 'Result: ' + result;
-        }
-        run().catch(console.error);
-    </script>
+<h1>Hokkaido WebAssembly</h1>
+<p id="status">Loading module...</p>
+<p id="result"></p>
+<p id="error"></p>
+<script>
+async function main() {
+  try {
+    const resp = await fetch("main.wasm");
+    if (!resp.ok) throw new Error("Failed to load main.wasm: " + resp.status);
+    const bytes = await resp.arrayBuffer();
+    const { instance } = await WebAssembly.instantiate(bytes);
+    const result = instance.exports.main();
+    document.getElementById("status").textContent = "Program returned:";
+    document.getElementById("result").textContent = result;
+  } catch (e) {
+    document.getElementById("status").textContent = "";
+    document.getElementById("error").textContent = e.message;
+  }
+}
+main();
+</script>
 </body>
 </html>"#;
         fs::write(project_dir.join("wasm32/index.html"), html_content)
             .unwrap_or_else(|e| { eprintln!("Error writing wasm32/index.html: {}", e); std::process::exit(1); });
-        
-        // Create a build script for wasm32
+
         let build_script = r#"#!/bin/sh
-# Build script for WebAssembly
+# build.sh - compile hokkaido to WebAssembly and serve in browser
 set -e
 
-echo "Building for WebAssembly..."
-otaru build src/main.hk --target wasm32-wasi
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+BUILD_DIR="$ROOT_DIR/build"
 
-# Link with wasm-ld if available
-if command -v wasm-ld >/dev/null 2>&1; then
-    wasm-ld --no-entry --export-all build/main.wasm -o build/main.wasm
-    echo "Linked: build/main.wasm"
-elif command -v wasm-ld-19 >/dev/null 2>&1; then
-    wasm-ld-19 --no-entry --export-all build/main.wasm -o build/main.wasm
-    echo "Linked: build/main.wasm"
-else
-    echo "Warning: wasm-ld not found, object file only"
-    echo "Install LLVM or run: cargo install wasm-ld"
+mkdir -p "$BUILD_DIR"
+
+HOKKAIDO="hokkaido"
+if ! command -v "$HOKKAIDO" >/dev/null 2>&1; then
+  if [ -x "$ROOT_DIR/../build/hokkaido" ]; then
+    HOKKAIDO="$ROOT_DIR/../build/hokkaido"
+  elif [ -x "$ROOT_DIR/build/hokkaido" ]; then
+    HOKKAIDO="$ROOT_DIR/build/hokkaido"
+  else
+    echo "Error: hokkaido not found. Add it to PATH or build from source."
+    exit 1
+  fi
 fi
 
-echo "Built: build/main.wasm"
+echo "Compiling src/main.hk -> $BUILD_DIR/main.o"
+"$HOKKAIDO" "$ROOT_DIR/src/main.hk" -o "$BUILD_DIR/main" --target wasm32-unknown-unknown
+
+# Find wasm-ld
+WASM_LD=""
+for candidate in wasm-ld wasm-ld-19 wasm-ld-18 wasm-ld-17; do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    WASM_LD="$candidate"
+    break
+  fi
+done
+
+if [ -z "$WASM_LD" ]; then
+  echo "Error: wasm-ld not found. Install LLVM (e.g. nix-shell -p llvmPackages_19.llvm)."
+  exit 1
+fi
+
+echo "Linking $BUILD_DIR/main.o -> $BUILD_DIR/main.wasm"
+"$WASM_LD" \
+  --no-entry \
+  --export=main \
+  --allow-undefined \
+  -o "$BUILD_DIR/main.wasm" \
+  "$BUILD_DIR/main.o"
+
+cp "$BUILD_DIR/main.wasm" "$SCRIPT_DIR/main.wasm"
+echo "Built: $SCRIPT_DIR/main.wasm"
+echo ""
+echo "To open in browser:"
+echo "  cd $SCRIPT_DIR && python3 -m http.server 8080"
+echo "  open http://localhost:8080"
 "#;
         fs::write(project_dir.join("wasm32/build.sh"), build_script)
             .unwrap_or_else(|e| { eprintln!("Error writing wasm32/build.sh: {}", e); std::process::exit(1); });
-        
-        // Make build script executable
+
+        let serve_script = r#"#!/bin/sh
+# serve.sh - start a local dev server for the wasm build
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PORT="${1:-8080}"
+echo "Serving $SCRIPT_DIR on http://localhost:$PORT"
+echo "Open http://localhost:$PORT in your browser"
+echo "Press Ctrl+C to stop"
+python3 -m http.server "$PORT" --directory "$SCRIPT_DIR" 2>/dev/null \
+  || python -m SimpleHTTPServer "$PORT" 2>/dev/null \
+  || python3 -m http.server "$PORT" 2>/dev/null \
+  || echo "Error: Python not found. Serve wasm32/ directory manually."
+"#;
+        fs::write(project_dir.join("wasm32/serve.sh"), serve_script)
+            .unwrap_or_else(|e| { eprintln!("Error writing wasm32/serve.sh: {}", e); std::process::exit(1); });
+
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(project_dir.join("wasm32/build.sh"), fs::Permissions::from_mode(0o755))
-                .unwrap_or_else(|e| { eprintln!("Error setting permissions: {}", e); std::process::exit(1); });
+            let _ = fs::set_permissions(project_dir.join("wasm32/build.sh"), fs::Permissions::from_mode(0o755));
+            let _ = fs::set_permissions(project_dir.join("wasm32/serve.sh"), fs::Permissions::from_mode(0o755));
         }
     }
 
     println!("Created project '{}'", name);
     if wasm {
         println!("  cd {}", name);
-        println!("  otaru build src/main.hk --target wasm32-wasi");
-        println!("  # Or use the build script:");
-        println!("  ./wasm32/build.sh");
+        println!("  ./wasm32/build.sh          # compile to wasm");
+        println!("  ./wasm32/serve.sh          # open in browser");
     } else {
         println!("  cd {}", name);
         println!("  otaru build");
