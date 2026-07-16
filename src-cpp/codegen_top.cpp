@@ -155,18 +155,23 @@ bool CodeGen::gen_main_body(const std::vector<std::unique_ptr<Decl>> &decls) {
 
   // Check if this is a WebAssembly target
   bool IsWasm = M.getTargetTriple().isWasm();
+  bool IsWasi = M.getTargetTriple().isOSWASI();
 
   if (freestanding) {
     if (IsWasm) {
-      // WebAssembly uses different exit mechanism
-      // For WASI, we can call proc_exit
-      // For bare wasm, we just return from main
-      FunctionType *ExitFT = FunctionType::get(
-          Type::getVoidTy(Context), {Type::getInt32Ty(Context)}, false);
-      FunctionCallee ExitFn = M.getOrInsertFunction("__wasi_proc_exit", ExitFT);
-      Value *truncated = Builder.CreateTrunc(result, Type::getInt32Ty(Context));
-      Builder.CreateCall(ExitFn, {truncated});
-      Builder.CreateUnreachable();
+      if (IsWasi) {
+        // WASI: call __wasi_proc_exit to terminate
+        FunctionType *ExitFT = FunctionType::get(
+            Type::getVoidTy(Context), {Type::getInt32Ty(Context)}, false);
+        FunctionCallee ExitFn = M.getOrInsertFunction("__wasi_proc_exit", ExitFT);
+        Value *truncated = Builder.CreateTrunc(result, Type::getInt32Ty(Context));
+        Builder.CreateCall(ExitFn, {truncated});
+        Builder.CreateUnreachable();
+      } else {
+        // Bare wasm: just return from main (wasm-ld handles entry)
+        Value *truncated = Builder.CreateTrunc(result, Type::getInt32Ty(Context));
+        Builder.CreateRet(truncated);
+      }
     } else {
       FunctionType *AsmFT =
           FunctionType::get(Type::getVoidTy(Context), {Type::getInt64Ty(Context)}, false);

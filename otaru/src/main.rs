@@ -1,5 +1,6 @@
 pub mod manifest;
 pub mod new;
+pub mod init;
 pub mod build;
 pub mod run;
 pub mod add;
@@ -23,6 +24,12 @@ enum Command {
         /// Project name
         name: String,
         /// Create a WebAssembly project template
+        #[arg(long)]
+        wasm: bool,
+    },
+    /// Initialize the current directory as a Hokkaido project
+    Init {
+        /// Initialize as a WebAssembly project
         #[arg(long)]
         wasm: bool,
     },
@@ -90,6 +97,7 @@ fn main() {
 
     match &cli.command {
         Command::New { name, wasm } => new::run(name, *wasm),
+        Command::Init { wasm } => init::run(*wasm),
         Command::Build {
             file,
             freestanding,
