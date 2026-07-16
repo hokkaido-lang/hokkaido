@@ -36,6 +36,7 @@ With `cargo install`, you need the hokkaido compiler on `PATH` or `HOKKAIDO_HOME
 | **C/C++ compiler** | C/C++ projects | Defaults to `cc`; override with `compiler = "gcc"` etc. |
 | **clang** | Hokkaido linking | Default linker for Hokkaido projects |
 | **ar** | Static libraries | Only needed for `type = "staticlib"` |
+| **wasm-ld** | WebAssembly projects | Ships with LLVM/LLD (e.g. `nix-shell -p llvmPackages_19.lld`) |
 
 ## Commands
 
@@ -44,9 +45,13 @@ With `cargo install`, you need the hokkaido compiler on `PATH` or `HOKKAIDO_HOME
 | Command | Description |
 |---------|-------------|
 | `otaru new <name>` | Scaffold a new project (Hokkaido by default) |
+| `otaru new <name> --wasm` | Scaffold a new WebAssembly project |
+| `otaru init` | Initialize the current directory as a project (`cargo init` equivalent) |
+| `otaru init --wasm` | Initialize as a WebAssembly project |
 | `otaru build` | Build the project (auto-detects Hokkaido or C/C++) |
 | `otaru build --release` / `-r` | Build with `-O2` optimizations |
 | `otaru build -f` | Force rebuild, ignoring cache |
+| `otaru build --triple <triple>` | Cross-compile for a target triple |
 | `otaru run` | Build and run |
 | `otaru run --release` | Build with optimizations and run |
 | `otaru clean` | Remove the `build/` directory |
@@ -132,6 +137,55 @@ otaru build kernel.hk --freestanding
 # Produces build/kernel.o — link with ld.lld manually
 ```
 
+## Quick Start — WebAssembly
+
+```bash
+otaru new mywasm --wasm
+cd mywasm
+
+# Edit src/main.hk, then:
+./wasm32/build.sh    # compile + link -> wasm32/main.wasm
+./wasm32/serve.sh    # open http://localhost:8080 in browser
+```
+
+The generated project includes everything needed to run in a browser:
+
+```
+mywasm/
+├── otaru.toml
+├── hk.mod
+├── std/
+├── src/
+│   └── main.hk          # fn main() -> int { return 42 }
+└── wasm32/
+    ├── index.html        # loads main.wasm, calls main(), displays result
+    ├── build.sh          # hokkaido compile + wasm-ld link
+    └── serve.sh          # python3 http.server on port 8080
+```
+
+**`build.sh`** compiles `src/main.hk` to a `.o` targeting `wasm32-unknown-unknown`,
+then links with `wasm-ld --export=main --no-entry --allow-undefined` to produce
+a `.wasm` file that exports `main()`.
+
+**`index.html`** instantiates the wasm module, calls `instance.exports.main()`,
+and displays the return value. No JavaScript knowledge required.
+
+**Prerequisites:** `hokkaido` on PATH (or built locally) and `wasm-ld`
+(ships with LLVM/LLD).
+
+### Cross-compiling from existing project
+
+```bash
+otaru build src/main.hk --triple wasm32-unknown-wasi
+```
+
+Or directly with hokkaido:
+
+```bash
+hokkaido src/main.hk -o build/main --target wasm32-unknown-unknown
+wasm-ld --no-entry --export=main --allow-undefined -o build/main.wasm build/main.o
+```
+
 ## Quick Start — C Project
 
 ```bash
@@ -208,11 +262,26 @@ otaru run
 myapp/
 ├── otaru.toml         # Manifest (package, deps, optional [build])
 ├── hk.mod             # Marks the package root
-├── std/               # Standard library (prepared by otaru new)
+├── std/               # Standard library (prepared by otaru)
 │   ├── hk.mod
-│   └── hof.hk
+│   └── functional.hk
 └── src/
     └── main.hk        # Entry point
+```
+
+### WebAssembly project
+
+```
+mywasm/
+├── otaru.toml         # [build] type = "wasm"
+├── hk.mod
+├── std/
+├── src/
+│   └── main.hk        # fn main() -> int { return 42 }
+└── wasm32/
+    ├── index.html     # Browser test page
+    ├── build.sh       # Compile + link
+    └── serve.sh       # Local dev server
 ```
 
 ### C/C++ project
@@ -266,6 +335,18 @@ mylib = { git = "https://github.com/user/mylib" }
 other = { path = "../other" }
 ```
 
+### `otaru.toml` — WebAssembly project
+
+```toml
+[package]
+name = "mywasm"
+version = "0.1.0"
+
+[build]
+type = "wasm"
+ldflags = ["--target=wasm32-wasi"]
+```
+
 ### `otaru.toml` — C/C++ project (single target)
 
 ```toml
@@ -274,7 +355,7 @@ name = "myapp"
 version = "0.1.0"
 
 [build]
-type = "executable"          # executable | staticlib | sharedlib | object
+type = "executable"          # executable | staticlib | sharedlib | object | wasm
 sources = ["src/*.c"]        # glob patterns for source files
 include_dirs = ["include"]   # -I directories
 compiler = "cc"              # cc | gcc | clang | c++ | g++ | clang++
@@ -367,6 +448,7 @@ links the result together with any C object files and external libraries.
 | `staticlib` | `build/lib<name>.a` | `ar rcs build/lib<name>.a ...` |
 | `sharedlib` | `build/lib<name>.so` | `cc -shared ... -o build/lib<name>.so` |
 | `object` | `build/<stem>.o` | `cc -c <source> -o build/<stem>.o` |
+| `wasm` | `build/<name>.wasm` | Object file copied as `.wasm` |
 
 ## Scripts
 

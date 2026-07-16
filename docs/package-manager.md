@@ -38,9 +38,13 @@ otaru run     # builds and runs src/main.hk
 
 ```
 otaru new <name>
+otaru init
 ```
 
-Creates a new Hokkaido project with the standard directory structure:
+**`otaru new <name>`** creates a new project directory with the standard layout.
+
+**`otaru init`** initializes the current directory as a project (like `cargo init`).
+Both accept `--wasm` to scaffold a WebAssembly project instead of a native one.
 
 ```
 myapp/
@@ -48,6 +52,7 @@ myapp/
   src/
     main.hk         # entry point (package main)
   hk.mod            # module root marker
+  std/              # standard library (prepared by otaru)
 ```
 
 ### Building
@@ -59,6 +64,7 @@ myapp/
 | `otaru build -f` | Force rebuild, ignoring cache |
 | `otaru build <file.hk>` | Compile a single file |
 | `otaru build --freestanding` | Build without CRT/libc |
+| `otaru build --triple <triple>` | Cross-compile for a target triple |
 
 ### Running
 
@@ -90,19 +96,24 @@ myapp/
 The `otaru.toml` file defines project metadata and build configuration:
 
 ```toml
-[project]
+[package]
 name = "myapp"
 version = "0.1.0"
-type = "hokkaido"    # "hokkaido" (default), "c", or "cpp"
 
-[src]
-dir = "src"
-entry = "main.hk"    # entry point (default: "main.hk" or "main.cpp")
+[dependencies]
+mylib = { git = "https://github.com/user/mylib" }
+other = { path = "../other" }
 
 [build]
-flags = []            # extra compiler flags
-link = []             # extra linker flags / libraries (e.g., ["-lm", "-lpthread"])
-freestanding = false  # set true for freestanding builds
+type = "executable"          # executable | staticlib | sharedlib | object | wasm
+sources = ["src/*.c"]        # glob patterns for source files
+include_dirs = ["include"]   # -I directories
+compiler = "cc"              # cc | gcc | clang | c++ | g++ | clang++
+cflags = ["-Wall", "-Wextra"]
+ldflags = ["-L/usr/local/lib"]
+link = ["m", "pthread"]      # system libraries → -lm -lpthread
+libraries = ["libfoo.a"]     # explicit library files
+lib_dirs = ["vendor/lib"]    # custom library search paths
 
 [scripts]
 test = "otaru build && ./build/myapp"
@@ -119,6 +130,82 @@ otaru auto-detects the project type based on `otaru.toml` and source files:
 | `[build]` section, no `.hk` files | C/C++ compiler |
 | `[build]` section with `.hk` files | Hokkaido + C compiler (mixed) |
 
+## WebAssembly
+
+otaru supports compiling Hokkaido to WebAssembly via the LLVM backend.
+
+### Creating a WebAssembly project
+
+```sh
+otaru new mywasm --wasm
+# or, in an existing directory:
+mkdir mywasm && cd mywasm
+otaru init --wasm
+```
+
+This creates a project with a `wasm32/` directory containing ready-to-use HTML, JS,
+a build script, and a dev server script:
+
+```
+mywasm/
+  otaru.toml          # [build] type = "wasm"
+  src/main.hk         # your code
+  wasm32/
+    index.html        # loads main.wasm, calls main(), displays result
+    build.sh          # compile + link to .wasm
+    serve.sh          # start local HTTP server for testing
+```
+
+### Building for WebAssembly
+
+```sh
+./wasm32/build.sh
+```
+
+The build script:
+1. Compiles `src/main.hk` to a `.o` object file targeting `wasm32-unknown-unknown`
+2. Links it with `wasm-ld` to produce `wasm32/main.wasm`
+3. Copies the `.wasm` next to `index.html`
+
+**Prerequisites:** `hokkaido` on PATH (or built locally) and `wasm-ld` (ships with LLVM/LLD).
+
+### Testing in browser
+
+```sh
+./wasm32/serve.sh         # starts http://localhost:8080
+```
+
+Open `http://localhost:8080` in your browser. The page loads the wasm module,
+calls the exported `main()` function, and displays the return value.
+
+### Cross-compilation with --triple
+
+You can also cross-compile any `.hk` file to WebAssembly directly:
+
+```sh
+otaru build src/main.hk --triple wasm32-unknown-wasi
+hokkaido src/main.hk -o build/main --target wasm32-unknown-unknown
+```
+
+Then link with `wasm-ld`:
+
+```sh
+wasm-ld --no-entry --export=main --allow-undefined -o main.wasm build/main.o
+```
+
+### Template `main.hk` for WebAssembly
+
+The default template is a simple function that returns an integer:
+
+```ocaml
+fn main() -> int {
+    return 42
+}
+```
+
+The HTML page calls `instance.exports.main()` and displays the result.
+You can modify `main.hk` freely — any integer return value will be shown in the browser.
+
 ## Mixed Hokkaido + C projects
 
 For projects that combine Hokkaido and C code, otaru compiles `.hk` files with the
@@ -126,16 +213,12 @@ Hokkaido compiler and `.c`/`.cpp` files with the system C compiler, then links t
 together.
 
 ```toml
-[project]
+[package]
 name = "mixed"
-type = "hokkaido"
-
-[src]
-dir = "src"
-entry = "main.hk"
+version = "0.1.0"
 
 [build]
-link = ["-lm"]
+link = ["m"]
 ```
 
 Place `.hk` and `.c` files together in `src/` — otaru routes each file to the
@@ -146,17 +229,64 @@ correct compiler.
 otaru works as a Make replacement for pure C/C++ projects:
 
 ```toml
-[project]
+[package]
 name = "mylib"
-type = "cpp"
-
-[src]
-dir = "src"
-entry = "main.cpp"
+version = "0.1.0"
 
 [build]
-flags = ["-std=c++17", "-Wall"]
-link = ["-lpthread"]
+type = "executable"
+sources = ["src/*.cpp"]
+include_dirs = ["include"]
+compiler = "clang++"
+cflags = ["-std=c++17", "-Wall"]
+link = ["pthread"]
 ```
 
 Multi-target builds are supported — specify `--target <name>` to build a specific target.
+
+## Build types
+
+| Type | Output | Description |
+|------|--------|-------------|
+| `executable` | `build/<name>` | Default. Linked executable. |
+| `staticlib` | `build/lib<name>.a` | Static library (via `ar`). |
+| `sharedlib` | `build/lib<name>.so` | Shared/dynamic library. |
+| `object` | `build/<stem>.o` | Single object file, no linking. |
+| `wasm` | `build/<name>.wasm` | WebAssembly object file. |
+
+## LLVM integration
+
+For projects linking against LLVM:
+
+```toml
+[build]
+llvm-config = "llvm-config-21"
+llvm-components = ["core", "support", "irreader", "codegen", "WebAssembly"]
+cflags = ["-std=c++17"]
+link = ["pthread", "dl", "m"]
+```
+
+otaru runs `llvm-config --cxxflags` and `llvm-config --ldflags --libs <components>`
+to auto-resolve include dirs and library flags.
+
+## Scripts
+
+Define named shell commands in `[scripts]` and run them with `otaru exec`:
+
+```toml
+[scripts]
+clean = "rm -rf build"
+test = "./build/myapp --test"
+fmt = "clang-format -i src/*.c"
+```
+
+```sh
+otaru exec              # list all defined scripts
+otaru exec test         # run the "test" script
+```
+
+Scripts support positional arguments (`$1`, `$2`, ...) via `otaru exec`:
+
+```sh
+otaru exec greet World   # if greet = "echo Hello, $1!"
+```
