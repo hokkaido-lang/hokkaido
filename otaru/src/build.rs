@@ -479,6 +479,25 @@ pub fn find_hokkaido() -> String {
         }
     }
 
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let mut current = dir.to_path_buf();
+            for _ in 0..10 {
+                let candidate = current.join("build").join("hokkaido");
+                if candidate.exists() {
+                    return candidate.to_string_lossy().to_string();
+                }
+                let candidate = current.join("hokkaido").join("build").join("hokkaido");
+                if candidate.exists() {
+                    return candidate.to_string_lossy().to_string();
+                }
+                if !current.pop() {
+                    break;
+                }
+            }
+        }
+    }
+
     if let Ok(home) = std::env::var("HOKKAIDO_HOME") {
         let path = std::path::Path::new(&home).join("hokkaido");
         if path.exists() {

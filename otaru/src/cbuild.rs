@@ -126,6 +126,11 @@ pub fn run(file: Option<&str>, force: bool, release: bool, target: Option<&str>)
         if path.exists() {
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             if ext == "hk" {
+                // For wasm projects, compile .hk with hokkaido
+                if is_wasm_project() {
+                    compile_hk_for_wasm(f, force, release);
+                    return;
+                }
                 eprintln!(
                     "Error: {} is a Hokkaido file. Use 'otaru build {}' without the C build system.",
                     f, f
@@ -227,11 +232,234 @@ fn merge_target_config(parent: &Build, target: &Build) -> Build {
     merged
 }
 
+fn is_wasm_project() -> bool {
+    let manifest_path = Path::new("otaru.toml");
+    if manifest_path.exists() {
+        if let Ok(manifest) = Manifest::load(manifest_path) {
+            if let Some(build) = &manifest.build {
+                return build.kind == "wasm";
+            }
+        }
+    }
+    false
+}
+
+fn compile_hk_for_wasm(file: &str, _force: bool, release: bool) {
+    let hokkaido = find_hokkaido_for_wasm();
+    let wasm_ld = find_wasm_ld().unwrap_or_else(|| {
+        eprintln!("Error: wasm-ld not found.");
+        std::process::exit(1);
+    });
+
+    std::fs::create_dir_all("build").unwrap_or_else(|e| {
+        eprintln!("Error creating build/: {}", e);
+        std::process::exit(1);
+    });
+
+    let path = std::path::Path::new(file);
+    let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+    let output_base = format!("build/{}", stem);
+
+    let mut cmd = Command::new(&hokkaido);
+    cmd.arg(file)
+        .arg("-o")
+        .arg(&output_base)
+        .arg("--target")
+        .arg("wasm32-unknown-unknown");
+    if release {
+        cmd.arg("-O2");
+    }
+    let status = cmd.status().unwrap_or_else(|e| {
+        eprintln!("Error running hokkaido: {}", e);
+        std::process::exit(1);
+    });
+    if !status.success() {
+        eprintln!("Compilation failed");
+        std::process::exit(1);
+    }
+
+    let obj_path = format!("{}.o", output_base);
+    let wasm_path = format!("{}.wasm", output_base);
+    let mut ld_cmd = Command::new(&wasm_ld);
+    ld_cmd
+        .arg("--no-entry")
+        .arg("--export=main")
+        .arg("--allow-undefined")
+        .arg("-o")
+        .arg(&wasm_path)
+        .arg(&obj_path);
+    let status = ld_cmd.status().unwrap_or_else(|e| {
+        eprintln!("Error running wasm-ld: {}", e);
+        std::process::exit(1);
+    });
+    if !status.success() {
+        eprintln!("Linking failed");
+        std::process::exit(1);
+    }
+    println!("Built: {}", wasm_path);
+}
+
+fn find_wasm_ld() -> Option<String> {
+    for candidate in &["wasm-ld", "wasm-ld-19", "wasm-ld-18", "wasm-ld-17"] {
+        if let Ok(output) = Command::new("which").arg(candidate).output() {
+            if output.status.success() {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path.is_empty() {
+                    return Some(path);
+                }
+            }
+        }
+    }
+    if let Ok(path) = std::env::var("PATH") {
+        for dir in path.split(':') {
+            for candidate in &["wasm-ld", "wasm-ld-19", "wasm-ld-18", "wasm-ld-17"] {
+                let full = format!("{}/{}", dir, candidate);
+                if std::path::Path::new(&full).is_file() {
+                    return Some(full);
+                }
+            }
+        }
+    }
+    // Fallback: use find to locate wasm-ld in /nix/store quickly
+    if let Ok(output) = Command::new("find")
+        .arg("/nix/store")
+        .arg("-name")
+        .arg("wasm-ld")
+        .arg("-type")
+        .arg("f")
+        .arg("-print")
+        .arg("-quit")
+        .output()
+    {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() && std::path::Path::new(&path).is_file() {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+fn find_hokkaido_for_wasm() -> String {
+    crate::build::find_hokkaido()
+}
+
+fn collect_hk_files(src_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(src_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() && path.extension().map_or(false, |e| e == "hk") {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    files
+}
+
+fn build_wasm_target(name: &str, config: &Build, _force: bool, release: bool) {
+    let hokkaido = find_hokkaido_for_wasm();
+
+    let wasm_ld = find_wasm_ld().unwrap_or_else(|| {
+        eprintln!("Error: wasm-ld not found.");
+        eprintln!("Install LLVM (e.g. nix-shell -p llvmPackages_19.lld) or add wasm-ld to PATH.");
+        std::process::exit(1);
+    });
+
+    // Find .hk files: use config.sources if specified, otherwise all .hk in src/
+    let hk_files: Vec<std::path::PathBuf> = if config.sources.is_empty() {
+        collect_hk_files(std::path::Path::new("src"))
+    } else {
+        let mut files = Vec::new();
+        for pattern in &config.sources {
+            match glob::glob(pattern) {
+                Ok(paths) => {
+                    for path in paths.flatten() {
+                        if path.is_file()
+                            && path.extension().map_or(false, |e| e == "hk")
+                        {
+                            files.push(path);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Warning: invalid glob '{}': {}", pattern, e);
+                }
+            }
+        }
+        files.sort();
+        files
+    };
+
+    if hk_files.is_empty() {
+        eprintln!("Error: no .hk files found for wasm build");
+        std::process::exit(1);
+    }
+
+    let entry = hk_files
+        .iter()
+        .find(|f| f.file_stem().map_or(false, |s| s == "main"))
+        .unwrap_or(&hk_files[0]);
+
+    // Step 1: compile with hokkaido
+    let obj_path = format!("build/{}.o", name);
+    let output_base = format!("build/{}", name);
+
+    let mut cmd = Command::new(&hokkaido);
+    cmd.arg(entry)
+        .arg("-o")
+        .arg(&output_base)
+        .arg("--target")
+        .arg("wasm32-unknown-unknown");
+    if release {
+        cmd.arg("-O2");
+    }
+
+    let status = cmd.status().unwrap_or_else(|e| {
+        eprintln!("Error running hokkaido: {}", e);
+        std::process::exit(1);
+    });
+    if !status.success() {
+        eprintln!("Compilation failed");
+        std::process::exit(1);
+    }
+
+    // Step 2: link with wasm-ld
+    let wasm_path = format!("build/{}.wasm", name);
+    let mut ld_cmd = Command::new(&wasm_ld);
+    ld_cmd
+        .arg("--no-entry")
+        .arg("--export=main")
+        .arg("--allow-undefined")
+        .arg("-o")
+        .arg(&wasm_path)
+        .arg(&obj_path);
+
+    let status = ld_cmd.status().unwrap_or_else(|e| {
+        eprintln!("Error running wasm-ld: {}", e);
+        std::process::exit(1);
+    });
+    if !status.success() {
+        eprintln!("Linking failed");
+        std::process::exit(1);
+    }
+
+    println!("Built: {}", wasm_path);
+}
+
 fn build_target(name: &str, config: &Build, force: bool, release: bool) {
     std::fs::create_dir_all("build").unwrap_or_else(|e| {
         eprintln!("Error creating build/ directory: {}", e);
         std::process::exit(1);
     });
+
+    // WebAssembly: compile .hk with hokkaido, link with wasm-ld
+    if config.kind == "wasm" {
+        build_wasm_target(name, config, force, release);
+        return;
+    }
 
     run_prebuild(config);
 
@@ -314,20 +542,6 @@ fn build_target(name: &str, config: &Build, force: bool, release: bool) {
                 std::process::exit(1);
             }
             objects[0].clone()
-        }
-        "wasm" => {
-            // WebAssembly build type - compile to .wasm object file
-            if objects.len() != 1 {
-                eprintln!("Error: 'wasm' build type requires exactly one source file");
-                std::process::exit(1);
-            }
-            let output = format!("build/{}.wasm", name);
-            // For wasm, we just copy the object file as .wasm
-            if let Err(e) = std::fs::copy(&objects[0], &output) {
-                eprintln!("Error creating wasm file: {}", e);
-                std::process::exit(1);
-            }
-            output
         }
         other => {
             eprintln!("Error: unknown build type '{}'", other);

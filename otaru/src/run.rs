@@ -19,10 +19,22 @@ pub fn run(file: Option<&str>, freestanding: bool, force: bool, release: bool) {
             });
 
         if let Some(build_config) = &manifest.build {
+            // WebAssembly: run with wasmtime or open in browser
+            if build_config.kind == "wasm" {
+                let wasm_path = format!("build/{}.wasm", manifest.package.name);
+                run_wasm(&wasm_path);
+                return;
+            }
+
             if let Some(targets) = &build_config.targets {
-                if let Some((name, _config)) =
+                if let Some((name, config)) =
                     targets.iter().find(|(_, c)| c.kind == "executable")
                 {
+                    if config.kind == "wasm" {
+                        let wasm_path = format!("build/{}.wasm", name);
+                        run_wasm(&wasm_path);
+                        return;
+                    }
                     let binary = format!("build/{}", name);
                     run_binary(&binary);
                     return;
@@ -52,6 +64,33 @@ pub fn run(file: Option<&str>, freestanding: bool, force: bool, release: bool) {
         crate::build::compile_single_or_project(None, false, force, release, None)
     };
     run_binary(&binary);
+}
+
+fn run_wasm(wasm_path: &str) {
+    if !std::path::Path::new(wasm_path).exists() {
+        eprintln!("Error: {} not found. Run 'otaru build' first.", wasm_path);
+        std::process::exit(1);
+    }
+
+    // Try wasmtime first
+    if let Ok(status) = Command::new("wasmtime").arg(wasm_path).status() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+
+    // Try wasm3 (wasmtime alternative)
+    if let Ok(status) = Command::new("wasm3").arg("run").arg(wasm_path).status() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+
+    // Try opening in browser via serve script or python server
+    eprintln!("No wasm runtime found (wasmtime, wasm3).");
+    eprintln!("To run in browser:");
+    eprintln!("  python3 -m http.server 8080");
+    eprintln!("  open http://localhost:8080");
+    eprintln!();
+    eprintln!("To run from terminal, install wasmtime:");
+    eprintln!("  curl https://wasmtime.dev/install.sh -sSf | bash");
+    std::process::exit(1);
 }
 
 fn run_binary(binary: &str) {
