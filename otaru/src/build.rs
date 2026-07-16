@@ -3,11 +3,11 @@ use std::path::Path;
 use std::process::Command;
 use std::time::UNIX_EPOCH;
 
-pub fn run(file: Option<&str>, freestanding: bool, force: bool, release: bool) {
+pub fn run(file: Option<&str>, freestanding: bool, force: bool, release: bool, triple: Option<&str>) {
     if let Some(f) = file {
-        compile_single(f, freestanding, force, release);
+        compile_single(f, freestanding, force, release, triple);
     } else {
-        compile_project(freestanding, force, release);
+        compile_project(freestanding, force, release, triple);
     }
 }
 
@@ -16,11 +16,12 @@ pub fn compile_single_or_project(
     freestanding: bool,
     force: bool,
     release: bool,
+    triple: Option<&str>,
 ) -> String {
     if let Some(f) = file {
-        compile_single(f, freestanding, force, release)
+        compile_single(f, freestanding, force, release, triple)
     } else {
-        compile_project(freestanding, force, release)
+        compile_project(freestanding, force, release, triple)
     }
 }
 
@@ -169,7 +170,7 @@ fn cache_suffix(release: bool) -> &'static str {
     if release { "release" } else { "debug" }
 }
 
-fn compile_single(file: &str, freestanding: bool, force: bool, release: bool) -> String {
+fn compile_single(file: &str, freestanding: bool, force: bool, release: bool, triple: Option<&str>) -> String {
     let path = Path::new(file);
     if !path.exists() {
         eprintln!("Error: file '{}' not found", file);
@@ -196,7 +197,7 @@ fn compile_single(file: &str, freestanding: bool, force: bool, release: bool) ->
         if let Some(cached) = load_cache(&cache_path) {
             if cached == cache_key {
                 println!("Cached: {} (unchanged, skipping compilation)", file);
-                if freestanding {
+                if freestanding || triple.is_some() {
                     return output_base;
                 }
                 let obj_path = format!("{}.o", output_base);
@@ -214,6 +215,9 @@ fn compile_single(file: &str, freestanding: bool, force: bool, release: bool) ->
     cmd.arg(opt_flag(release));
     if freestanding {
         cmd.arg("--freestanding");
+    }
+    if let Some(t) = triple {
+        cmd.arg("--target").arg(t);
     }
 
     let status = cmd.status().unwrap_or_else(|e| {
@@ -237,10 +241,15 @@ fn compile_single(file: &str, freestanding: bool, force: bool, release: bool) ->
 
     let obj_path = format!("{}.o", output_base);
 
-    if freestanding {
+    if freestanding || triple.is_some() {
         println!("Compiled {} -> {} (freestanding)", file, obj_path);
-        println!("Warning: freestanding object files cannot be linked with clang.");
-        println!("Use ld.lld directly or a custom linker script.");
+        if triple.is_some() {
+            println!("Warning: cross-compiled object files cannot be linked with clang.");
+            println!("Use wasm-ld or the appropriate linker for your target.");
+        } else {
+            println!("Warning: freestanding object files cannot be linked with clang.");
+            println!("Use ld.lld directly or a custom linker script.");
+        }
         return output_base;
     }
 
@@ -249,7 +258,7 @@ fn compile_single(file: &str, freestanding: bool, force: bool, release: bool) ->
     output_base
 }
 
-fn compile_project(freestanding: bool, force: bool, release: bool) -> String {
+fn compile_project(freestanding: bool, force: bool, release: bool, triple: Option<&str>) -> String {
     let manifest_path = Path::new("otaru.toml");
     if !manifest_path.exists() {
         eprintln!("Error: otaru.toml not found (not in an otaru project)");
@@ -288,7 +297,7 @@ fn compile_project(freestanding: bool, force: bool, release: bool) -> String {
             if cached == cache_key {
                 let obj_path = format!("{}.o", binary);
                 if Path::new(&obj_path).exists() {
-                    if !freestanding {
+                    if !freestanding && triple.is_none() {
                         let mut all_objects = vec![obj_path.clone()];
                         if let Some(ref config) = build_config {
                             all_objects.extend(compile_extra_sources(config, force, release));
@@ -328,6 +337,9 @@ fn compile_project(freestanding: bool, force: bool, release: bool) -> String {
     if freestanding {
         cmd.arg("--freestanding");
     }
+    if let Some(t) = triple {
+        cmd.arg("--target").arg(t);
+    }
 
     let status = cmd.status().unwrap_or_else(|e| {
         eprintln!("Error running hokkaido: {}", e);
@@ -346,10 +358,15 @@ fn compile_project(freestanding: bool, force: bool, release: bool) -> String {
 
     let obj_path = format!("{}.o", binary);
 
-    if freestanding {
+    if freestanding || triple.is_some() {
         println!("Compiled {} -> {} (freestanding)", entry, obj_path);
-        println!("Warning: freestanding object files cannot be linked with clang.");
-        println!("Use ld.lld directly or a custom linker script.");
+        if triple.is_some() {
+            println!("Warning: cross-compiled object files cannot be linked with clang.");
+            println!("Use wasm-ld or the appropriate linker for your target.");
+        } else {
+            println!("Warning: freestanding object files cannot be linked with clang.");
+            println!("Use ld.lld directly or a custom linker script.");
+        }
         return binary;
     }
 

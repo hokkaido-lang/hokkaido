@@ -315,6 +315,20 @@ fn build_target(name: &str, config: &Build, force: bool, release: bool) {
             }
             objects[0].clone()
         }
+        "wasm" => {
+            // WebAssembly build type - compile to .wasm object file
+            if objects.len() != 1 {
+                eprintln!("Error: 'wasm' build type requires exactly one source file");
+                std::process::exit(1);
+            }
+            let output = format!("build/{}.wasm", name);
+            // For wasm, we just copy the object file as .wasm
+            if let Err(e) = std::fs::copy(&objects[0], &output) {
+                eprintln!("Error creating wasm file: {}", e);
+                std::process::exit(1);
+            }
+            output
+        }
         other => {
             eprintln!("Error: unknown build type '{}'", other);
             std::process::exit(1);
