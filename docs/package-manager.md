@@ -164,7 +164,8 @@ otaru build
 
 otaru compiles `src/main.hk` with the Hokkaido compiler targeting `wasm32-unknown-unknown`,
 then links the result with `wasm-ld --no-entry --export=main --allow-undefined` to produce
-`build/<name>.wasm`.
+`build/<name>.wasm`. The `.wasm` is also copied to `wasm32/main.wasm` so the browser
+test page can load it directly.
 
 The `wasm32/build.sh` script is also provided as a standalone alternative if you prefer
 not to use `otaru build`.
@@ -182,8 +183,8 @@ For wasm projects, `otaru run` builds the `.wasm` file and tries to execute it w
 `wasmtime` or `wasm3` if available. If no runtime is found, it prints instructions
 for running in a browser:
 
-```
-python3 -m http.server 8080
+```sh
+cd wasm32 && python3 -m http.server 8080
 open http://localhost:8080
 ```
 
