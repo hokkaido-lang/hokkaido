@@ -22,6 +22,9 @@ enum Command {
     New {
         /// Project name
         name: String,
+        /// Create a WebAssembly project template
+        #[arg(long)]
+        wasm: bool,
     },
     /// Build the current project or a single file
     Build {
@@ -39,6 +42,9 @@ enum Command {
         /// Build a specific target (for projects with [[build.targets]])
         #[arg(long, short)]
         target: Option<String>,
+        /// Target triple for cross-compilation (e.g., wasm32-unknown-wasi)
+        #[arg(long)]
+        triple: Option<String>,
     },
     /// Build and run the current project or a single file
     Run {
@@ -83,20 +89,21 @@ fn main() {
     let cli = Cli::parse();
 
     match &cli.command {
-        Command::New { name } => new::run(name),
+        Command::New { name, wasm } => new::run(name, *wasm),
         Command::Build {
             file,
             freestanding,
             force,
             release,
             target,
+            triple,
         } => {
             if cbuild::has_build_targets() || cbuild::is_c_project() {
                 cbuild::run(file.as_deref(), *force, *release, target.as_deref());
             } else if build::has_hk_files() {
-                build::run(file.as_deref(), *freestanding, *force, *release);
+                build::run(file.as_deref(), *freestanding, *force, *release, triple.as_deref());
             } else {
-                build::run(file.as_deref(), *freestanding, *force, *release);
+                build::run(file.as_deref(), *freestanding, *force, *release, triple.as_deref());
             }
         }
         Command::Run {

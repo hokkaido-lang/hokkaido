@@ -38,18 +38,18 @@ pub fn run(file: Option<&str>, freestanding: bool, force: bool, release: bool) {
 
     if crate::build::has_hk_files() {
         let binary = if let Some(f) = file {
-            crate::build::compile_single_or_project(Some(f), false, force, release)
+            crate::build::compile_single_or_project(Some(f), false, force, release, None)
         } else {
-            crate::build::compile_single_or_project(None, false, force, release)
+            crate::build::compile_single_or_project(None, false, force, release, None)
         };
         run_binary(&binary);
         return;
     }
 
     let binary = if let Some(f) = file {
-        crate::build::compile_single_or_project(Some(f), false, force, release)
+        crate::build::compile_single_or_project(Some(f), false, force, release, None)
     } else {
-        crate::build::compile_single_or_project(None, false, force, release)
+        crate::build::compile_single_or_project(None, false, force, release, None)
     };
     run_binary(&binary);
 }

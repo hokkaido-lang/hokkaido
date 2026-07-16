@@ -114,6 +114,11 @@ void print_usage() {
   std::cout << "                                       and exits via a direct syscall. Plain\n";
   std::cout << "                                       'extern fn' declarations are rejected,\n";
   std::cout << "                                       since there's no libc to resolve them.\n";
+  std::cout << "  hokkaido input.hk -o output --target wasm32-unknown-wasi\n";
+  std::cout << "                                       Compile to WebAssembly object file\n";
+  std::cout << "                                       (requires wasm-ld for linking)\n";
+  std::cout << "  hokkaido input.hk -o output --target wasm32-unknown-unknown\n";
+  std::cout << "                                       Compile to bare WebAssembly object file\n";
   std::cout << "  hokkaido input.cub                  Evaluate a .cub file\n\n";
   std::cout << "Optimization levels:\n";
   std::cout << "  -O0    No optimization (default, debug-friendly)\n";
@@ -123,6 +128,10 @@ void print_usage() {
   std::cout << "  -Os    Optimize for code size\n";
   std::cout << "  -Oz    Aggressively optimize for code size\n";
   std::cout << "  -O     Alias for -O2\n\n";
+  std::cout << "Target triples:\n";
+  std::cout << "  --target wasm32-unknown-wasi       WebAssembly with WASI support\n";
+  std::cout << "  --target wasm32-unknown-unknown    Bare WebAssembly (no OS)\n";
+  std::cout << "  --target <triple>                  Any LLVM-supported target\n\n";
   std::cout << "hokkaido does not link executables itself — it only emits an object\n";
   std::cout << "file. After compiling, link it yourself with 'ld.lld', 'clang', or your\n";
   std::cout << "platform's usual linker. Run with -o to see a suggested link command for\n";
@@ -151,42 +160,24 @@ int main(int argc, char *argv[]) {
   InitializeAllAsmParsers();
   InitializeAllAsmPrinters();
 
-  std::string TargetTripleStr = sys::getDefaultTargetTriple();
-  Triple TargetTriple(TargetTripleStr);
-  std::string Error;
-  const Target *TheTarget = TargetRegistry::lookupTarget(TargetTripleStr, Error);
-  if (!TheTarget) {
-    errs() << "Error: " << Error;
-    return 1;
-  }
-
-  std::string CPU = "generic";
-  TargetOptions opt;
-  // Default to position-independent code. Modern clang/ld.lld link PIE
-  // executables by default, which requires the object file's relocations
-  // to be PIC-safe; leaving this unset previously meant LLVM picked a
-  // static/non-PIC model, producing relocations (e.g. against .rodata
-  // string literals) that a PIE link would reject with errors like
-  // "relocation R_X86_64_32 ... can not be used when making a PIE
-  // object". Building PIC here means `clang main.o -o main` works without
-  // the caller needing to pass `-no-pie` themselves.
-  auto RM = std::optional<Reloc::Model>(Reloc::Model::PIC_);
-
-  // Parse optimization level (default: -O0 — no optimization, debug-friendly)
-  CodeGenOptLevel OptLevel = CodeGenOptLevel::None;
-  OptimizationLevel LLVMOptLevel = OptimizationLevel::O0;
-  // Parse optional -o flag, --freestanding, optimization flags, and any extra
+  // Parse optional -o flag, --freestanding, --target, optimization flags, and any extra
   // linker flags (e.g. -lm, -lcurl, -L/path) for linking against C libraries
   // used by `extern fn` declarations.
   std::string OutputPath;
   bool Freestanding = false;
+  std::string TargetTriple;
   std::vector<std::string> ExtraLinkArgs;
+  // Parse optimization level (default: -O0 — no optimization, debug-friendly)
+  CodeGenOptLevel OptLevel = CodeGenOptLevel::None;
+  OptimizationLevel LLVMOptLevel = OptimizationLevel::O0;
   for (int i = 2; i < argc; i++) {
     std::string Arg = argv[i];
     if (Arg == "-o" && i + 1 < argc) {
       OutputPath = argv[++i];
     } else if (Arg == "--freestanding") {
       Freestanding = true;
+    } else if (Arg == "--target" && i + 1 < argc) {
+      TargetTriple = argv[++i];
     } else if (Arg == "-O") {
       OptLevel = CodeGenOptLevel::Default;
       LLVMOptLevel = OptimizationLevel::O2;
@@ -218,14 +209,47 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  // Use specified target or default to host
+  std::string TargetTripleStr = TargetTriple.empty() ? sys::getDefaultTargetTriple() : TargetTriple;
+  Triple TheTriple(TargetTripleStr);
+  std::string Error;
+  const Target *TheTarget = TargetRegistry::lookupTarget(TargetTripleStr, Error);
+  if (!TheTarget) {
+    errs() << "Error: " << Error;
+    return 1;
+  }
+
+  // Check if this is a WebAssembly target
+  bool IsWasmTarget = TheTriple.isWasm();
+  if (IsWasmTarget) {
+    Freestanding = true; // Wasm targets don't have libc by default
+  }
+
+  std::string CPU = "generic";
+  TargetOptions opt;
+  // Default to position-independent code. Modern clang/ld.lld link PIE
+  // executables by default, which requires the object file's relocations
+  // to be PIC-safe; leaving this unset previously meant LLVM picked a
+  // static/non-PIC model, producing relocations (e.g. against .rodata
+  // string literals) that a PIE link would reject with errors like
+  // "relocation R_X86_64_32 ... can not be used when making a PIE
+  // object". Building PIC here means `clang main.o -o main` works without
+  // the caller needing to pass `-no-pie` themselves.
+  auto RM = std::optional<Reloc::Model>(Reloc::Model::PIC_);
+
+  // WebAssembly uses different relocation model
+  if (IsWasmTarget) {
+    RM = std::nullopt; // WebAssembly doesn't use PIC
+  }
+
   std::unique_ptr<TargetMachine> TM(
-      TheTarget->createTargetMachine(TargetTriple, CPU, "", opt, RM,
+      TheTarget->createTargetMachine(TheTriple, CPU, "", opt, RM,
                                      std::nullopt, OptLevel));
 
   LLVMContext Context;
   std::unique_ptr<Module> M = std::make_unique<Module>("hokkaido", Context);
   M->setDataLayout(TM->createDataLayout());
-  M->setTargetTriple(TargetTriple);
+  M->setTargetTriple(TheTriple);
 
   IRBuilder<> Builder(Context);
 

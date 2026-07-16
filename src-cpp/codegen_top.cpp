@@ -153,15 +153,30 @@ bool CodeGen::gen_main_body(const std::vector<std::unique_ptr<Decl>> &decls) {
     result = ConstantInt::get(Type::getInt64Ty(Context), 0);
   }
 
+  // Check if this is a WebAssembly target
+  bool IsWasm = M.getTargetTriple().isWasm();
+
   if (freestanding) {
-    FunctionType *AsmFT =
-        FunctionType::get(Type::getVoidTy(Context), {Type::getInt64Ty(Context)}, false);
-    InlineAsm *ExitSyscall = InlineAsm::get(
-        AsmFT, "movq $$60, %rax\n\tsyscall",
-        "{rdi},~{rax},~{rcx},~{r11},~{memory}",
-        /*hasSideEffects=*/true);
-    Builder.CreateCall(ExitSyscall, {result});
-    Builder.CreateUnreachable();
+    if (IsWasm) {
+      // WebAssembly uses different exit mechanism
+      // For WASI, we can call proc_exit
+      // For bare wasm, we just return from main
+      FunctionType *ExitFT = FunctionType::get(
+          Type::getVoidTy(Context), {Type::getInt32Ty(Context)}, false);
+      FunctionCallee ExitFn = M.getOrInsertFunction("__wasi_proc_exit", ExitFT);
+      Value *truncated = Builder.CreateTrunc(result, Type::getInt32Ty(Context));
+      Builder.CreateCall(ExitFn, {truncated});
+      Builder.CreateUnreachable();
+    } else {
+      FunctionType *AsmFT =
+          FunctionType::get(Type::getVoidTy(Context), {Type::getInt64Ty(Context)}, false);
+      InlineAsm *ExitSyscall = InlineAsm::get(
+          AsmFT, "movq $$60, %rax\n\tsyscall",
+          "{rdi},~{rax},~{rcx},~{r11},~{memory}",
+          /*hasSideEffects=*/true);
+      Builder.CreateCall(ExitSyscall, {result});
+      Builder.CreateUnreachable();
+    }
   } else {
     Value *truncated = Builder.CreateTrunc(result, Type::getInt32Ty(Context));
     Builder.CreateRet(truncated);
