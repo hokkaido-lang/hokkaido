@@ -6,11 +6,11 @@ use std::path::Path;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Manifest {
     pub package: Package,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub dependencies: BTreeMap<String, Dependency>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub build: Option<Build>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub scripts: BTreeMap<String, String>,
 }
 
@@ -18,7 +18,7 @@ pub struct Manifest {
 pub struct Package {
     pub name: String,
     pub version: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub authors: Vec<String>,
     #[serde(default = "default_edition")]
     pub edition: String,
@@ -51,41 +51,65 @@ pub struct Build {
     #[serde(default = "default_build_type", rename = "type")]
     pub kind: String,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<String>,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub include_dirs: Vec<String>,
 
-    #[serde(default = "default_compiler")]
+    #[serde(default = "default_compiler", skip_serializing_if = "is_default_compiler")]
     pub compiler: String,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cflags: Vec<String>,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ldflags: Vec<String>,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub link: Vec<String>,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub libraries: Vec<String>,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lib_dirs: Vec<String>,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub targets: Option<BTreeMap<String, Build>>,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prebuild: Option<String>,
 
-    #[serde(default, rename = "llvm-config")]
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "llvm-config")]
     pub llvm_config: Option<String>,
 
-    #[serde(default, rename = "llvm-components")]
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "llvm-components")]
     pub llvm_components: Option<Vec<String>>,
+}
+
+fn is_default_compiler(s: &str) -> bool {
+    s == "cc"
+}
+
+impl Default for Build {
+    fn default() -> Self {
+        Self {
+            kind: default_build_type(),
+            sources: vec![],
+            include_dirs: vec![],
+            compiler: default_compiler(),
+            cflags: vec![],
+            ldflags: vec![],
+            link: vec![],
+            libraries: vec![],
+            lib_dirs: vec![],
+            targets: None,
+            prebuild: None,
+            llvm_config: None,
+            llvm_components: None,
+        }
+    }
 }
 
 fn default_build_type() -> String {

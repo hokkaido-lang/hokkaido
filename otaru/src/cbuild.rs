@@ -297,6 +297,14 @@ fn compile_hk_for_wasm(file: &str, _force: bool, release: bool) {
         std::process::exit(1);
     }
     println!("Built: {}", wasm_path);
+
+    // Copy wasm to wasm32/ directory if it exists (for index.html serving)
+    let wasm32_main = std::path::Path::new("wasm32/main.wasm");
+    if wasm32_main.parent().map_or(false, |p| p.is_dir()) {
+        if let Err(e) = std::fs::copy(&wasm_path, wasm32_main) {
+            eprintln!("Warning: could not copy wasm to wasm32/: {}", e);
+        }
+    }
 }
 
 fn find_wasm_ld() -> Option<String> {
@@ -447,6 +455,14 @@ fn build_wasm_target(name: &str, config: &Build, _force: bool, release: bool) {
     }
 
     println!("Built: {}", wasm_path);
+
+    // Copy wasm to wasm32/ directory if it exists (for index.html serving)
+    let wasm32_main = std::path::Path::new("wasm32/main.wasm");
+    if wasm32_main.parent().map_or(false, |p| p.is_dir()) {
+        if let Err(e) = std::fs::copy(&wasm_path, wasm32_main) {
+            eprintln!("Warning: could not copy wasm to wasm32/: {}", e);
+        }
+    }
 }
 
 fn build_target(name: &str, config: &Build, force: bool, release: bool) {

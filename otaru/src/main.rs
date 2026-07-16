@@ -6,6 +6,7 @@ pub mod run;
 pub mod add;
 pub mod install;
 pub mod cbuild;
+pub mod template;
 
 use clap::{Parser, Subcommand};
 use std::path::Path;
@@ -108,8 +109,6 @@ fn main() {
         } => {
             if cbuild::has_build_targets() || cbuild::is_c_project() {
                 cbuild::run(file.as_deref(), *force, *release, target.as_deref());
-            } else if build::has_hk_files() {
-                build::run(file.as_deref(), *freestanding, *force, *release, triple.as_deref());
             } else {
                 build::run(file.as_deref(), *freestanding, *force, *release, triple.as_deref());
             }
@@ -122,12 +121,10 @@ fn main() {
         } => {
             run::run(file.as_deref(), *freestanding, *force, *release);
         }
-        Command::Exec { name, args } => {
-            match name {
-                None => list_scripts(),
-                Some(n) => exec_script(n, args),
-            }
-        }
+        Command::Exec { name, args } => match name {
+            None => list_scripts(),
+            Some(n) => exec_script(n, args),
+        },
         Command::Add {
             name,
             git,
@@ -149,11 +146,10 @@ fn load_scripts() -> std::collections::BTreeMap<String, String> {
         eprintln!("Error: otaru.toml not found");
         std::process::exit(1);
     }
-    let manifest = manifest::Manifest::load(manifest_path)
-        .unwrap_or_else(|e| {
-            eprintln!("{}", e);
-            std::process::exit(1);
-        });
+    let manifest = manifest::Manifest::load(manifest_path).unwrap_or_else(|e| {
+        eprintln!("{}", e);
+        std::process::exit(1);
+    });
     manifest.scripts
 }
 

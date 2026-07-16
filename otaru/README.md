@@ -165,11 +165,16 @@ mywasm/
 
 **`otaru build`** compiles `src/main.hk` to `build/<name>.wasm` using the hokkaido compiler
 targeting `wasm32-unknown-unknown`, then links with `wasm-ld --export=main --no-entry
---allow-undefined`. The resulting `.wasm` file exports `main()`.
+--allow-undefined`. The `.wasm` is also copied to `wasm32/main.wasm` so the browser
+test page can load it directly.
 
 **`otaru run`** builds the `.wasm` and tries to run it with `wasmtime` or `wasm3` if
-available. If no runtime is found, it prints instructions for running in a browser with
-a local HTTP server.
+available. If no runtime is found, it prints instructions for running in a browser:
+
+```
+cd wasm32 && python3 -m http.server 8080
+open http://localhost:8080
+```
 
 **`index.html`** instantiates the wasm module, calls `instance.exports.main()`,
 and displays the return value. No JavaScript knowledge required.

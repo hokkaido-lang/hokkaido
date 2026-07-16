@@ -12,14 +12,12 @@ pub fn run(file: Option<&str>, freestanding: bool, force: bool, release: bool) {
         crate::cbuild::run(None, force, release, None);
 
         let manifest_path = Path::new("otaru.toml");
-        let manifest = crate::manifest::Manifest::load(manifest_path)
-            .unwrap_or_else(|e| {
-                eprintln!("{}", e);
-                std::process::exit(1);
-            });
+        let manifest = crate::manifest::Manifest::load(manifest_path).unwrap_or_else(|e| {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        });
 
         if let Some(build_config) = &manifest.build {
-            // WebAssembly: run with wasmtime or open in browser
             if build_config.kind == "wasm" {
                 let wasm_path = format!("build/{}.wasm", manifest.package.name);
                 run_wasm(&wasm_path);
@@ -72,20 +70,30 @@ fn run_wasm(wasm_path: &str) {
         std::process::exit(1);
     }
 
-    // Try wasmtime first
-    if let Ok(status) = Command::new("wasmtime").arg(wasm_path).status() {
-        std::process::exit(status.code().unwrap_or(1));
+    // Try wasmtime — only bail out if the binary doesn't exist at all.
+    // If wasmtime runs but the program returns non-zero, that's the program's exit code.
+    if let Ok(output) = Command::new("wasmtime").arg(wasm_path).output() {
+        print!("{}", String::from_utf8_lossy(&output.stdout));
+        eprint!("{}", String::from_utf8_lossy(&output.stderr));
+        std::process::exit(output.status.code().unwrap_or(1));
     }
 
-    // Try wasm3 (wasmtime alternative)
-    if let Ok(status) = Command::new("wasm3").arg("run").arg(wasm_path).status() {
-        std::process::exit(status.code().unwrap_or(1));
+    // Try wasm3
+    if let Ok(output) = Command::new("wasm3")
+        .arg("run")
+        .arg(wasm_path)
+        .output()
+    {
+        print!("{}", String::from_utf8_lossy(&output.stdout));
+        eprint!("{}", String::from_utf8_lossy(&output.stderr));
+        std::process::exit(output.status.code().unwrap_or(1));
     }
 
-    // Try opening in browser via serve script or python server
+    // No runtime found — try to serve in browser
     eprintln!("No wasm runtime found (wasmtime, wasm3).");
+    eprintln!();
     eprintln!("To run in browser:");
-    eprintln!("  python3 -m http.server 8080");
+    eprintln!("  cd wasm32 && python3 -m http.server 8080");
     eprintln!("  open http://localhost:8080");
     eprintln!();
     eprintln!("To run from terminal, install wasmtime:");
@@ -94,12 +102,10 @@ fn run_wasm(wasm_path: &str) {
 }
 
 fn run_binary(binary: &str) {
-    let run_status = Command::new(binary)
-        .status()
-        .unwrap_or_else(|e| {
-            eprintln!("Error running '{}': {}", binary, e);
-            std::process::exit(1);
-        });
+    let run_status = Command::new(binary).status().unwrap_or_else(|e| {
+        eprintln!("Error running '{}': {}", binary, e);
+        std::process::exit(1);
+    });
 
     std::process::exit(run_status.code().unwrap_or(1));
 }
