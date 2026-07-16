@@ -132,7 +132,8 @@ otaru auto-detects the project type based on `otaru.toml` and source files:
 
 ## WebAssembly
 
-otaru supports compiling Hokkaido to WebAssembly via the LLVM backend.
+otaru natively compiles Hokkaido to WebAssembly via the LLVM backend.
+`otaru build` and `otaru run` handle the full compile → link → run pipeline.
 
 ### Creating a WebAssembly project
 
@@ -143,8 +144,7 @@ mkdir mywasm && cd mywasm
 otaru init --wasm
 ```
 
-This creates a project with a `wasm32/` directory containing ready-to-use HTML, JS,
-a build script, and a dev server script:
+This creates a project ready to build:
 
 ```
 mywasm/
@@ -152,45 +152,63 @@ mywasm/
   src/main.hk         # your code
   wasm32/
     index.html        # loads main.wasm, calls main(), displays result
-    build.sh          # compile + link to .wasm
+    build.sh          # compile + link to .wasm (legacy alternative)
     serve.sh          # start local HTTP server for testing
 ```
 
 ### Building for WebAssembly
 
 ```sh
-./wasm32/build.sh
+otaru build
 ```
 
-The build script:
-1. Compiles `src/main.hk` to a `.o` object file targeting `wasm32-unknown-unknown`
-2. Links it with `wasm-ld` to produce `wasm32/main.wasm`
-3. Copies the `.wasm` next to `index.html`
+otaru compiles `src/main.hk` with the Hokkaido compiler targeting `wasm32-unknown-unknown`,
+then links the result with `wasm-ld --no-entry --export=main --allow-undefined` to produce
+`build/<name>.wasm`.
+
+The `wasm32/build.sh` script is also provided as a standalone alternative if you prefer
+not to use `otaru build`.
 
 **Prerequisites:** `hokkaido` on PATH (or built locally) and `wasm-ld` (ships with LLVM/LLD).
+otaru will search `/nix/store` for `wasm-ld` if it is not on PATH.
 
-### Testing in browser
+### Running in browser
+
+```sh
+otaru run
+```
+
+For wasm projects, `otaru run` builds the `.wasm` file and tries to execute it with
+`wasmtime` or `wasm3` if available. If no runtime is found, it prints instructions
+for running in a browser:
+
+```
+python3 -m http.server 8080
+open http://localhost:8080
+```
+
+Open `http://localhost:8080` in your browser. The included `index.html` loads the wasm
+module, calls the exported `main()` function, and displays the return value.
+
+You can also use the legacy server script directly:
 
 ```sh
 ./wasm32/serve.sh         # starts http://localhost:8080
 ```
 
-Open `http://localhost:8080` in your browser. The page loads the wasm module,
-calls the exported `main()` function, and displays the return value.
-
 ### Cross-compilation with --triple
 
-You can also cross-compile any `.hk` file to WebAssembly directly:
+You can cross-compile any `.hk` file to WebAssembly directly:
 
 ```sh
 otaru build src/main.hk --triple wasm32-unknown-wasi
-hokkaido src/main.hk -o build/main --target wasm32-unknown-unknown
 ```
 
-Then link with `wasm-ld`:
+Or directly with hokkaido:
 
 ```sh
-wasm-ld --no-entry --export=main --allow-undefined -o main.wasm build/main.o
+hokkaido src/main.hk -o build/main --target wasm32-unknown-unknown
+wasm-ld --no-entry --export=main --allow-undefined -o build/main.wasm build/main.o
 ```
 
 ### Template `main.hk` for WebAssembly
@@ -252,7 +270,7 @@ Multi-target builds are supported — specify `--target <name>` to build a speci
 | `staticlib` | `build/lib<name>.a` | Static library (via `ar`). |
 | `sharedlib` | `build/lib<name>.so` | Shared/dynamic library. |
 | `object` | `build/<stem>.o` | Single object file, no linking. |
-| `wasm` | `build/<name>.wasm` | WebAssembly object file. |
+| `wasm` | `build/<name>.wasm` | WebAssembly module (hokkaido + wasm-ld). |
 
 ## LLVM integration
 

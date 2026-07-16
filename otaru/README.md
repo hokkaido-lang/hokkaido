@@ -36,7 +36,7 @@ With `cargo install`, you need the hokkaido compiler on `PATH` or `HOKKAIDO_HOME
 | **C/C++ compiler** | C/C++ projects | Defaults to `cc`; override with `compiler = "gcc"` etc. |
 | **clang** | Hokkaido linking | Default linker for Hokkaido projects |
 | **ar** | Static libraries | Only needed for `type = "staticlib"` |
-| **wasm-ld** | WebAssembly projects | Ships with LLVM/LLD (e.g. `nix-shell -p llvmPackages_19.lld`) |
+| **wasm-ld** | WebAssembly projects | Ships with LLVM/LLD; otaru searches `/nix/store` if not on PATH |
 
 ## Commands
 
@@ -144,8 +144,8 @@ otaru new mywasm --wasm
 cd mywasm
 
 # Edit src/main.hk, then:
-./wasm32/build.sh    # compile + link -> wasm32/main.wasm
-./wasm32/serve.sh    # open http://localhost:8080 in browser
+otaru build          # compile + link -> build/mywasm.wasm
+otaru run            # try wasmtime, or print browser instructions
 ```
 
 The generated project includes everything needed to run in a browser:
@@ -159,19 +159,32 @@ mywasm/
 │   └── main.hk          # fn main() -> int { return 42 }
 └── wasm32/
     ├── index.html        # loads main.wasm, calls main(), displays result
-    ├── build.sh          # hokkaido compile + wasm-ld link
+    ├── build.sh          # hokkaido compile + wasm-ld link (legacy alternative)
     └── serve.sh          # python3 http.server on port 8080
 ```
 
-**`build.sh`** compiles `src/main.hk` to a `.o` targeting `wasm32-unknown-unknown`,
-then links with `wasm-ld --export=main --no-entry --allow-undefined` to produce
-a `.wasm` file that exports `main()`.
+**`otaru build`** compiles `src/main.hk` to `build/<name>.wasm` using the hokkaido compiler
+targeting `wasm32-unknown-unknown`, then links with `wasm-ld --export=main --no-entry
+--allow-undefined`. The resulting `.wasm` file exports `main()`.
+
+**`otaru run`** builds the `.wasm` and tries to run it with `wasmtime` or `wasm3` if
+available. If no runtime is found, it prints instructions for running in a browser with
+a local HTTP server.
 
 **`index.html`** instantiates the wasm module, calls `instance.exports.main()`,
 and displays the return value. No JavaScript knowledge required.
 
 **Prerequisites:** `hokkaido` on PATH (or built locally) and `wasm-ld`
-(ships with LLVM/LLD).
+(ships with LLVM/LLD). otaru will search `/nix/store` for `wasm-ld` if it is not on PATH.
+
+### Legacy standalone scripts
+
+The `wasm32/` directory also contains standalone scripts if you prefer not to use `otaru build`:
+
+```bash
+./wasm32/build.sh    # compile + link -> wasm32/main.wasm
+./wasm32/serve.sh    # open http://localhost:8080 in browser
+```
 
 ### Cross-compiling from existing project
 
@@ -280,7 +293,7 @@ mywasm/
 │   └── main.hk        # fn main() -> int { return 42 }
 └── wasm32/
     ├── index.html     # Browser test page
-    ├── build.sh       # Compile + link
+    ├── build.sh       # Compile + link (legacy)
     └── serve.sh       # Local dev server
 ```
 
@@ -344,8 +357,10 @@ version = "0.1.0"
 
 [build]
 type = "wasm"
-ldflags = ["--target=wasm32-wasi"]
 ```
+
+`otaru build` handles the full pipeline: hokkaido compile → wasm-ld link → `.wasm` output.
+No extra flags needed — the target triple (`wasm32-unknown-unknown`) is selected automatically.
 
 ### `otaru.toml` — C/C++ project (single target)
 
@@ -448,7 +463,7 @@ links the result together with any C object files and external libraries.
 | `staticlib` | `build/lib<name>.a` | `ar rcs build/lib<name>.a ...` |
 | `sharedlib` | `build/lib<name>.so` | `cc -shared ... -o build/lib<name>.so` |
 | `object` | `build/<stem>.o` | `cc -c <source> -o build/<stem>.o` |
-| `wasm` | `build/<name>.wasm` | Object file copied as `.wasm` |
+| `wasm` | `build/<name>.wasm` | hokkaido compile + wasm-ld link |
 
 ## Scripts
 
