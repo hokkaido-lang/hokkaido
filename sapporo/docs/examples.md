@@ -19,8 +19,10 @@ fn main() -> int {
 ```html
 <p id="output">Loading...</p>
 <script src="sapporo.js"></script>
-<script>Sapporo.load("app.wasm").then(m => m.main())</script>
+<script>Sapporo.load("<package-name>.wasm").then(m => m.main())</script>
 ```
+
+Replace `<package-name>` with your project name from `sapporo.toml`.
 
 ---
 
@@ -99,7 +101,7 @@ fn clear_all() -> void {
 <button id="clear-btn">Clear all</button>
 <ul id="todo-list"></ul>
 <script src="sapporo.js"></script>
-<script>Sapporo.load("app.wasm").then(m => m.main())</script>
+<script>Sapporo.load("<package-name>.wasm").then(m => m.main())</script>
 ```
 
 ---
