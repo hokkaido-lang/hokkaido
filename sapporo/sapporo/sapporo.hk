@@ -174,6 +174,110 @@ fn set_children(parentId: int32) -> int32 {
     return sapporo_set_children(parentId)
 }
 
+// Handle-based variants (for dynamically created elements)
+// Use these instead of the string-based versions when working with
+// elements returned by create(), by_id(), query(), or clone().
+
+fn set_text_h(h: int32, text: string) -> int32 {
+    return sapporo_set_text(h, text)
+}
+
+fn get_text_h(h: int32) -> string {
+    return sapporo_get_text(h)
+}
+
+fn set_html_h(h: int32, html: string) -> int32 {
+    return sapporo_set_html(h, html)
+}
+
+fn get_html_h(h: int32) -> string {
+    return sapporo_get_html(h)
+}
+
+fn set_value_h(h: int32, value: string) -> int32 {
+    return sapporo_set_value(h, value)
+}
+
+fn get_value_h(h: int32) -> string {
+    return sapporo_get_value(h)
+}
+
+fn set_attr_h(h: int32, name: string, value: string) -> int32 {
+    return sapporo_set_attr(h, name, value)
+}
+
+fn get_attr_h(h: int32, name: string) -> string {
+    return sapporo_get_attr(h, name)
+}
+
+fn add_class_h(h: int32, class: string) -> int32 {
+    return sapporo_add_class(h, class)
+}
+
+fn remove_class_h(h: int32, class: string) -> int32 {
+    return sapporo_remove_class(h, class)
+}
+
+fn has_class_h(h: int32, class: string) -> int32 {
+    return sapporo_has_class(h, class)
+}
+
+fn toggle_class_h(h: int32, class: string) -> int32 {
+    return sapporo_toggle_class(h, class)
+}
+
+fn set_style_h(h: int32, prop: string, value: string) -> int32 {
+    return sapporo_set_style(h, prop, value)
+}
+
+fn get_style_h(h: int32, prop: string) -> string {
+    return sapporo_get_style(h, prop)
+}
+
+fn on_click_h(h: int32, callbackId: int32) -> int32 {
+    return sapporo_on_click(h, callbackId)
+}
+
+fn on_dblclick_h(h: int32, callbackId: int32) -> int32 {
+    return sapporo_on_dblclick(h, callbackId)
+}
+
+fn on_input_h(h: int32, callbackId: int32) -> int32 {
+    return sapporo_on_input(h, callbackId)
+}
+
+fn on_change_h(h: int32, callbackId: int32) -> int32 {
+    return sapporo_on_change(h, callbackId)
+}
+
+fn on_keydown_h(h: int32, callbackId: int32) -> int32 {
+    return sapporo_on_keydown(h, callbackId)
+}
+
+fn on_keyup_h(h: int32, callbackId: int32) -> int32 {
+    return sapporo_on_keyup(h, callbackId)
+}
+
+fn on_submit_h(h: int32, callbackId: int32) -> int32 {
+    return sapporo_on_submit(h, callbackId)
+}
+
+fn on_focus_h(h: int32, callbackId: int32) -> int32 {
+    return sapporo_on_focus(h, callbackId)
+}
+
+fn on_blur_h(h: int32, callbackId: int32) -> int32 {
+    return sapporo_on_blur(h, callbackId)
+}
+
+fn on_mouseenter_h(h: int32, callbackId: int32) -> int32 {
+    return sapporo_on_mouseenter(h, callbackId)
+}
+
+fn on_mouseleave_h(h: int32, callbackId: int32) -> int32 {
+    return sapporo_on_mouseleave(h, callbackId)
+}
+
 fn on_click(id: string, callbackId: int32) -> int32 {
     return sapporo_on_click(sapporo_by_id(id), callbackId)
 }

@@ -59,16 +59,16 @@ fn add_todo() -> void {
 
     // Create the list item
     let li: int32 = sapporo::create("li")
-    sapporo::add_class(li, "todo-item")
+    sapporo::add_class_h(li, "todo-item")
 
     // Create label with todo text
     let label: int32 = sapporo::create("span")
-    sapporo::set_text(label, text)
+    sapporo::set_text_h(label, text)
 
     // Create delete button
     let del: int32 = sapporo::create("button")
-    sapporo::set_text(del, "\u00d7")
-    sapporo::add_class(del, "delete")
+    sapporo::set_text_h(del, "\u00d7")
+    sapporo::add_class_h(del, "delete")
 
     // Assemble the list item
     sapporo::append(li, label)
