@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sapporo — Hello World</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+  #output { margin: 1rem 0; }
+  #list { list-style: none; padding: 0; }
+  #list li { padding: 0.5rem 0; border-bottom: 1px solid #eee; }
+</style>
+</head>
+<body>
+<h1>Sapporo — Hello World</h1>
+<p id="output">Loading...</p>
+<ul id="list">
+  <li id="item-1">Static item</li>
+</ul>
+<script src="../../sapporo.js"></script>
+<script>
+  Sapporo.load("app.wasm").then(exports => {
+    exports.main();
+  }).catch(err => {
+    document.getElementById("output").textContent = "Error: " + err.message;
+  });
+</script>
+</body>
+</html>

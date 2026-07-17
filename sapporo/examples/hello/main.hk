@@ -1,0 +1,21 @@
+package main
+
+import "sapporo"
+
+fn main() -> int {
+    sapporo::log("Hello from Sapporo!")
+
+    // Set text on an element by ID
+    sapporo::set_text("output", "Hello, Hokkaido!")
+
+    // Create a new element
+    let item: int32 = sapporo::create("li")
+    sapporo::set_text("item-1", "Dynamic item from Hokkaido")
+    sapporo::append(sapporo::by_id("list"), item)
+
+    // Style an element
+    sapporo::set_style("output", "color", "#e63946")
+    sapporo::set_style("output", "font-size", "24px")
+
+    return 0
+}
