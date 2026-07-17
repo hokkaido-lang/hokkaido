@@ -11,6 +11,10 @@ const Sapporo = (() => {
   let elements = [null]; // index 0 = null sentinel
   let wasmExports = null;
 
+  // Cache: maps string element IDs to their integer handles
+  // Avoids duplicate registry entries when the same ID is looked up repeatedly
+  const idCache = new Map();
+
   // --- Memory helpers ---
 
   function readString(ptr) {
@@ -29,16 +33,43 @@ const Sapporo = (() => {
     return ptr;
   }
 
-  // Bump allocator for string passing
+  // Bump allocator for string passing (JS -> WASM)
   let bumpPtr = 0;
+  const BUMP_RESET_THRESHOLD = 1024 * 1024; // auto-reset after 1MB
+
   function malloc(size) {
     const ptr = bumpPtr;
     bumpPtr += size;
+    // Auto-reset if the bump pointer has grown too large
+    if (bumpPtr > BUMP_RESET_THRESHOLD && memory) {
+      bumpPtr = memory.buffer.byteLength > 65536 ? 65536 : 0;
+    }
     return ptr;
   }
 
-  // Timer ID tracking for clear_timeout/clear_interval
-  const timerIds = {};
+  // --- Element registry helpers ---
+
+  function registerElement(el) {
+    elements.push(el);
+    return elements.length - 1;
+  }
+
+  function lookupById(idStr) {
+    // Check cache first
+    if (idCache.has(idStr)) {
+      return idCache.get(idStr);
+    }
+    const el = document.getElementById(idStr);
+    if (!el) return 0;
+    const handle = registerElement(el);
+    idCache.set(idStr, handle);
+    return handle;
+  }
+
+  function lookupByHandle(handle) {
+    if (handle < 0 || handle >= elements.length) return null;
+    return elements[handle];
+  }
 
   // --- WASM import functions (env module) ---
 
@@ -74,49 +105,49 @@ const Sapporo = (() => {
       // --- DOM text/content ---
 
       sapporo_set_text(elementId, textPtr) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (el) el.textContent = readString(textPtr);
         return 1;
       },
 
       sapporo_get_text(elementId) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         return writeString(el ? el.textContent : "");
       },
 
       sapporo_set_html(elementId, htmlPtr) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (el) el.innerHTML = readString(htmlPtr);
         return 1;
       },
 
       sapporo_get_html(elementId) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         return writeString(el ? el.innerHTML : "");
       },
 
       sapporo_set_value(elementId, valuePtr) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (el) el.value = readString(valuePtr);
         return 1;
       },
 
       sapporo_get_value(elementId) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         return writeString(el ? (el.value || "") : "");
       },
 
       // --- Attributes ---
 
       sapporo_set_attr(elementId, namePtr, valuePtr) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (!el) return 0;
         el.setAttribute(readString(namePtr), readString(valuePtr));
         return 1;
       },
 
       sapporo_get_attr(elementId, namePtr) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (!el) return writeString("");
         return writeString(el.getAttribute(readString(namePtr)) || "");
       },
@@ -124,25 +155,25 @@ const Sapporo = (() => {
       // --- CSS classes ---
 
       sapporo_add_class(elementId, classPtr) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (el) el.classList.add(readString(classPtr));
         return 1;
       },
 
       sapporo_remove_class(elementId, classPtr) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (el) el.classList.remove(readString(classPtr));
         return 1;
       },
 
       sapporo_has_class(elementId, classPtr) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (!el) return 0;
         return el.classList.contains(readString(classPtr)) ? 1 : 0;
       },
 
       sapporo_toggle_class(elementId, classPtr) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (!el) return 0;
         el.classList.toggle(readString(classPtr));
         return 1;
@@ -152,58 +183,52 @@ const Sapporo = (() => {
 
       sapporo_by_id(idPtr) {
         const id = readString(idPtr);
-        const el = document.getElementById(id);
-        if (!el) return 0;
-        elements.push(el);
-        return elements.length - 1;
+        return lookupById(id);
       },
 
       sapporo_query(selectorPtr) {
         const el = document.querySelector(readString(selectorPtr));
         if (!el) return 0;
-        elements.push(el);
-        return elements.length - 1;
+        return registerElement(el);
       },
 
       // --- Element creation ---
 
       sapporo_create(tagPtr) {
         const el = document.createElement(readString(tagPtr));
-        elements.push(el);
-        return elements.length - 1;
+        return registerElement(el);
       },
 
       sapporo_append(parentId, childId) {
-        const parent = elements[parentId];
-        const child = elements[childId];
+        const parent = lookupByHandle(parentId);
+        const child = lookupByHandle(childId);
         if (parent && child) parent.appendChild(child);
         return 1;
       },
 
       sapporo_remove(elementId) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (el && el.parentNode) el.parentNode.removeChild(el);
         return 1;
       },
 
       sapporo_insert_before(parentId, childId, beforeId) {
-        const parent = elements[parentId];
-        const child = elements[childId];
-        const before = elements[beforeId];
+        const parent = lookupByHandle(parentId);
+        const child = lookupByHandle(childId);
+        const before = lookupByHandle(beforeId);
         if (parent && child && before) parent.insertBefore(child, before);
         return 1;
       },
 
       sapporo_clone(elementId) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (!el) return 0;
         const clone = el.cloneNode(true);
-        elements.push(clone);
-        return elements.length - 1;
+        return registerElement(clone);
       },
 
       sapporo_set_children(parentId) {
-        const parent = elements[parentId];
+        const parent = lookupByHandle(parentId);
         if (parent) parent.textContent = "";
         return 1;
       },
@@ -211,7 +236,7 @@ const Sapporo = (() => {
       // --- Events ---
 
       sapporo_on_click(elementId, callbackId) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (!el) return 0;
         el.addEventListener("click", () => {
           if (wasmExports && wasmExports.handle_callback)
@@ -221,7 +246,7 @@ const Sapporo = (() => {
       },
 
       sapporo_on_dblclick(elementId, callbackId) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (!el) return 0;
         el.addEventListener("dblclick", () => {
           if (wasmExports && wasmExports.handle_callback)
@@ -231,7 +256,7 @@ const Sapporo = (() => {
       },
 
       sapporo_on_input(elementId, callbackId) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (!el) return 0;
         el.addEventListener("input", () => {
           if (wasmExports && wasmExports.handle_callback)
@@ -241,7 +266,7 @@ const Sapporo = (() => {
       },
 
       sapporo_on_change(elementId, callbackId) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (!el) return 0;
         el.addEventListener("change", () => {
           if (wasmExports && wasmExports.handle_callback)
@@ -251,7 +276,7 @@ const Sapporo = (() => {
       },
 
       sapporo_on_keydown(elementId, callbackId) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (!el) return 0;
         el.addEventListener("keydown", (e) => {
           if (wasmExports && wasmExports.handle_callback)
@@ -261,7 +286,7 @@ const Sapporo = (() => {
       },
 
       sapporo_on_keyup(elementId, callbackId) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (!el) return 0;
         el.addEventListener("keyup", (e) => {
           if (wasmExports && wasmExports.handle_callback)
@@ -271,7 +296,7 @@ const Sapporo = (() => {
       },
 
       sapporo_on_submit(elementId, callbackId) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (!el) return 0;
         el.addEventListener("submit", (e) => {
           e.preventDefault();
@@ -282,7 +307,7 @@ const Sapporo = (() => {
       },
 
       sapporo_on_focus(elementId, callbackId) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (!el) return 0;
         el.addEventListener("focus", () => {
           if (wasmExports && wasmExports.handle_callback)
@@ -292,7 +317,7 @@ const Sapporo = (() => {
       },
 
       sapporo_on_blur(elementId, callbackId) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (!el) return 0;
         el.addEventListener("blur", () => {
           if (wasmExports && wasmExports.handle_callback)
@@ -302,7 +327,7 @@ const Sapporo = (() => {
       },
 
       sapporo_on_mouseenter(elementId, callbackId) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (!el) return 0;
         el.addEventListener("mouseenter", () => {
           if (wasmExports && wasmExports.handle_callback)
@@ -312,7 +337,7 @@ const Sapporo = (() => {
       },
 
       sapporo_on_mouseleave(elementId, callbackId) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (!el) return 0;
         el.addEventListener("mouseleave", () => {
           if (wasmExports && wasmExports.handle_callback)
@@ -324,14 +349,14 @@ const Sapporo = (() => {
       // --- Styles ---
 
       sapporo_set_style(elementId, propPtr, valuePtr) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (!el) return 0;
         el.style[readString(propPtr)] = readString(valuePtr);
         return 1;
       },
 
       sapporo_get_style(elementId, propPtr) {
-        const el = elements[elementId];
+        const el = lookupByHandle(elementId);
         if (!el) return writeString("");
         return writeString(el.style[readString(propPtr)] || "");
       },
@@ -493,8 +518,18 @@ const Sapporo = (() => {
       // --- Memory management ---
 
       sapporo_reset_memory() {
-        bumpPtr = 0;
+        bumpPtr = memory && memory.buffer.byteLength > 65536 ? 65536 : 0;
         return 1;
+      },
+
+      sapporo_memory_stats() {
+        const used = bumpPtr;
+        const total = memory ? memory.buffer.byteLength : 0;
+        const elementsCount = elements.length;
+        const cachedIds = idCache.size;
+        return writeString(
+          `memory: ${used}/${total} bytes, elements: ${elementsCount}, cached IDs: ${cachedIds}`
+        );
       },
     },
   };

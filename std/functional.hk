@@ -58,3 +58,33 @@ pub fn map_int_into(f: fn(int) -> int, src: int[], dst: int[], len: int) -> int 
     dst[i] = f(src[i])
     return map_int_into(f, src, dst, i)
 }
+
+pub fn find_int(f: fn(int) -> bool, arr: int[], len: int) -> int {
+    if len <= 0 {
+        return -1
+    }
+    let i: int = len - 1
+    if f(arr[i]) {
+        return i
+    }
+    return find_int(f, arr, i)
+}
+
+pub fn count_int(f: fn(int) -> bool, arr: int[], len: int) -> int {
+    if len <= 0 {
+        return 0
+    }
+    let i: int = len - 1
+    if f(arr[i]) {
+        return 1 + count_int(f, arr, i)
+    }
+    return count_int(f, arr, i)
+}
+
+pub fn sum_ints(arr: int[], len: int) -> int {
+    if len <= 0 {
+        return 0
+    }
+    let i: int = len - 1
+    return arr[i] + sum_ints(arr, i)
+}

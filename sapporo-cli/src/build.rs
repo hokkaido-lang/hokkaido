@@ -57,8 +57,11 @@ pub fn find_hokkaido() -> String {
             ];
             for candidate in &candidates {
                 if candidate.exists() {
-                    return candidate.canonicalize().unwrap_or_else(|_| candidate.clone())
-                        .to_string_lossy().to_string();
+                    return candidate
+                        .canonicalize()
+                        .unwrap_or_else(|_| candidate.clone())
+                        .to_string_lossy()
+                        .to_string();
                 }
             }
         }
@@ -71,7 +74,13 @@ pub fn find_hokkaido() -> String {
 
 /// Find wasm-ld binary
 pub fn find_wasm_ld() -> String {
-    for name in &["wasm-ld", "wasm-ld-21", "wasm-ld-20", "wasm-ld-19", "wasm-ld-18"] {
+    for name in &[
+        "wasm-ld",
+        "wasm-ld-21",
+        "wasm-ld-20",
+        "wasm-ld-19",
+        "wasm-ld-18",
+    ] {
         if let Ok(output) = Command::new("which").arg(name).output() {
             if output.status.success() {
                 let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -82,20 +91,15 @@ pub fn find_wasm_ld() -> String {
         }
     }
 
-    // Search nix store
-    if let Ok(output) = Command::new("find")
-        .arg("/nix/store")
-        .arg("-name")
-        .arg("wasm-ld")
-        .arg("-type")
-        .arg("f")
-        .output()
-    {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if let Some(path) = stdout.lines().next() {
-            if !path.is_empty() {
-                return path.to_string();
-            }
+    // Check common locations
+    let common_paths = [
+        "/usr/bin/wasm-ld",
+        "/usr/local/bin/wasm-ld",
+        "/opt/homebrew/bin/wasm-ld",
+    ];
+    for path in &common_paths {
+        if Path::new(path).exists() {
+            return path.to_string();
         }
     }
 
@@ -105,20 +109,25 @@ pub fn find_wasm_ld() -> String {
 }
 
 /// Write embedded sapporo.hk to a directory (for compiler import resolution)
-pub fn write_sapporo_hk(dest_dir: &Path) {
+/// Always overwrites to ensure the latest version is used
+pub fn write_sapporo_hk(dest_dir: &Path, verbose: bool) {
     let hk_dir = dest_dir.join("sapporo");
     let hk_file = hk_dir.join("sapporo.hk");
-    if hk_file.exists() {
-        return;
-    }
+
     fs::create_dir_all(&hk_dir).unwrap_or_else(|e| {
         eprintln!("Error creating {}: {}", hk_dir.display(), e);
         std::process::exit(1);
     });
+
+    if verbose && hk_file.exists() {
+        println!("  Updating sapporo/sapporo.hk");
+    }
+
     fs::write(&hk_file, SAPPORO_HK).unwrap_or_else(|e| {
         eprintln!("Error writing {}: {}", hk_file.display(), e);
         std::process::exit(1);
     });
+
     // hk.mod for the inner sapporo/ package
     let hkmod = hk_dir.join("hk.mod");
     if !hkmod.exists() {
@@ -127,11 +136,14 @@ pub fn write_sapporo_hk(dest_dir: &Path) {
 }
 
 /// Write embedded sapporo.js to a directory
-pub fn write_sapporo_js(dest_dir: &Path) {
+/// Always overwrites to ensure the latest version is used
+pub fn write_sapporo_js(dest_dir: &Path, verbose: bool) {
     let js_file = dest_dir.join("sapporo.js");
-    if js_file.exists() {
-        return;
+
+    if verbose && js_file.exists() {
+        println!("  Updating sapporo.js");
     }
+
     fs::write(&js_file, SAPPORO_JS).unwrap_or_else(|e| {
         eprintln!("Error writing {}: {}", js_file.display(), e);
         std::process::exit(1);
@@ -139,7 +151,7 @@ pub fn write_sapporo_js(dest_dir: &Path) {
 }
 
 /// Build a sapporo project
-pub fn run(force: bool) {
+pub fn run(force: bool, verbose: bool) {
     let manifest_path = Path::new(MANIFEST_FILE);
     if !manifest_path.exists() {
         eprintln!("Error: {} not found. Run 'sapporo init' first.", MANIFEST_FILE);
@@ -155,6 +167,11 @@ pub fn run(force: bool) {
     let hokkaido = find_hokkaido();
     let wasm_ld = find_wasm_ld();
 
+    if verbose {
+        println!("  hokkaido: {}", hokkaido);
+        println!("  wasm-ld: {}", wasm_ld);
+    }
+
     let dist = Path::new(&build.dist);
     let output_wasm = dist.join(format!("{}.wasm", manifest.package.name));
 
@@ -167,10 +184,10 @@ pub fn run(force: bool) {
     });
 
     // Write embedded sapporo.hk to project root for compiler import resolution
-    write_sapporo_hk(Path::new("."));
+    write_sapporo_hk(Path::new("."), verbose);
 
     // Write embedded sapporo.js to dist/
-    write_sapporo_js(dist);
+    write_sapporo_js(dist, verbose);
 
     // Copy index.html to dist
     if Path::new("index.html").exists() {
@@ -195,14 +212,16 @@ pub fn run(force: bool) {
         let obj = dist.join(format!("{}.o", stem));
 
         if !force && !is_stale(file, &obj) && obj.exists() {
-            println!("  {} (up to date)", file.display());
+            if verbose {
+                println!("  {} (up to date)", file.display());
+            }
             objects.push(obj);
             continue;
         }
 
         let compile_target = dist.join(&*stem);
         print!("  Compiling {}...", file.display());
-        if compile_hk(&hokkaido, file, &compile_target, &build.cflags) {
+        if compile_hk(&hokkaido, file, &compile_target, &build.cflags, verbose) {
             println!(" ok");
             objects.push(obj);
             any_compiled = true;
@@ -221,7 +240,7 @@ pub fn run(force: bool) {
 
     // Link all .o files into .wasm
     print!("  Linking {}...", output_wasm.display());
-    if link_wasm(&wasm_ld, &objects, &output_wasm, &build.ldflags) {
+    if link_wasm(&wasm_ld, &objects, &output_wasm, &build.ldflags, verbose) {
         println!(" ok");
     } else {
         println!(" FAILED");
@@ -257,7 +276,13 @@ pub fn find_hk_files(sources: &[String]) -> Vec<PathBuf> {
 }
 
 /// Compile a single .hk file to .o (WASM object)
-pub fn compile_hk(hokkaido: &str, file: &Path, output: &Path, extra_flags: &[String]) -> bool {
+pub fn compile_hk(
+    hokkaido: &str,
+    file: &Path,
+    output: &Path,
+    extra_flags: &[String],
+    verbose: bool,
+) -> bool {
     let mut cmd = Command::new(hokkaido);
     cmd.arg(file)
         .arg("-o")
@@ -269,9 +294,22 @@ pub fn compile_hk(hokkaido: &str, file: &Path, output: &Path, extra_flags: &[Str
         cmd.arg(flag);
     }
 
-    let status = cmd.status();
-    match status {
-        Ok(s) => s.success(),
+    if verbose {
+        println!("    {:?}", cmd);
+    }
+
+    match cmd.output() {
+        Ok(output) => {
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if !stderr.is_empty() {
+                    eprintln!("\n{}", stderr);
+                }
+                false
+            } else {
+                true
+            }
+        }
         Err(e) => {
             eprintln!("Error running hokkaido: {}", e);
             false
@@ -280,7 +318,13 @@ pub fn compile_hk(hokkaido: &str, file: &Path, output: &Path, extra_flags: &[Str
 }
 
 /// Link .o files into .wasm using wasm-ld
-pub fn link_wasm(wasm_ld: &str, objects: &[PathBuf], output: &Path, ldflags: &[String]) -> bool {
+pub fn link_wasm(
+    wasm_ld: &str,
+    objects: &[PathBuf],
+    output: &Path,
+    ldflags: &[String],
+    verbose: bool,
+) -> bool {
     let mut cmd = Command::new(wasm_ld);
     cmd.arg("--no-entry")
         .arg("--export-all")
@@ -296,9 +340,22 @@ pub fn link_wasm(wasm_ld: &str, objects: &[PathBuf], output: &Path, ldflags: &[S
         cmd.arg(obj);
     }
 
-    let status = cmd.status();
-    match status {
-        Ok(s) => s.success(),
+    if verbose {
+        println!("    {:?}", cmd);
+    }
+
+    match cmd.output() {
+        Ok(output) => {
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if !stderr.is_empty() {
+                    eprintln!("\n{}", stderr);
+                }
+                false
+            } else {
+                true
+            }
+        }
         Err(e) => {
             eprintln!("Error running wasm-ld: {}", e);
             false

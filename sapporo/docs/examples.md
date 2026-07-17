@@ -26,24 +26,26 @@ fn main() -> int {
 
 ## Todo app
 
-A minimal todo list with add, toggle, and delete:
+A minimal todo list with add and clear-all:
 
 ```ocaml
 package main
 
 import "sapporo"
 
-let next_id: int = 1
-
 fn main() -> int {
     sapporo::on_click("add-btn", 1)
     sapporo::on_submit("todo-form", 1)
+    sapporo::on_click("clear-btn", 2)
     return 0
 }
 
 fn handle_callback(id: int) -> void {
     if id == 1 {
         add_todo()
+    }
+    if id == 2 {
+        clear_all()
     }
 }
 
@@ -55,36 +57,49 @@ fn add_todo() -> void {
 
     // Create the list item
     let li: int32 = sapporo::create("li")
+    sapporo::add_class(li, "todo-item")
 
-    // Create checkbox
-    let cb: int32 = sapporo::create("input")
-    sapporo::set_attr(cb, "type", "checkbox")
-    let cb_id: string = "todo-" + next_id
-    sapporo::set_attr(cb, "id", cb_id)
-
-    // Create label
+    // Create label with todo text
     let label: int32 = sapporo::create("span")
     sapporo::set_text(label, text)
 
     // Create delete button
     let del: int32 = sapporo::create("button")
-    sapporo::set_text(del, "x")
+    sapporo::set_text(del, "\u00d7")
     sapporo::add_class(del, "delete")
 
-    // Assemble
-    sapporo::append(li, cb)
+    // Assemble the list item
     sapporo::append(li, label)
     sapporo::append(li, del)
 
-    // Add to list
+    // Add to the todo list
     let list: int32 = sapporo::by_id("todo-list")
     sapporo::append(list, li)
 
-    // Clear input
+    // Clear the input
     sapporo::set_value("todo-input", "")
-
-    next_id = next_id + 1
 }
+
+fn clear_all() -> void {
+    sapporo::set_children("todo-list")
+}
+```
+
+**HTML for the todo app:**
+
+```html
+<style>
+  .todo-item { list-style: none; padding: 4px 0; }
+  .delete { margin-left: 8px; color: #e63946; border: none; background: none; cursor: pointer; }
+</style>
+<form id="todo-form">
+  <input id="todo-input" type="text" placeholder="What needs to be done?">
+  <button id="add-btn" type="button">Add</button>
+</form>
+<button id="clear-btn">Clear all</button>
+<ul id="todo-list"></ul>
+<script src="sapporo.js"></script>
+<script>Sapporo.load("app.wasm").then(m => m.main())</script>
 ```
 
 ---

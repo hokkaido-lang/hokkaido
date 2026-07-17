@@ -73,6 +73,7 @@ dist/
 
 Flags:
 - `--force` — Force rebuild even if output is up to date
+- `--verbose` — Show compiler and linker commands
 
 **Incremental builds:** `sapporo build` only recompiles `.hk` files that have changed since the last build. Object files are cached in `dist/`.
 
@@ -113,6 +114,10 @@ The sapporo CLI requires:
 - **wasm-ld** — the WASM linker (found via PATH or in the Nix store)
 
 These are bundled in the release tarball.
+
+## Global flags
+
+- `--verbose` — Show detailed output including compiler/linker commands (works with all subcommands)
 
 ## How building works
 
