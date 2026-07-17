@@ -5,6 +5,8 @@ use std::process::Command;
 use crate::manifest::{Manifest, MANIFEST_FILE};
 
 // Embed sapporo library files at compile time
+// In dev: resolved relative to sapporo-cli/src/ -> ../../sapporo/
+// In nix: preBuild copies files to ../sapporo/ relative to source root
 const SAPPORO_HK: &[u8] = include_bytes!("../../sapporo/sapporo/sapporo.hk");
 const SAPPORO_JS: &[u8] = include_bytes!("../../sapporo/sapporo.js");
 
