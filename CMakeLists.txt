@@ -4,6 +4,17 @@ project(my_compiler)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# LLVM cmake config references ZLIB::ZLIB; satisfy it with a minimal imported target
+find_path(ZLIB_INCLUDE_DIRS zlib.h)
+find_library(ZLIB_LIBRARIES NAMES z)
+if(ZLIB_INCLUDE_DIRS AND ZLIB_LIBRARIES)
+  add_library(ZLIB::ZLIB UNKNOWN IMPORTED)
+  set_target_properties(ZLIB::ZLIB PROPERTIES
+    IMPORTED_LOCATION "${ZLIB_LIBRARIES}"
+    INTERFACE_INCLUDE_DIRECTORIES "${ZLIB_INCLUDE_DIRS}"
+  )
+endif()
+
 find_package(LLVM REQUIRED CONFIG)
 
 include_directories(${LLVM_INCLUDE_DIRS})
@@ -58,6 +69,7 @@ add_dependencies(hokkaido cubical_lib)
 
 target_link_libraries(hokkaido PRIVATE
     ${llvm_libs}
+    ZLIB::ZLIB
     ${CUBICAL_LIB}
     pthread
     dl

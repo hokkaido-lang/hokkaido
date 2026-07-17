@@ -29,12 +29,8 @@ bool CodeGen::generate(const std::vector<std::unique_ptr<Decl>> &decls) {
   FnDecl *user_main = nullptr;
   for (auto &decl : decls) {
     if (auto *fn = dynamic_cast<FnDecl *>(decl.get())) {
-      if (freestanding && fn->is_extern) {
-        errs() << "Error: 'extern fn " << fn->name << "' is not allowed in "
-                  "freestanding mode (no libc is linked, so there is no "
-                  "symbol for it to resolve against)\n";
-        return false;
-      }
+      // Allow extern fn in freestanding mode for WASM targets (imports)
+      // and let the linker resolve symbols naturally
 
       if (!fn->type_params.empty()) {
         if (fn->is_extern) {
