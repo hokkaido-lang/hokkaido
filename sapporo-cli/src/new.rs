@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
+use crate::build;
 use crate::manifest::{BuildConfig, Manifest, MANIFEST_FILE};
 
 pub fn run(name: &str) {
@@ -39,6 +40,10 @@ pub fn run(name: &str) {
         eprintln!("Error writing hk.mod: {}", e);
         std::process::exit(1);
     });
+
+    // Embed sapporo library files into the project
+    build::write_sapporo_hk(project_dir);
+    build::write_sapporo_js(project_dir);
 
     // src/main.hk
     fs::write(
@@ -104,7 +109,7 @@ fn main() -> int {{
     // .gitignore
     fs::write(
         project_dir.join(".gitignore"),
-        "dist/\nnode_modules/\n",
+        "dist/\nsapporo/\nnode_modules/\n",
     )
     .unwrap_or_else(|e| {
         eprintln!("Error writing .gitignore: {}", e);

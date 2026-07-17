@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
+use crate::build;
 use crate::manifest::{BuildConfig, Manifest, MANIFEST_FILE};
 
 pub fn run() {
@@ -51,6 +52,10 @@ pub fn run() {
         eprintln!("Error creating src/: {}", e);
         std::process::exit(1);
     });
+
+    // Embed sapporo library files into the project
+    build::write_sapporo_hk(Path::new("."));
+    build::write_sapporo_js(Path::new("."));
 
     // src/main.hk if it doesn't exist
     if !Path::new("src/main.hk").exists() {
@@ -119,7 +124,7 @@ fn main() -> int {{
 
     // .gitignore
     if !Path::new(".gitignore").exists() {
-        fs::write(".gitignore", "dist/\nnode_modules/\n").unwrap_or_else(|e| {
+        fs::write(".gitignore", "dist/\nsapporo/\nnode_modules/\n").unwrap_or_else(|e| {
             eprintln!("Error writing .gitignore: {}", e);
             std::process::exit(1);
         });
