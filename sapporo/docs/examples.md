@@ -33,9 +33,9 @@ package main
 
 import "sapporo"
 
-extern fn handle_callback(id: int32) -> void
+extern fn handle_callback(id: int) -> void
 
-let next_id: int32 = 1
+let next_id: int = 1
 
 fn main() -> int {
     sapporo::on_click("add-btn", 1)
@@ -43,7 +43,7 @@ fn main() -> int {
     return 0
 }
 
-fn handle_callback(id: int32) -> void {
+fn handle_callback(id: int) -> void {
     if id == 1 {
         add_todo()
     }
@@ -100,8 +100,8 @@ package main
 
 import "sapporo"
 
-extern fn handle_callback(id: int32) -> void
-extern fn handle_fetch(id: int32, response: string, success: int32) -> void
+extern fn handle_callback(id: int) -> void
+extern fn handle_fetch(id: int, response: string, success: int) -> void
 
 fn main() -> int {
     sapporo::on_click("load-btn", 1)
@@ -109,7 +109,7 @@ fn main() -> int {
     return 0
 }
 
-fn handle_callback(id: int32) -> void {
+fn handle_callback(id: int) -> void {
     if id == 1 {
         sapporo::log("Loading data...")
         sapporo::fetch_get("https://jsonplaceholder.typicode.com/posts/1", 100)
@@ -120,7 +120,7 @@ fn handle_callback(id: int32) -> void {
     }
 }
 
-fn handle_fetch(id: int32, response: string, success: int32) -> void {
+fn handle_fetch(id: int, response: string, success: int) -> void {
     if id == 100 {
         if success == 1 {
             sapporo::set_text("output", response)
@@ -150,7 +150,7 @@ package main
 
 import "sapporo"
 
-extern fn handle_callback(id: int32) -> void
+extern fn handle_callback(id: int) -> void
 
 fn main() -> int {
     // Load saved theme
@@ -172,7 +172,7 @@ fn main() -> int {
     return 0
 }
 
-fn handle_callback(id: int32) -> void {
+fn handle_callback(id: int) -> void {
     if id == 1 {
         sapporo::toggle_class("body", "dark")
         let is_dark: int32 = sapporo::has_class("body", "dark")
@@ -203,7 +203,7 @@ package main
 
 import "sapporo"
 
-extern fn handle_callback(id: int32) -> void
+extern fn handle_callback(id: int) -> void
 
 fn main() -> int {
     check_size()
@@ -222,7 +222,7 @@ fn check_size() -> void {
     }
 }
 
-fn handle_callback(id: int32) -> void {
+fn handle_callback(id: int) -> void {
     if id == 1 {
         check_size()
     }
@@ -240,7 +240,7 @@ package main
 
 import "sapporo"
 
-extern fn handle_callback(id: int32) -> void
+extern fn handle_callback(id: int) -> void
 
 fn main() -> int {
     sapporo::on_click("nav-home", 1)
@@ -264,7 +264,7 @@ fn show_page(page: string) -> void {
     sapporo::set_html("content", "<p>Welcome to " + page + "</p>")
 }
 
-fn handle_callback(id: int32) -> void {
+fn handle_callback(id: int) -> void {
     if id == 1 {
         sapporo::set_url_hash("home")
         show_page("home")
