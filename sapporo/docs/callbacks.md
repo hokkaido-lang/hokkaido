@@ -12,8 +12,8 @@ Sapporo uses integer callback IDs for asynchronous operations (events, timers, f
    wasmExports.handle_callback(42)
 
 3. Your WASM module receives the callback and reacts:
-   extern fn handle_callback(id: int32) -> void
-   fn handle_callback(id: int32) -> void {
+   extern fn handle_callback(id: int) -> void
+   fn handle_callback(id: int) -> void {
        if id == 42 {
            // button was clicked
        }
@@ -25,8 +25,8 @@ Sapporo uses integer callback IDs for asynchronous operations (events, timers, f
 Your WASM module must export two callback functions:
 
 ```ocaml
-extern fn handle_callback(id: int32) -> void
-extern fn handle_fetch(id: int32, response: string, success: int32) -> void
+extern fn handle_callback(id: int) -> void
+extern fn handle_fetch(id: int, response: string, success: int) -> void
 ```
 
 `sapporo.js` calls these functions when:
@@ -35,10 +35,10 @@ extern fn handle_fetch(id: int32, response: string, success: int32) -> void
 
 ## Callback ID convention
 
-There's no built-in constraint on callback IDs — they're just `int32` values. A common pattern is to define them as constants:
+There's no built-in constraint on callback IDs — they're just integer values. A common pattern is to define them as constants:
 
 ```ocaml
-fn handle_callback(id: int32) -> void {
+fn handle_callback(id: int) -> void {
     if id == 1 {
         // handle "add todo" button
     }
@@ -65,7 +65,7 @@ Or use a range-based scheme:
 Fetch uses a separate callback function with additional parameters:
 
 ```ocaml
-fn handle_fetch(id: int32, response: string, success: int32) -> void {
+fn handle_fetch(id: int, response: string, success: int) -> void {
     if id == 100 {
         if success == 1 {
             // response contains the body text
@@ -88,9 +88,9 @@ Parameters:
 Keyboard event callbacks receive the key code as a second argument:
 
 ```ocaml
-extern fn handle_callback(id: int32, keyCode: int32) -> void
+extern fn handle_callback(id: int, keyCode: int) -> void
 
-fn handle_callback(id: int32, keyCode: int32) -> void {
+fn handle_callback(id: int, keyCode: int) -> void {
     if id == 10 {
         // search input
         if keyCode == 13 {
@@ -114,8 +114,8 @@ package main
 
 import "sapporo"
 
-extern fn handle_callback(id: int32) -> void
-extern fn handle_fetch(id: int32, response: string, success: int32) -> void
+extern fn handle_callback(id: int) -> void
+extern fn handle_fetch(id: int, response: string, success: int) -> void
 
 fn main() -> int {
     // Register handlers
@@ -126,7 +126,7 @@ fn main() -> int {
     return 0
 }
 
-fn handle_callback(id: int32) -> void {
+fn handle_callback(id: int) -> void {
     if id == 1 {
         // "Load" button clicked — fetch data
         sapporo::fetch_get("https://api.example.com/data", 100)
@@ -142,7 +142,7 @@ fn handle_callback(id: int32) -> void {
     }
 }
 
-fn handle_fetch(id: int32, response: string, success: int32) -> void {
+fn handle_fetch(id: int, response: string, success: int) -> void {
     if id == 100 {
         if success == 1 {
             sapporo::set_html("data", response)
