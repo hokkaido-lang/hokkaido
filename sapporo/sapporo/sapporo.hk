@@ -1,38 +1,75 @@
 package sapporo
 
 // Low-level WASM imports (not prefixed by import system)
+// These map 1:1 to sapporo.js env module functions
 
 extern fn sapporo_log(message: string) -> int32
 extern fn sapporo_error(message: string) -> int32
 extern fn sapporo_warn(message: string) -> int32
+extern fn sapporo_info(message: string) -> int32
+extern fn sapporo_debug(message: string) -> int32
 
 extern fn sapporo_set_text(elementId: int32, text: string) -> int32
-extern fn sapporo_set_html(elementId: int32, html: string) -> int32
 extern fn sapporo_get_text(elementId: int32) -> string
+extern fn sapporo_set_html(elementId: int32, html: string) -> int32
+extern fn sapporo_get_html(elementId: int32) -> string
+extern fn sapporo_set_value(elementId: int32, value: string) -> int32
+extern fn sapporo_get_value(elementId: int32) -> string
 extern fn sapporo_set_attr(elementId: int32, name: string, value: string) -> int32
 extern fn sapporo_get_attr(elementId: int32, name: string) -> string
+
 extern fn sapporo_add_class(elementId: int32, class: string) -> int32
 extern fn sapporo_remove_class(elementId: int32, class: string) -> int32
 extern fn sapporo_has_class(elementId: int32, class: string) -> int32
+extern fn sapporo_toggle_class(elementId: int32, class: string) -> int32
 
 extern fn sapporo_by_id(id: string) -> int32
 extern fn sapporo_query(selector: string) -> int32
 extern fn sapporo_create(tag: string) -> int32
 extern fn sapporo_append(parentId: int32, childId: int32) -> int32
 extern fn sapporo_remove(elementId: int32) -> int32
+extern fn sapporo_insert_before(parentId: int32, childId: int32, beforeId: int32) -> int32
+extern fn sapporo_clone(elementId: int32) -> int32
+extern fn sapporo_set_children(parentId: int32) -> int32
 
 extern fn sapporo_on_click(elementId: int32, callbackId: int32) -> int32
+extern fn sapporo_on_dblclick(elementId: int32, callbackId: int32) -> int32
 extern fn sapporo_on_input(elementId: int32, callbackId: int32) -> int32
+extern fn sapporo_on_change(elementId: int32, callbackId: int32) -> int32
 extern fn sapporo_on_keydown(elementId: int32, callbackId: int32) -> int32
+extern fn sapporo_on_keyup(elementId: int32, callbackId: int32) -> int32
 extern fn sapporo_on_submit(elementId: int32, callbackId: int32) -> int32
+extern fn sapporo_on_focus(elementId: int32, callbackId: int32) -> int32
+extern fn sapporo_on_blur(elementId: int32, callbackId: int32) -> int32
+extern fn sapporo_on_mouseenter(elementId: int32, callbackId: int32) -> int32
+extern fn sapporo_on_mouseleave(elementId: int32, callbackId: int32) -> int32
 
 extern fn sapporo_set_style(elementId: int32, prop: string, value: string) -> int32
+extern fn sapporo_get_style(elementId: int32, prop: string) -> string
 
 extern fn sapporo_set_timeout(callbackId: int32, ms: int32) -> int32
 extern fn sapporo_set_interval(callbackId: int32, ms: int32) -> int32
+extern fn sapporo_clear_timeout(id: int32) -> int32
+extern fn sapporo_clear_interval(id: int32) -> int32
 
 extern fn sapporo_fetch_get(url: string, callbackId: int32) -> int32
 extern fn sapporo_fetch_post(url: string, body: string, callbackId: int32) -> int32
+extern fn sapporo_fetch_put(url: string, body: string, callbackId: int32) -> int32
+extern fn sapporo_fetch_delete(url: string, callbackId: int32) -> int32
+
+extern fn sapporo_local_storage_set(key: string, value: string) -> int32
+extern fn sapporo_local_storage_get(key: string) -> string
+extern fn sapporo_local_storage_remove(key: string) -> int32
+
+extern fn sapporo_navigate(url: string) -> int32
+extern fn sapporo_reload() -> int32
+extern fn sapporo_get_url() -> string
+extern fn sapporo_set_url_hash(hash: string) -> int32
+
+extern fn sapporo_window_width() -> int32
+extern fn sapporo_window_height() -> int32
+
+extern fn sapporo_reset_memory() -> int32
 
 // Clean wrappers (prefixed as sapporo:: when imported)
 
@@ -48,16 +85,36 @@ fn warn(message: string) -> int32 {
     return sapporo_warn(message)
 }
 
+fn info(message: string) -> int32 {
+    return sapporo_info(message)
+}
+
+fn debug(message: string) -> int32 {
+    return sapporo_debug(message)
+}
+
 fn set_text(id: string, text: string) -> int32 {
     return sapporo_set_text(sapporo_by_id(id), text)
+}
+
+fn get_text(id: string) -> string {
+    return sapporo_get_text(sapporo_by_id(id))
 }
 
 fn set_html(id: string, html: string) -> int32 {
     return sapporo_set_html(sapporo_by_id(id), html)
 }
 
-fn get_text(id: string) -> string {
-    return sapporo_get_text(sapporo_by_id(id))
+fn get_html(id: string) -> string {
+    return sapporo_get_html(sapporo_by_id(id))
+}
+
+fn set_value(id: string, value: string) -> int32 {
+    return sapporo_set_value(sapporo_by_id(id), value)
+}
+
+fn get_value(id: string) -> string {
+    return sapporo_get_value(sapporo_by_id(id))
 }
 
 fn set_attr(id: string, name: string, value: string) -> int32 {
@@ -80,6 +137,10 @@ fn has_class(id: string, class: string) -> int32 {
     return sapporo_has_class(sapporo_by_id(id), class)
 }
 
+fn toggle_class(id: string, class: string) -> int32 {
+    return sapporo_toggle_class(sapporo_by_id(id), class)
+}
+
 fn by_id(id: string) -> int32 {
     return sapporo_by_id(id)
 }
@@ -100,24 +161,64 @@ fn remove(elementId: int32) -> int32 {
     return sapporo_remove(elementId)
 }
 
+fn insert_before(parentId: int32, childId: int32, beforeId: int32) -> int32 {
+    return sapporo_insert_before(parentId, childId, beforeId)
+}
+
+fn clone(elementId: int32) -> int32 {
+    return sapporo_clone(elementId)
+}
+
 fn on_click(id: string, callbackId: int32) -> int32 {
     return sapporo_on_click(sapporo_by_id(id), callbackId)
+}
+
+fn on_dblclick(id: string, callbackId: int32) -> int32 {
+    return sapporo_on_dblclick(sapporo_by_id(id), callbackId)
 }
 
 fn on_input(id: string, callbackId: int32) -> int32 {
     return sapporo_on_input(sapporo_by_id(id), callbackId)
 }
 
+fn on_change(id: string, callbackId: int32) -> int32 {
+    return sapporo_on_change(sapporo_by_id(id), callbackId)
+}
+
 fn on_keydown(id: string, callbackId: int32) -> int32 {
     return sapporo_on_keydown(sapporo_by_id(id), callbackId)
+}
+
+fn on_keyup(id: string, callbackId: int32) -> int32 {
+    return sapporo_on_keyup(sapporo_by_id(id), callbackId)
 }
 
 fn on_submit(id: string, callbackId: int32) -> int32 {
     return sapporo_on_submit(sapporo_by_id(id), callbackId)
 }
 
+fn on_focus(id: string, callbackId: int32) -> int32 {
+    return sapporo_on_focus(sapporo_by_id(id), callbackId)
+}
+
+fn on_blur(id: string, callbackId: int32) -> int32 {
+    return sapporo_on_blur(sapporo_by_id(id), callbackId)
+}
+
+fn on_mouseenter(id: string, callbackId: int32) -> int32 {
+    return sapporo_on_mouseenter(sapporo_by_id(id), callbackId)
+}
+
+fn on_mouseleave(id: string, callbackId: int32) -> int32 {
+    return sapporo_on_mouseleave(sapporo_by_id(id), callbackId)
+}
+
 fn set_style(id: string, prop: string, value: string) -> int32 {
     return sapporo_set_style(sapporo_by_id(id), prop, value)
+}
+
+fn get_style(id: string, prop: string) -> string {
+    return sapporo_get_style(sapporo_by_id(id), prop)
 }
 
 fn set_timeout(callbackId: int32, ms: int32) -> int32 {
@@ -128,10 +229,66 @@ fn set_interval(callbackId: int32, ms: int32) -> int32 {
     return sapporo_set_interval(callbackId, ms)
 }
 
+fn clear_timeout(id: int32) -> int32 {
+    return sapporo_clear_timeout(id)
+}
+
+fn clear_interval(id: int32) -> int32 {
+    return sapporo_clear_interval(id)
+}
+
 fn fetch_get(url: string, callbackId: int32) -> int32 {
     return sapporo_fetch_get(url, callbackId)
 }
 
 fn fetch_post(url: string, body: string, callbackId: int32) -> int32 {
     return sapporo_fetch_post(url, body, callbackId)
+}
+
+fn fetch_put(url: string, body: string, callbackId: int32) -> int32 {
+    return sapporo_fetch_put(url, body, callbackId)
+}
+
+fn fetch_delete(url: string, callbackId: int32) -> int32 {
+    return sapporo_fetch_delete(url, callbackId)
+}
+
+fn local_storage_set(key: string, value: string) -> int32 {
+    return sapporo_local_storage_set(key, value)
+}
+
+fn local_storage_get(key: string) -> string {
+    return sapporo_local_storage_get(key)
+}
+
+fn local_storage_remove(key: string) -> int32 {
+    return sapporo_local_storage_remove(key)
+}
+
+fn navigate(url: string) -> int32 {
+    return sapporo_navigate(url)
+}
+
+fn reload() -> int32 {
+    return sapporo_reload()
+}
+
+fn get_url() -> string {
+    return sapporo_get_url()
+}
+
+fn set_url_hash(hash: string) -> int32 {
+    return sapporo_set_url_hash(hash)
+}
+
+fn window_width() -> int32 {
+    return sapporo_window_width()
+}
+
+fn window_height() -> int32 {
+    return sapporo_window_height()
+}
+
+fn reset_memory() -> int32 {
+    return sapporo_reset_memory()
 }
