@@ -1,5 +1,8 @@
 package sapporo
 
+// Re-export stdlib memory operations for convenience
+import "std"
+
 // Low-level WASM imports (not prefixed by import system)
 // These map 1:1 to sapporo.js env module functions
 
@@ -70,6 +73,7 @@ extern fn sapporo_window_width() -> int32
 extern fn sapporo_window_height() -> int32
 
 extern fn sapporo_reset_memory() -> int32
+extern fn sapporo_memory_stats() -> string
 
 // Clean wrappers (prefixed as sapporo:: when imported)
 
@@ -167,6 +171,10 @@ fn insert_before(parentId: int32, childId: int32, beforeId: int32) -> int32 {
 
 fn clone(elementId: int32) -> int32 {
     return sapporo_clone(elementId)
+}
+
+fn set_children(parentId: int32) -> int32 {
+    return sapporo_set_children(parentId)
 }
 
 fn on_click(id: string, callbackId: int32) -> int32 {
@@ -291,4 +299,16 @@ fn window_height() -> int32 {
 
 fn reset_memory() -> int32 {
     return sapporo_reset_memory()
+}
+
+// Memory management helpers (using stdlib)
+
+fn memory_stats() -> string {
+    return sapporo_memory_stats()
+}
+
+// Copy text content from one element to another
+fn copy_text(src_id: string, dst_id: string) -> int32 {
+    let text: string = sapporo_get_text(sapporo_by_id(src_id))
+    return sapporo_set_text(sapporo_by_id(dst_id), text)
 }

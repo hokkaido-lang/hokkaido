@@ -3,9 +3,9 @@ use std::process::Command;
 
 use crate::manifest::{Manifest, MANIFEST_FILE};
 
-pub fn run(force: bool) {
+pub fn run(force: bool, verbose: bool) {
     // Build first
-    crate::build::run(force);
+    crate::build::run(force, verbose);
 
     let manifest = Manifest::load(Path::new(MANIFEST_FILE)).unwrap_or_else(|e| {
         eprintln!("{}", e);

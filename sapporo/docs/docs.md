@@ -71,6 +71,7 @@ The bump allocator starts after the static data region (offset 65536). Call `sap
 - Index 0 is reserved as a null sentinel
 - `sapporo_by_id("foo")` calls `document.getElementById("foo")` and pushes the result into the array
 - The returned integer is used as a handle in all subsequent calls
+- A cache (`Map<string, number>`) avoids duplicate entries when the same element ID is looked up repeatedly
 - Elements are never garbage-collected from the registry (this is by design — it keeps handles stable)
 
 ### Callback model

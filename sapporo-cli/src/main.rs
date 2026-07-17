@@ -4,6 +4,7 @@ mod init;
 mod manifest;
 mod new;
 mod run;
+mod scaffold;
 
 use clap::{Parser, Subcommand};
 
@@ -12,6 +13,10 @@ use clap::{Parser, Subcommand};
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+
+    /// Enable verbose output
+    #[arg(short, long, global = true)]
+    verbose: bool,
 }
 
 #[derive(Subcommand)]
@@ -54,10 +59,10 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::New { name } => new::run(&name),
-        Commands::Init => init::run(),
-        Commands::Build { force } => build::run(force),
-        Commands::Run { force } => run::run(force),
+        Commands::New { name } => new::run(&name, cli.verbose),
+        Commands::Init => init::run(cli.verbose),
+        Commands::Build { force } => build::run(force, cli.verbose),
+        Commands::Run { force } => run::run(force, cli.verbose),
         Commands::Add { packages, npm } => add::run(&packages, npm),
     }
 }

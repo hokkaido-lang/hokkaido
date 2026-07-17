@@ -229,6 +229,21 @@ let template: int32 = sapporo::by_id("template-row")
 let clone: int32 = sapporo::clone(template)
 ```
 
+### `sapporo::set_children(parentId: int32) -> int32`
+
+Remove all children from an element. Useful for clearing a list or container.
+
+```ocaml
+let list: int32 = sapporo::by_id("todo-list")
+sapporo::set_children(list)  // clears all items
+```
+
+Note: `set_children` takes an integer handle. To use it with a string ID, call `sapporo::by_id` first:
+
+```ocaml
+sapporo::set_children(sapporo::by_id("todo-list"))
+```
+
 ---
 
 ## Events
@@ -421,4 +436,22 @@ Reset the bump allocator used for string passing. Call this periodically in long
 ```ocaml
 // In a loop or periodic task:
 sapporo::reset_memory()
+```
+
+### `sapporo::memory_stats() -> string`
+
+Get a summary of memory usage, element registry size, and ID cache size. Useful for debugging memory issues.
+
+```ocaml
+let stats: string = sapporo::memory_stats()
+sapporo::log(stats)
+// Output: "memory: 1024/65536 bytes, elements: 12, cached IDs: 5"
+```
+
+### `sapporo::copy_text(src_id: string, dst_id: string) -> int32`
+
+Copy text content from one element to another. Convenience wrapper that combines `get_text` and `set_text`.
+
+```ocaml
+sapporo::copy_text("source", "destination")
 ```
