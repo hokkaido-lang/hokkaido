@@ -2,7 +2,7 @@
 
 pkgs.rustPlatform.buildRustPackage {
   pname = "sapporo";
-  version = "0.2.4";
+  version = "0.3.0";
 
   src = ./.;
 

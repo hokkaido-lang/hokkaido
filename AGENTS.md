@@ -33,11 +33,13 @@ Keep Cargo.toml and default.nix versions in sync within each project.
 
 | File | Field |
 |------|-------|
-| `default.nix` | `version = "0.19.4"` |
+| `default.nix` | `version = "0.20.0"` |
 | `otaru/Cargo.toml` | `version = "0.7.0"` |
 | `otaru/default.nix` | `version = "0.7.0"` |
-| `sapporo-cli/Cargo.toml` | `version = "0.2.4"` |
-| `sapporo-cli/default.nix` | `version = "0.2.4"` |
+| `sapporo-cli/Cargo.toml` | `version = "0.3.0"` |
+| `sapporo-cli/default.nix` | `version = "0.3.0"` |
+| `Cargo.toml` | `version = "0.3.0"` |
+| `Cargo.toml` | `version = "0.3.0"` |
 | `Cargo.toml` | `version = "0.3.0"` |
 
 ## tools
