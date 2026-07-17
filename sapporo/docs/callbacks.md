@@ -12,7 +12,6 @@ Sapporo uses integer callback IDs for asynchronous operations (events, timers, f
    wasmExports.handle_callback(42)
 
 3. Your WASM module receives the callback and reacts:
-   extern fn handle_callback(id: int) -> void
    fn handle_callback(id: int) -> void {
        if id == 42 {
            // button was clicked
@@ -25,8 +24,13 @@ Sapporo uses integer callback IDs for asynchronous operations (events, timers, f
 Your WASM module must export two callback functions:
 
 ```ocaml
-extern fn handle_callback(id: int) -> void
-extern fn handle_fetch(id: int, response: string, success: int) -> void
+fn handle_callback(id: int) -> void {
+    // handle events and timers
+}
+
+fn handle_fetch(id: int, response: string, success: int) -> void {
+    // handle fetch responses
+}
 ```
 
 `sapporo.js` calls these functions when:
@@ -88,8 +92,6 @@ Parameters:
 Keyboard event callbacks receive the key code as a second argument:
 
 ```ocaml
-extern fn handle_callback(id: int, keyCode: int) -> void
-
 fn handle_callback(id: int, keyCode: int) -> void {
     if id == 10 {
         // search input
@@ -113,9 +115,6 @@ Common key codes:
 package main
 
 import "sapporo"
-
-extern fn handle_callback(id: int) -> void
-extern fn handle_fetch(id: int, response: string, success: int) -> void
 
 fn main() -> int {
     // Register handlers
