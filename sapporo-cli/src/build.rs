@@ -283,7 +283,7 @@ pub fn compile_hk(hokkaido: &str, file: &Path, output: &Path, extra_flags: &[Str
 pub fn link_wasm(wasm_ld: &str, objects: &[PathBuf], output: &Path, ldflags: &[String]) -> bool {
     let mut cmd = Command::new(wasm_ld);
     cmd.arg("--no-entry")
-        .arg("--export=main")
+        .arg("--export-all")
         .arg("--allow-undefined")
         .arg("-o")
         .arg(output);
