@@ -2,7 +2,7 @@
 
 pkgs.rustPlatform.buildRustPackage {
   pname = "sapporo";
-  version = "0.2.2";
+  version = "0.2.3";
 
   src = ./.;
 
@@ -15,6 +15,13 @@ pkgs.rustPlatform.buildRustPackage {
     cp ${../sapporo/sapporo.js} ../sapporo/sapporo.js
     cp ${../sapporo/sapporo/sapporo.hk} ../sapporo/sapporo/sapporo.hk
     cp ${../sapporo/hk.mod} ../sapporo/hk.mod 2>/dev/null || touch ../sapporo/hk.mod
+  '';
+
+  postInstall = ''
+    mkdir -p $out/share/sapporo
+    cp ${../sapporo/sapporo.js} $out/share/sapporo/sapporo.js
+    mkdir -p $out/share/sapporo/sapporo
+    cp ${../sapporo/sapporo/sapporo.hk} $out/share/sapporo/sapporo/sapporo.hk
   '';
 
   meta = with pkgs.lib; {

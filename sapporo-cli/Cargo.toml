@@ -1,6 +1,6 @@
 [package]
 name = "sapporo"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 description = "Web app toolkit for Hokkaido — build, run, and deploy WASM apps"
 
