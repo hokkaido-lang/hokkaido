@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>test-app</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+  #output { margin: 1rem 0; font-size: 24px; color: #e63946; }
+</style>
+</head>
+<body>
+<h1>test-app</h1>
+<p id="output">Loading...</p>
+<script src="sapporo.js"></script>
+<script>
+  Sapporo.load("test-app.wasm").then(m => {
+    m.main();
+  }).catch(err => {
+    document.getElementById("output").textContent = "Error: " + err.message;
+  });
+</script>
+</body>
+</html>
