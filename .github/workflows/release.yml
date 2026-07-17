@@ -49,9 +49,8 @@ jobs:
           # otaru package manager (already bundles its own copy of hokkaido + std)
           cp result-otaru/bin/otaru dist/bin/
           cp -r result-otaru/share/otaru dist/share/otaru
-          # sapporo web app toolkit (bundles sapporo.js + sapporo.hk)
+          # sapporo web app toolkit (library embedded in binary)
           cp result-sapporo/bin/sapporo dist/bin/
-          cp -r result-sapporo/share/sapporo dist/share/sapporo
           tar -C dist -czf hokkaido-${{ matrix.asset_suffix }}.tar.gz bin share
 
       - name: Upload build artifact
