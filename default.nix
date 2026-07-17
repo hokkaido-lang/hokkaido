@@ -2,7 +2,7 @@
 
 pkgs.stdenv.mkDerivation {
   pname = "hokkaido";
-  version = "0.19.3";
+  version = "0.19.4";
 
   src = ./.;
 
