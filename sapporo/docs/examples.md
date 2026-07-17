@@ -81,7 +81,7 @@ fn add_todo() -> void {
 }
 
 fn clear_all() -> void {
-    sapporo::set_children("todo-list")
+    sapporo::set_children(sapporo::by_id("todo-list"))
 }
 ```
 
