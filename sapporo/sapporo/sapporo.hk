@@ -1,8 +1,5 @@
 package sapporo
 
-// Re-export stdlib memory operations for convenience
-import "std"
-
 // Low-level WASM imports (not prefixed by import system)
 // These map 1:1 to sapporo.js env module functions
 
