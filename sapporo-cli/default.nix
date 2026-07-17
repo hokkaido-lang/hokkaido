@@ -8,12 +8,13 @@ pkgs.rustPlatform.buildRustPackage {
 
   cargoLock.lockFile = ./Cargo.lock;
 
-  postInstall = ''
-    # Bundle sapporo library files (needed at runtime to find sapporo.hk and sapporo.js)
-    mkdir -p $out/share/sapporo
-    cp ${../sapporo}/sapporo.js $out/share/sapporo/sapporo.js
-    mkdir -p $out/share/sapporo/sapporo
-    cp ${../sapporo}/sapporo/sapporo.hk $out/share/sapporo/sapporo/sapporo.hk
+  # Copy sapporo library into the build tree so include_bytes! paths resolve
+  # Source root is /build/sapporo-cli, include_bytes! expects ../sapporo/
+  preBuild = ''
+    mkdir -p ../sapporo/sapporo
+    cp ${../sapporo/sapporo.js} ../sapporo/sapporo.js
+    cp ${../sapporo/sapporo/sapporo.hk} ../sapporo/sapporo/sapporo.hk
+    cp ${../sapporo/hk.mod} ../sapporo/hk.mod 2>/dev/null || touch ../sapporo/hk.mod
   '';
 
   meta = with pkgs.lib; {
@@ -23,7 +24,7 @@ pkgs.rustPlatform.buildRustPackage {
       compiler. It compiles .hk files to WebAssembly, bundles the sapporo
       DOM library, and provides dev server integration.
     '';
-    homepage = "https://github.com/jihoo/hokkaido";
+    homepage = "https://github.com/hokkaido-lang/hokkaido";
     license = licenses.asl20;
     maintainers = [];
     mainProgram = "sapporo";
