@@ -33,8 +33,6 @@ package main
 
 import "sapporo"
 
-extern fn handle_callback(id: int) -> void
-
 let next_id: int = 1
 
 fn main() -> int {
@@ -100,9 +98,6 @@ package main
 
 import "sapporo"
 
-extern fn handle_callback(id: int) -> void
-extern fn handle_fetch(id: int, response: string, success: int) -> void
-
 fn main() -> int {
     sapporo::on_click("load-btn", 1)
     sapporo::on_click("save-btn", 2)
@@ -149,8 +144,6 @@ Saving and loading user preferences:
 package main
 
 import "sapporo"
-
-extern fn handle_callback(id: int) -> void
 
 fn main() -> int {
     // Load saved theme
@@ -203,8 +196,6 @@ package main
 
 import "sapporo"
 
-extern fn handle_callback(id: int) -> void
-
 fn main() -> int {
     check_size()
     sapporo::set_interval(1, 1000)
@@ -239,8 +230,6 @@ Using hash-based routing:
 package main
 
 import "sapporo"
-
-extern fn handle_callback(id: int) -> void
 
 fn main() -> int {
     sapporo::on_click("nav-home", 1)
