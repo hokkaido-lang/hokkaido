@@ -1,0 +1,15 @@
+# Single source of truth for all component versions.
+# Run: ./scripts/bump-version.sh <component> <version>
+# Or:  ./scripts/bump-version.sh --apply  (reads this file and updates all files)
+
+[hokkaido]
+version = "0.19.4"
+
+[otaru]
+version = "0.7.0"
+
+[sapporo]
+version = "0.2.4"
+
+[cubical]
+version = "0.3.0"
