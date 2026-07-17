@@ -240,7 +240,7 @@ const Sapporo = (() => {
         if (!el) return 0;
         el.addEventListener("click", () => {
           if (wasmExports && wasmExports.handle_callback)
-            wasmExports.handle_callback(callbackId);
+            wasmExports.handle_callback(BigInt(callbackId));
         });
         return 1;
       },
@@ -250,7 +250,7 @@ const Sapporo = (() => {
         if (!el) return 0;
         el.addEventListener("dblclick", () => {
           if (wasmExports && wasmExports.handle_callback)
-            wasmExports.handle_callback(callbackId);
+            wasmExports.handle_callback(BigInt(callbackId));
         });
         return 1;
       },
@@ -260,7 +260,7 @@ const Sapporo = (() => {
         if (!el) return 0;
         el.addEventListener("input", () => {
           if (wasmExports && wasmExports.handle_callback)
-            wasmExports.handle_callback(callbackId);
+            wasmExports.handle_callback(BigInt(callbackId));
         });
         return 1;
       },
@@ -270,7 +270,7 @@ const Sapporo = (() => {
         if (!el) return 0;
         el.addEventListener("change", () => {
           if (wasmExports && wasmExports.handle_callback)
-            wasmExports.handle_callback(callbackId);
+            wasmExports.handle_callback(BigInt(callbackId));
         });
         return 1;
       },
@@ -280,7 +280,7 @@ const Sapporo = (() => {
         if (!el) return 0;
         el.addEventListener("keydown", (e) => {
           if (wasmExports && wasmExports.handle_callback)
-            wasmExports.handle_callback(callbackId, e.keyCode);
+            wasmExports.handle_callback(BigInt(callbackId), BigInt(e.keyCode));
         });
         return 1;
       },
@@ -290,7 +290,7 @@ const Sapporo = (() => {
         if (!el) return 0;
         el.addEventListener("keyup", (e) => {
           if (wasmExports && wasmExports.handle_callback)
-            wasmExports.handle_callback(callbackId, e.keyCode);
+            wasmExports.handle_callback(BigInt(callbackId), BigInt(e.keyCode));
         });
         return 1;
       },
@@ -301,7 +301,7 @@ const Sapporo = (() => {
         el.addEventListener("submit", (e) => {
           e.preventDefault();
           if (wasmExports && wasmExports.handle_callback)
-            wasmExports.handle_callback(callbackId);
+            wasmExports.handle_callback(BigInt(callbackId));
         });
         return 1;
       },
@@ -311,7 +311,7 @@ const Sapporo = (() => {
         if (!el) return 0;
         el.addEventListener("focus", () => {
           if (wasmExports && wasmExports.handle_callback)
-            wasmExports.handle_callback(callbackId);
+            wasmExports.handle_callback(BigInt(callbackId));
         });
         return 1;
       },
@@ -321,7 +321,7 @@ const Sapporo = (() => {
         if (!el) return 0;
         el.addEventListener("blur", () => {
           if (wasmExports && wasmExports.handle_callback)
-            wasmExports.handle_callback(callbackId);
+            wasmExports.handle_callback(BigInt(callbackId));
         });
         return 1;
       },
@@ -331,7 +331,7 @@ const Sapporo = (() => {
         if (!el) return 0;
         el.addEventListener("mouseenter", () => {
           if (wasmExports && wasmExports.handle_callback)
-            wasmExports.handle_callback(callbackId);
+            wasmExports.handle_callback(BigInt(callbackId));
         });
         return 1;
       },
@@ -341,7 +341,7 @@ const Sapporo = (() => {
         if (!el) return 0;
         el.addEventListener("mouseleave", () => {
           if (wasmExports && wasmExports.handle_callback)
-            wasmExports.handle_callback(callbackId);
+            wasmExports.handle_callback(BigInt(callbackId));
         });
         return 1;
       },
@@ -366,7 +366,7 @@ const Sapporo = (() => {
       sapporo_set_timeout(callbackId, ms) {
         const id = setTimeout(() => {
           if (wasmExports && wasmExports.handle_callback)
-            wasmExports.handle_callback(callbackId);
+            wasmExports.handle_callback(BigInt(callbackId));
         }, ms);
         return id;
       },
@@ -374,7 +374,7 @@ const Sapporo = (() => {
       sapporo_set_interval(callbackId, ms) {
         const id = setInterval(() => {
           if (wasmExports && wasmExports.handle_callback)
-            wasmExports.handle_callback(callbackId);
+            wasmExports.handle_callback(BigInt(callbackId));
         }, ms);
         return id;
       },
@@ -396,11 +396,11 @@ const Sapporo = (() => {
           .then(r => r.text())
           .then(text => {
             if (wasmExports && wasmExports.handle_fetch)
-              wasmExports.handle_fetch(callbackId, writeString(text), 1);
+              wasmExports.handle_fetch(BigInt(callbackId), writeString(text), BigInt(1));
           })
           .catch(err => {
             if (wasmExports && wasmExports.handle_fetch)
-              wasmExports.handle_fetch(callbackId, writeString(err.message), 0);
+              wasmExports.handle_fetch(BigInt(callbackId), writeString(err.message), BigInt(0));
           });
         return 1;
       },
@@ -414,11 +414,11 @@ const Sapporo = (() => {
           .then(r => r.text())
           .then(text => {
             if (wasmExports && wasmExports.handle_fetch)
-              wasmExports.handle_fetch(callbackId, writeString(text), 1);
+              wasmExports.handle_fetch(BigInt(callbackId), writeString(text), BigInt(1));
           })
           .catch(err => {
             if (wasmExports && wasmExports.handle_fetch)
-              wasmExports.handle_fetch(callbackId, writeString(err.message), 0);
+              wasmExports.handle_fetch(BigInt(callbackId), writeString(err.message), BigInt(0));
           });
         return 1;
       },
@@ -432,11 +432,11 @@ const Sapporo = (() => {
           .then(r => r.text())
           .then(text => {
             if (wasmExports && wasmExports.handle_fetch)
-              wasmExports.handle_fetch(callbackId, writeString(text), 1);
+              wasmExports.handle_fetch(BigInt(callbackId), writeString(text), BigInt(1));
           })
           .catch(err => {
             if (wasmExports && wasmExports.handle_fetch)
-              wasmExports.handle_fetch(callbackId, writeString(err.message), 0);
+              wasmExports.handle_fetch(BigInt(callbackId), writeString(err.message), BigInt(0));
           });
         return 1;
       },
@@ -446,11 +446,11 @@ const Sapporo = (() => {
           .then(r => r.text())
           .then(text => {
             if (wasmExports && wasmExports.handle_fetch)
-              wasmExports.handle_fetch(callbackId, writeString(text), 1);
+              wasmExports.handle_fetch(BigInt(callbackId), writeString(text), BigInt(1));
           })
           .catch(err => {
             if (wasmExports && wasmExports.handle_fetch)
-              wasmExports.handle_fetch(callbackId, writeString(err.message), 0);
+              wasmExports.handle_fetch(BigInt(callbackId), writeString(err.message), BigInt(0));
           });
         return 1;
       },
