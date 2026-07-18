@@ -16,8 +16,17 @@ pub fn copy_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Find the bundled std library by walking up from the binary location.
+/// Find the std library by checking HOKKAIDO_STD env var, then relative paths.
 pub fn find_bundled_std() -> Option<String> {
+    // 1. Check HOKKAIDO_STD environment variable
+    if let Ok(std_path) = std::env::var("HOKKAIDO_STD") {
+        let candidate = Path::new(&std_path);
+        if candidate.join("hk.mod").exists() {
+            return Some(std_path);
+        }
+    }
+
+    // 2. Walk up from binary location
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
             let mut dir = parent.to_path_buf();
@@ -37,13 +46,6 @@ pub fn find_bundled_std() -> Option<String> {
         }
     }
 
-    if let Ok(home) = std::env::var("HOKKAIDO_HOME") {
-        let candidate = Path::new(&home).join("../std");
-        if candidate.exists() {
-            return Some(candidate.to_string_lossy().to_string());
-        }
-    }
-
     None
 }
 
@@ -60,7 +62,7 @@ pub fn prepare_std(project_dir: &Path) {
         }
     } else {
         eprintln!("Warning: std/ directory not found (stdlib features unavailable)");
-        eprintln!("Hint: install otaru via Nix or build from the hokkaido repository");
+        eprintln!("Hint: set HOKKAIDO_STD=/path/to/hokkaido/std or install via Nix");
     }
 }
 

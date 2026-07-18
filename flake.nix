@@ -13,7 +13,6 @@
         hokkaido = pkgs.callPackage ./default.nix { };
         otaru = pkgs.callPackage ./otaru/default.nix {
           inherit hokkaido;
-          std = ./std;
         };
         sapporo = pkgs.callPackage ./sapporo-cli/default.nix { };
       in

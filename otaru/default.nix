@@ -1,17 +1,15 @@
 { pkgs ? import <nixpkgs> {}
 , hokkaido ? null
-, std ? null
 }:
 
 let
   hokkaido-bin = if hokkaido != null then hokkaido
     else pkgs.callPackage ../default.nix { };
-  std-src = if std != null then std else ../std;
 in
 
 pkgs.rustPlatform.buildRustPackage {
   pname = "otaru";
-  version = "0.7.0";
+  version = "0.7.1";
 
   src = ./.;
 
@@ -23,10 +21,6 @@ pkgs.rustPlatform.buildRustPackage {
     # Bundle the hokkaido compiler
     mkdir -p $out/bin
     cp ${hokkaido-bin}/bin/hokkaido $out/bin/
-
-    # Bundle the std library
-    mkdir -p $out/share/otaru
-    cp -r ${std-src} $out/share/otaru/std
   '';
 
   meta = with pkgs.lib; {

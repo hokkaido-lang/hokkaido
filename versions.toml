@@ -3,10 +3,10 @@
 # Or:  ./scripts/bump-version.sh --apply  (reads this file and updates all files)
 
 [hokkaido]
-version = "0.20.3"
+version = "0.20.4"
 
 [otaru]
-version = "0.7.0"
+version = "0.7.1"
 
 [sapporo]
 version = "0.3.3"

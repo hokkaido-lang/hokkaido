@@ -46,11 +46,12 @@ jobs:
           # hokkaido compiler binaries (hok-lsp only ships from the hokkaido output)
           cp result-hokkaido/bin/hokkaido dist/bin/
           cp result-hokkaido/bin/hok-lsp  dist/bin/
-          # otaru package manager (already bundles its own copy of hokkaido + std)
+          # otaru package manager (bundles its own copy of hokkaido)
           cp result-otaru/bin/otaru dist/bin/
-          cp -r result-otaru/share/otaru dist/share/otaru
           # sapporo web app toolkit (library embedded in binary)
           cp result-sapporo/bin/sapporo dist/bin/
+          # std library (shared, found via HOKKAIDO_STD or relative path)
+          cp -r std dist/share/std
           tar -C dist -czf hokkaido-${{ matrix.asset_suffix }}.tar.gz bin share
 
       - name: Upload build artifact
