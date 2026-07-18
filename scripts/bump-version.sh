@@ -136,21 +136,11 @@ update_agents_md() {
         return
     fi
 
-    # Replace the version table block
-    sed_inplace '/^| `default.nix` | `version = /c\| `default.nix` | `version = "'"$hokkaido_ver"'"` |' "AGENTS.md"
-    sed_inplace '/^| `otaru\/Cargo.toml` | `version = /c\| `otaru/Cargo.toml` | `version = "'"$otaru_ver"'"` |' "AGENTS.md"
-    sed_inplace '/^| `otaru\/default.nix` | `version = /c\| `otaru/default.nix` | `version = "'"$otaru_ver"'"` |' "AGENTS.md"
-    sed_inplace '/^| `sapporo-cli\/Cargo.toml` | `version = /c\| `sapporo-cli/Cargo.toml` | `version = "'"$sapporo_ver"'"` |' "AGENTS.md"
-    sed_inplace '/^| `sapporo-cli\/default.nix` | `version = /c\| `sapporo-cli/default.nix` | `version = "'"$sapporo_ver"'"` |' "AGENTS.md"
-
-    # Add cubical row if missing
-    if ! grep -q 'cubical' "AGENTS.md"; then
-        # Insert after the sapporo-cli/default.nix row
-        sed_inplace '/^| `sapporo-cli\/default.nix` |.*/a\
-| `Cargo.toml` | `version = "'"$cubical_ver"'"` |' "AGENTS.md"
-    else
-        sed_inplace '/^| `Cargo.toml` | `version = /c\| `Cargo.toml` | `version = "'"$cubical_ver"'"` |' "AGENTS.md"
-    fi
+    # Update the version table (format: | component | version | files |)
+    sed_inplace 's/| hokkaido | [0-9.]* |/| hokkaido | '"$hokkaido_ver"' |/' "AGENTS.md"
+    sed_inplace 's/| otaru | [0-9.]* |/| otaru | '"$otaru_ver"' |/' "AGENTS.md"
+    sed_inplace 's/| sapporo | [0-9.]* |/| sapporo | '"$sapporo_ver"' |/' "AGENTS.md"
+    sed_inplace 's/| cubical | [0-9.]* |/| cubical | '"$cubical_ver"' |/' "AGENTS.md"
 
     echo "  updated AGENTS.md"
 }
