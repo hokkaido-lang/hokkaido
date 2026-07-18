@@ -72,6 +72,63 @@ pub fn find_hokkaido() -> String {
     std::process::exit(1);
 }
 
+/// Find the std library by checking HOKKAIDO_STD env var, then relative paths.
+pub fn find_std() -> Option<String> {
+    // 1. Check HOKKAIDO_STD environment variable
+    if let Ok(std_path) = std::env::var("HOKKAIDO_STD") {
+        let candidate = Path::new(&std_path);
+        if candidate.join("hk.mod").exists() {
+            return Some(std_path);
+        }
+    }
+
+    // 2. Walk up from binary location
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let mut dir = exe_dir.to_path_buf();
+            loop {
+                let candidate = dir.join("std");
+                if candidate.join("hk.mod").exists() {
+                    return Some(candidate.to_string_lossy().to_string());
+                }
+                if !dir.pop() {
+                    break;
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Copy std library into the project if not already present
+pub fn prepare_std(project_dir: &Path, verbose: bool) {
+    if let Some(src) = find_std() {
+        let dst = project_dir.join("std");
+        if !dst.exists() {
+            if let Err(e) = copy_dir_recursive(Path::new(&src), &dst) {
+                eprintln!("Warning: could not copy std library: {}", e);
+            } else if verbose {
+                println!("  std/ prepared from {}", src);
+            }
+        }
+    }
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        if ty.is_dir() {
+            copy_dir_recursive(&entry.path(), &dst.join(entry.file_name()))?;
+        } else {
+            fs::copy(entry.path(), dst.join(entry.file_name()))?;
+        }
+    }
+    Ok(())
+}
+
 /// Find wasm-ld binary
 pub fn find_wasm_ld() -> String {
     for name in &[
@@ -188,6 +245,9 @@ pub fn run(force: bool, verbose: bool) {
 
     // Write embedded sapporo.js to dist/
     write_sapporo_js(dist, verbose);
+
+    // Prepare std library if available
+    prepare_std(Path::new("."), verbose);
 
     // Copy index.html to dist
     if Path::new("index.html").exists() {

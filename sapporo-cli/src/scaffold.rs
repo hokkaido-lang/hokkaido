@@ -90,6 +90,9 @@ pub fn create_project(project_dir: &Path, name: &str, verbose: bool) {
     build::write_sapporo_hk(project_dir, verbose);
     build::write_sapporo_js(project_dir, verbose);
 
+    // Prepare std library if available
+    build::prepare_std(project_dir, verbose);
+
     // src/main.hk
     fs::write(project_dir.join("src/main.hk"), generate_main_hk(name)).unwrap_or_else(|e| {
         eprintln!("Error writing src/main.hk: {}", e);
@@ -148,6 +151,9 @@ pub fn init_project(name: &str, verbose: bool) {
     // Embed sapporo library files into the project
     build::write_sapporo_hk(Path::new("."), verbose);
     build::write_sapporo_js(Path::new("."), verbose);
+
+    // Prepare std library if available
+    build::prepare_std(Path::new("."), verbose);
 
     // src/main.hk if it doesn't exist
     if !Path::new("src/main.hk").exists() {
