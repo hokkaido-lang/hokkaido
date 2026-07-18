@@ -9,6 +9,48 @@ Instructions for AI agents working on this repository.
 3. **Keep READMEs accurate** — they're the first thing users see
 4. **Test your changes** before committing
 
+## Components
+
+### hokkaido (C++ compiler)
+- **Location**: Root directory (`default.nix`, `CMakeLists.txt`)
+- **Language**: C++ (with Rust cubical backend)
+- **Version**: `default.nix` → `version = "..."`
+- **Build**: `cmake .. && make`
+- **Outputs**: `hokkaido` compiler, `hok-lsp` language server
+
+### hok-lsp (Language Server)
+- **Location**: `src-cpp/lsp/`
+- **Language**: C++
+- **Version**: Same as hokkaido (bundled in same build)
+- **Build**: Built automatically with hokkaido
+- **Features**: Diagnostics, hover, completion, go-to-definition, find references
+
+### otaru (Package Manager)
+- **Location**: `otaru/`
+- **Language**: Rust
+- **Version**: `otaru/Cargo.toml` + `otaru/default.nix`
+- **Build**: `cargo build --manifest-path otaru/Cargo.toml`
+- **Features**: Project scaffolding, dependency management, build orchestration
+
+### sapporo (Web App Toolkit)
+- **Location**: `sapporo-cli/` (CLI), `sapporo/` (library)
+- **Language**: Rust (CLI), .hk (library)
+- **Version**: `sapporo-cli/Cargo.toml` + `sapporo-cli/default.nix`
+- **Build**: `cargo build --manifest-path sapporo-cli/Cargo.toml`
+- **Features**: WASM compilation, dev server, DOM bindings
+
+### cubical (Rust Crate)
+- **Location**: Root `Cargo.toml`
+- **Language**: Rust
+- **Version**: `Cargo.toml` → `version = "..."`
+- **Build**: `cargo build`
+
+### std (Standard Library)
+- **Location**: `std/`
+- **Language**: .hk (Hokkaido)
+- **Version**: N/A (ships with hokkaido/otaru/sapporo)
+- **Usage**: `import "std"` in .hk files
+
 ## Version Management
 
 ### Single Source of Truth: `versions.toml`
@@ -22,7 +64,7 @@ All versions live in `versions.toml`. Never edit version numbers directly in oth
 ./scripts/bump-version.sh --commit            # Apply + git commit
 ```
 
-### Components
+### Version Table
 
 | Component | Version | Files Updated |
 |-----------|---------|---------------|
@@ -44,16 +86,20 @@ All versions live in `versions.toml`. Never edit version numbers directly in oth
 When you change functionality, check and update:
 
 1. **README.md** — Project overview, quick start, features
-2. **Relevant component README** — `sapporo-cli/README.md`, etc.
+2. **Component READMEs** — `otaru/README.md`, `sapporo-cli/README.md`, `src-cpp/lsp/README.md`
 3. **`sapporo/docs/*.md`** — API docs, examples, tutorials
-4. **`AGENTS.md`** — This file (version table, workflows)
+4. **`docs/*.md`** — User-facing documentation
+5. **`AGENTS.md`** — This file (version table, workflows)
 
 ### Documentation Checklist
 
-- [ ] API changes → Update `sapporo/docs/api.md`
-- [ ] New examples → Update `sapporo/docs/examples.md`
-- [ ] Architecture changes → Update `sapporo/docs/docs.md`
-- [ ] CLI changes → Update component README
+- [ ] Compiler changes → Update `README.md` (hokkaido section)
+- [ ] LSP changes → Update `src-cpp/lsp/README.md`
+- [ ] Otaru changes → Update `otaru/README.md`
+- [ ] Sapporo API changes → Update `sapporo/docs/api.md`
+- [ ] Sapporo examples → Update `sapporo/docs/examples.md`
+- [ ] Sapporo architecture → Update `sapporo/docs/docs.md`
+- [ ] CLI changes → Update relevant component README
 - [ ] Version bump → Run `./scripts/bump-version.sh --commit`
 
 ## Common Workflows
@@ -92,6 +138,7 @@ hokkaido/
 ├── otaru/               # Package manager (Rust)
 ├── sapporo-cli/         # Web app toolkit CLI (Rust)
 ├── sapporo/             # Web app toolkit library
+├── src-cpp/lsp/         # Language server (C++)
 ├── install.sh           # Official installer
 ├── versions.toml        # Single source of truth for versions
 ├── scripts/             # Automation scripts
@@ -102,10 +149,12 @@ hokkaido/
 
 - **nix**: Use when specific tool is not available
 - **cargo**: Rust package manager
+- **cmake**: C++ build system
 - **./scripts/bump-version.sh**: Version management
 
 ## Code Style
 
+- **C++**: Follow LLVM coding standards
 - **Rust**: Follow standard rustfmt conventions
 - **Shell**: Use `#!/usr/bin/env bash`, `set -euo pipefail`
 - **Nix**: Follow nixpkgs conventions
@@ -114,5 +163,6 @@ hokkaido/
 ## Testing
 
 - Run `cargo test` for Rust components
+- Run `cmake .. && make && ctest` for C++ components
 - Test CLI tools manually after changes
 - Verify examples work before committing
