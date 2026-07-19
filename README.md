@@ -8,8 +8,8 @@ An LLVM-based systems programming language with cubical compile-time evaluation,
 |---------|-------------|----------|
 | [**hokkaido**](#hokkaido-compiler) | Compiler (LLVM + cubical backend) | C++ / Rust |
 | [**hok-lsp**](#hok-lsp) | Language server for IDE support | C++ |
-| [**otaru**](#otaru-package-manager) | Package manager and project scaffold | Rust |
-| [**sapporo**](#sapporo-web-ui) | Web UI library + CLI for WASM apps | JavaScript / Hokkaido / Rust |
+| [**otaru**](#otaru-package-manager) | Package manager, build tool, and web app scaffold | Rust |
+| [**sapporo**](#sapporo-web-ui) | Web UI library (DOM bindings) — CLI merged into otaru | JavaScript / Hokkaido |
 | **cubical** | Compile-time evaluation backend (static lib) | Rust |
 
 ## Quick start
@@ -22,13 +22,13 @@ cd myapp
 otaru run
 ```
 
-### Web app (sapporo)
+### Web app (otaru --web)
 
 ```sh
-sapporo new my-webapp
+otaru new my-webapp --web
 cd my-webapp
-sapporo build    # compile to dist/my-webapp.wasm
-sapporo run      # dev server + open browser
+otaru build    # compile to dist/my-webapp.wasm
+otaru run      # dev server + open browser
 ```
 
 Write your app in `src/main.hk`:
@@ -58,7 +58,6 @@ nix profile install github:hokkaido-lang/hokkaido
 # Individual packages
 nix build github:hokkaido-lang/hokkaido#hokkaido
 nix build github:hokkaido-lang/hokkaido#otaru
-nix build github:hokkaido-lang/hokkaido#sapporo
 ```
 
 The Nix-built `otaru` bundles the `hokkaido` compiler and stdlib automatically.
@@ -75,19 +74,15 @@ cd hokkaido
 mkdir build && cd build
 cmake .. && make
 
-# Build the package manager
+# Build the package manager + build tool (includes web app support)
 cd ../otaru
-cargo build --release
-
-# Build the web app CLI
-cd ../sapporo-cli
 cargo build --release
 ```
 
 Add the binaries to your `PATH`:
 
 ```sh
-export PATH="$PWD/build:$PWD/otaru/target/release:$PWD/sapporo-cli/target/release:$PATH"
+export PATH="$PWD/build:$PWD/otaru/target/release:$PATH"
 ```
 
 ## Documentation
@@ -108,9 +103,8 @@ export PATH="$PWD/build:$PWD/otaru/target/release:$PWD/sapporo-cli/target/releas
 
 ### Tools
 
-- [Otaru package manager](otaru/README.md)
+- [Otaru package manager](otaru/README.md) — includes web app support (`otaru new --web`)
 - [Sapporo web UI library](sapporo/docs/docs.md) — [API reference](sapporo/docs/api.md) — [Examples](sapporo/docs/examples.md)
-- [Sapporo CLI](sapporo-cli/README.md)
 - [Language server (hok-lsp)](src-cpp/lsp/README.md)
 
 ## Standard library

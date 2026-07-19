@@ -1,15 +1,16 @@
+pub mod add;
+pub mod build;
+pub mod cbuild;
+pub mod exec;
+pub mod init;
+pub mod install;
 pub mod manifest;
 pub mod new;
-pub mod init;
-pub mod build;
 pub mod run;
-pub mod add;
-pub mod install;
-pub mod cbuild;
 pub mod template;
+pub mod utils;
 
 use clap::{Parser, Subcommand};
-use std::path::Path;
 
 #[derive(Parser)]
 #[command(name = "otaru", version, about = "Hokkaido package manager and project manager")]
@@ -24,13 +25,19 @@ enum Command {
     New {
         /// Project name
         name: String,
-        /// Create a WebAssembly project template
+        /// Create a web app project (sapporo DOM library, dist/ output, dev server)
+        #[arg(long)]
+        web: bool,
+        /// Create a WebAssembly project template (legacy)
         #[arg(long)]
         wasm: bool,
     },
     /// Initialize the current directory as a Hokkaido project
     Init {
-        /// Initialize as a WebAssembly project
+        /// Initialize as a web app project (sapporo DOM library, dist/ output, dev server)
+        #[arg(long)]
+        web: bool,
+        /// Initialize as a WebAssembly project (legacy)
         #[arg(long)]
         wasm: bool,
     },
@@ -78,14 +85,17 @@ enum Command {
     },
     /// Add a dependency
     Add {
-        /// Dependency name
-        name: String,
+        /// Dependency name(s)
+        packages: Vec<String>,
         /// Git repository URL
         #[arg(long)]
         git: Option<String>,
         /// Local path
         #[arg(long)]
         path: Option<String>,
+        /// Install via npm instead of otaru
+        #[arg(long)]
+        npm: bool,
     },
     /// Install all dependencies
     Install,
@@ -97,8 +107,8 @@ fn main() {
     let cli = Cli::parse();
 
     match &cli.command {
-        Command::New { name, wasm } => new::run(name, *wasm),
-        Command::Init { wasm } => init::run(*wasm),
+        Command::New { name, web, wasm } => new::run(name, *web, *wasm),
+        Command::Init { web, wasm } => init::run(*web, *wasm),
         Command::Build {
             file,
             freestanding,
@@ -107,7 +117,7 @@ fn main() {
             target,
             triple,
         } => {
-            if cbuild::has_build_targets() || cbuild::is_c_project() {
+            if utils::has_build_targets() || utils::is_c_project() {
                 cbuild::run(file.as_deref(), *force, *release, target.as_deref());
             } else {
                 build::run(file.as_deref(), *freestanding, *force, *release, triple.as_deref());
@@ -122,86 +132,16 @@ fn main() {
             run::run(file.as_deref(), *freestanding, *force, *release);
         }
         Command::Exec { name, args } => match name {
-            None => list_scripts(),
-            Some(n) => exec_script(n, args),
+            None => exec::list_scripts(),
+            Some(n) => exec::exec_script(n, args),
         },
         Command::Add {
-            name,
+            packages,
             git,
             path,
-        } => add::run(name, git.as_deref(), path.as_deref()),
+            npm,
+        } => add::run(packages, git.as_deref(), path.as_deref(), *npm),
         Command::Install => install::run(),
-        Command::Clean => clean(),
+        Command::Clean => exec::clean(),
     }
-}
-
-fn clean() {
-    let _ = std::fs::remove_dir_all("build");
-    println!("Cleaned build directory");
-}
-
-fn load_scripts() -> std::collections::BTreeMap<String, String> {
-    let manifest_path = Path::new("otaru.toml");
-    if !manifest_path.exists() {
-        eprintln!("Error: otaru.toml not found");
-        std::process::exit(1);
-    }
-    let manifest = manifest::Manifest::load(manifest_path).unwrap_or_else(|e| {
-        eprintln!("{}", e);
-        std::process::exit(1);
-    });
-    manifest.scripts
-}
-
-fn list_scripts() {
-    let scripts = load_scripts();
-    if scripts.is_empty() {
-        println!("No scripts defined in otaru.toml");
-        println!();
-        println!("Add scripts with:");
-        println!("  [scripts]");
-        println!("  test = \"./build/myapp --test\"");
-        return;
-    }
-    println!("Available scripts:");
-    for (name, cmd) in &scripts {
-        println!("  {} = \"{}\"", name, cmd);
-    }
-    println!();
-    println!("Run with: otaru exec <name>");
-}
-
-fn exec_script(name: &str, args: &[String]) {
-    let scripts = load_scripts();
-
-    let script = scripts.get(name).unwrap_or_else(|| {
-        eprintln!("Error: script '{}' not found in otaru.toml", name);
-        if !scripts.is_empty() {
-            eprintln!();
-            eprintln!("Available scripts:");
-            for (n, _) in &scripts {
-                eprintln!("  {}", n);
-            }
-        }
-        std::process::exit(1);
-    });
-
-    let mut cmd_str = script.clone();
-    for (i, arg) in args.iter().enumerate() {
-        let placeholder = format!("${}", i + 1);
-        cmd_str = cmd_str.replace(&placeholder, arg);
-    }
-
-    eprintln!("$ {}", cmd_str);
-
-    let status = std::process::Command::new("sh")
-        .arg("-c")
-        .arg(&cmd_str)
-        .status()
-        .unwrap_or_else(|e| {
-            eprintln!("Error running script '{}': {}", name, e);
-            std::process::exit(1);
-        });
-
-    std::process::exit(status.code().unwrap_or(1));
 }

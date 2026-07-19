@@ -3,6 +3,8 @@ use std::path::Path;
 use std::process::Command;
 use std::time::UNIX_EPOCH;
 
+use crate::utils::{collect_hk_files, ensure_build_dir, find_hokkaido, find_std_dir};
+
 pub fn run(file: Option<&str>, freestanding: bool, force: bool, release: bool, triple: Option<&str>) {
     if let Some(f) = file {
         compile_single(f, freestanding, force, release, triple);
@@ -25,21 +27,6 @@ pub fn compile_single_or_project(
     }
 }
 
-pub fn has_hk_files() -> bool {
-    let src_dir = Path::new("src");
-    if !src_dir.is_dir() {
-        return false;
-    }
-    if let Ok(entries) = std::fs::read_dir(src_dir) {
-        for entry in entries.flatten() {
-            if entry.path().extension().map_or(false, |e| e == "hk") {
-                return true;
-            }
-        }
-    }
-    false
-}
-
 fn opt_flag(release: bool) -> &'static str {
     if release { "-O2" } else { "-O0" }
 }
@@ -60,20 +47,6 @@ fn file_metadata_token(path: &Path) -> String {
     }
 }
 
-fn collect_hk_files(dir: &Path) -> Vec<std::path::PathBuf> {
-    let mut files = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().map_or(false, |e| e == "hk") {
-                files.push(path);
-            }
-        }
-    }
-    files.sort();
-    files
-}
-
 fn fnv1a_hash(data: &[u8]) -> u64 {
     let mut hash: u64 = 0xcbf29ce484222325;
     for &byte in data {
@@ -85,7 +58,6 @@ fn fnv1a_hash(data: &[u8]) -> u64 {
 
 fn compute_cache_key(src_dir: &Path, hokkaido_bin: &str) -> String {
     let mut tokens: Vec<String> = Vec::new();
-
     tokens.push(file_metadata_token(Path::new(hokkaido_bin)));
 
     for f in &collect_hk_files(src_dir) {
@@ -121,34 +93,6 @@ fn compute_cache_key(src_dir: &Path, hokkaido_bin: &str) -> String {
     format!("{:x}", fnv1a_hash(&buf))
 }
 
-fn find_std_dir() -> Option<std::path::PathBuf> {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            let mut dir = parent.to_path_buf();
-            loop {
-                let candidate = dir.join("std");
-                if candidate.join("hk.mod").exists() {
-                    return Some(candidate);
-                }
-                let nix_candidate = dir.join("share/otaru/std");
-                if nix_candidate.join("hk.mod").exists() {
-                    return Some(nix_candidate);
-                }
-                if !dir.pop() {
-                    break;
-                }
-            }
-        }
-    }
-    if let Ok(home) = std::env::var("HOKKAIDO_HOME") {
-        let candidate = Path::new(&home).join("../std");
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
 fn load_cache(cache_path: &Path) -> Option<String> {
     let file = std::fs::File::open(cache_path).ok()?;
     let mut line = String::new();
@@ -178,22 +122,14 @@ fn compile_single(file: &str, freestanding: bool, force: bool, release: bool, tr
     }
 
     let hokkaido = find_hokkaido();
-    let build_dir = Path::new("build");
-    std::fs::create_dir_all(build_dir).unwrap_or_else(|e| {
-        eprintln!("Error creating build/ directory: {}", e);
-        std::process::exit(1);
-    });
+    ensure_build_dir();
 
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
     let output_base = format!("build/{}", stem);
     let cache_key = compute_cache_key(path.parent().unwrap_or(Path::new(".")), &hokkaido);
 
     if !force {
-        let cache_path = build_dir.join(format!(
-            ".{}.hkbuildcache.{}",
-            stem,
-            cache_suffix(release)
-        ));
+        let cache_path = build_dir().join(format!(".{}.hkbuildcache.{}", stem, cache_suffix(release)));
         if let Some(cached) = load_cache(&cache_path) {
             if cached == cache_key {
                 println!("Cached: {} (unchanged, skipping compilation)", file);
@@ -231,11 +167,7 @@ fn compile_single(file: &str, freestanding: bool, force: bool, release: bool, tr
     }
 
     if !force {
-        let cache_path = build_dir.join(format!(
-            ".{}.hkbuildcache.{}",
-            stem,
-            cache_suffix(release)
-        ));
+        let cache_path = build_dir().join(format!(".{}.hkbuildcache.{}", stem, cache_suffix(release)));
         save_cache(&cache_path, &cache_key);
     }
 
@@ -266,12 +198,7 @@ fn compile_project(freestanding: bool, force: bool, release: bool, triple: Optio
         std::process::exit(1);
     }
 
-    let manifest = crate::manifest::Manifest::load(manifest_path)
-        .unwrap_or_else(|e| {
-            eprintln!("{}", e);
-            std::process::exit(1);
-        });
-
+    let manifest = crate::utils::load_manifest();
     let build_config = manifest.build;
 
     let src_dir = Path::new("src");
@@ -281,14 +208,9 @@ fn compile_project(freestanding: bool, force: bool, release: bool, triple: Optio
     }
 
     let hokkaido = find_hokkaido();
-
-    std::fs::create_dir_all("build").unwrap_or_else(|e| {
-        eprintln!("Error creating build/ directory: {}", e);
-        std::process::exit(1);
-    });
+    ensure_build_dir();
 
     let binary = format!("build/{}", manifest.package.name);
-
     let cache_key = compute_cache_key(src_dir, &hokkaido);
 
     if !force {
@@ -311,16 +233,7 @@ fn compile_project(freestanding: bool, force: bool, release: bool, triple: Optio
         }
     }
 
-    let mut hk_files: Vec<String> = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(src_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().map_or(false, |e| e == "hk") {
-                hk_files.push(path.to_string_lossy().to_string());
-            }
-        }
-    }
-
+    let hk_files = collect_hk_files(src_dir);
     if hk_files.is_empty() {
         eprintln!("Error: no .hk files found in src/");
         std::process::exit(1);
@@ -328,7 +241,7 @@ fn compile_project(freestanding: bool, force: bool, release: bool, triple: Optio
 
     let entry = hk_files
         .iter()
-        .find(|f| f.contains("main"))
+        .find(|f| f.file_stem().map_or(false, |s| s == "main"))
         .unwrap_or(&hk_files[0]);
 
     let mut cmd = Command::new(&hokkaido);
@@ -359,7 +272,7 @@ fn compile_project(freestanding: bool, force: bool, release: bool, triple: Optio
     let obj_path = format!("{}.o", binary);
 
     if freestanding || triple.is_some() {
-        println!("Compiled {} -> {} (freestanding)", entry, obj_path);
+        println!("Compiled {} -> {} (freestanding)", entry.display(), obj_path);
         if triple.is_some() {
             println!("Warning: cross-compiled object files cannot be linked with clang.");
             println!("Use wasm-ld or the appropriate linker for your target.");
@@ -385,12 +298,10 @@ fn compile_extra_sources(config: &crate::manifest::Build, force: bool, release: 
         return Vec::new();
     }
     let sources = crate::cbuild::resolve_sources(&config.sources);
-    let mut objects = Vec::new();
-    for source in &sources {
-        let obj = crate::cbuild::compile_source(source, config, force, release);
-        objects.push(obj);
-    }
-    objects
+    sources
+        .iter()
+        .map(|s| crate::cbuild::compile_source(s, config, force, release))
+        .collect()
 }
 
 fn link_with_clang(
@@ -416,30 +327,23 @@ fn link_with_clang(
         for flag in &config.ldflags {
             cmd.arg(flag);
         }
-
         for dir in &config.lib_dirs {
             cmd.arg(format!("-L{}", dir));
         }
-
         for lib in &config.link {
             cmd.arg(format!("-l{}", lib));
         }
-
         for lib in &config.libraries {
             let resolved = crate::cbuild::resolve_library(lib, &config.lib_dirs);
             cmd.arg(&resolved);
         }
-
         if release {
             cmd.arg("-O2");
         }
     }
 
     let status = cmd.status().unwrap_or_else(|e| {
-        eprintln!(
-            "Error linking with {}: {} (is {} installed?)",
-            output, e, compiler
-        );
+        eprintln!("Error linking with {}: {} (is {} installed?)", output, e, compiler);
         std::process::exit(1);
     });
 
@@ -449,63 +353,6 @@ fn link_with_clang(
     }
 }
 
-pub fn find_hokkaido() -> String {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let candidate = dir.join("hokkaido");
-            if candidate.exists() {
-                return candidate.to_string_lossy().to_string();
-            }
-        }
-    }
-
-    if let Ok(path) = std::env::var("PATH") {
-        for dir in path.split(':') {
-            let candidate = std::path::Path::new(dir).join("hokkaido");
-            if candidate.exists() {
-                return candidate.to_string_lossy().to_string();
-            }
-        }
-    }
-
-    for candidate in &[
-        "./build/hokkaido",
-        "../build/hokkaido",
-        "/usr/local/bin/hokkaido",
-        "/usr/bin/hokkaido",
-    ] {
-        if std::path::Path::new(candidate).exists() {
-            return candidate.to_string();
-        }
-    }
-
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let mut current = dir.to_path_buf();
-            for _ in 0..10 {
-                let candidate = current.join("build").join("hokkaido");
-                if candidate.exists() {
-                    return candidate.to_string_lossy().to_string();
-                }
-                let candidate = current.join("hokkaido").join("build").join("hokkaido");
-                if candidate.exists() {
-                    return candidate.to_string_lossy().to_string();
-                }
-                if !current.pop() {
-                    break;
-                }
-            }
-        }
-    }
-
-    if let Ok(home) = std::env::var("HOKKAIDO_HOME") {
-        let path = std::path::Path::new(&home).join("hokkaido");
-        if path.exists() {
-            return path.to_string_lossy().to_string();
-        }
-    }
-
-    eprintln!("Error: hokkaido compiler not found. Install it or add it to PATH.");
-    eprintln!("Hint: set HOKKAIDO_HOME to the directory containing the hokkaido binary.");
-    std::process::exit(1);
+fn build_dir() -> std::path::PathBuf {
+    std::path::PathBuf::from("build")
 }

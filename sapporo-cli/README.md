@@ -1,8 +1,26 @@
-# sapporo CLI
+# sapporo CLI — DEPRECATED
 
-Command-line tool for building web applications with [Hokkaido](https://github.com/jihoo/hokkaido) compiled to WebAssembly.
+> **This tool is deprecated.** All features have been merged into **otaru**.
+>
+> ```bash
+> # Instead of: sapporo new myapp
+> otaru new myapp --web
+>
+> # Instead of: sapporo build
+> otaru build
+>
+> # Instead of: sapporo run
+> otaru run
+>
+> # Instead of: sapporo add --npm lodash
+> otaru add --npm lodash
+> ```
+>
+> See [otaru/README.md](../otaru/README.md) for full documentation.
 
-Part of the [Hokkaido](https://github.com/jihoo/hokkaido) project.
+---
+
+The rest of this file is preserved for historical reference.
 
 ## Installation
 
@@ -45,37 +63,13 @@ sapporo run
 
 Create a new project in a directory called `<name>`.
 
-```
-my-app/
-├── sapporo.toml       # Build configuration
-├── hk.mod             # Module root marker
-├── index.html         # HTML host page
-├── .gitignore
-└── src/
-    └── main.hk        # Starter code
-```
-
 ### `sapporo init`
 
-Initialize the current directory as a sapporo project. Creates `sapporo.toml`, `hk.mod`, `src/main.hk`, and `index.html` if they don't exist.
+Initialize the current directory as a sapporo project.
 
 ### `sapporo build`
 
 Compile `.hk` sources to WebAssembly and package into `dist/`.
-
-Output:
-```
-dist/
-├── app.wasm           # Compiled WASM module
-├── sapporo.js         # JavaScript loader
-└── index.html         # HTML host page
-```
-
-Flags:
-- `--force` — Force rebuild even if output is up to date
-- `--verbose` — Show compiler and linker commands
-
-**Incremental builds:** `sapporo build` only recompiles `.hk` files that have changed since the last build. Object files are cached in `dist/`.
 
 ### `sapporo run`
 
@@ -89,45 +83,6 @@ Add a dependency to `sapporo.toml`.
 sapporo add sapporo-lib        # Add a Hokkaido package
 sapporo add lodash --npm       # Add an npm package
 ```
-
-## Configuration
-
-`sapporo.toml`:
-
-```toml
-[package]
-name = "my-app"
-version = "0.1.0"
-
-[build]
-sources = ["src"]          # Directories to scan for .hk files
-dist = "dist"              # Output directory
-cflags = []                # Extra hokkaido compiler flags
-ldflags = []               # Extra wasm-ld flags
-```
-
-## Dependencies
-
-The sapporo CLI requires:
-
-- **hokkaido** — the Hokkaido compiler (found via PATH or relative to the sapporo binary)
-- **wasm-ld** — the WASM linker (found via PATH or in the Nix store)
-
-These are bundled in the release tarball.
-
-## Global flags
-
-- `--verbose` — Show detailed output including compiler/linker commands (works with all subcommands)
-
-## How building works
-
-1. `sapporo build` scans the `sources` directories for `.hk` files
-2. Each `.hk` file is compiled to a `.o` (WASM object) using `hokkaido --target wasm32-unknown-unknown`
-3. The `.o` files are linked into a `.wasm` file using `wasm-ld --no-entry --export=main --allow-undefined`
-4. `sapporo.js` and `index.html` are copied to `dist/`
-5. The sapporo library (`sapporo.hk`) is copied to the project root for import resolution
-
-Incremental builds compare `.o` timestamps against `.hk` source files and skip recompilation for unchanged files.
 
 ## License
 

@@ -1,6 +1,6 @@
-# otaru — Hokkaido Package Manager & C/C++ Build Tool
+# otaru — Hokkaido Package Manager & Build Tool
 
-otaru is a package manager and project scaffold for the [Hokkaido](https://github.com/hokkaido-lang/hokkaido) compiler, and a drop-in replacement for Make for C/C++ projects.
+otaru is a package manager, project scaffold, and build tool for the [Hokkaido](https://github.com/hokkaido-lang/hokkaido) compiler. It supports Hokkaido, C/C++, WebAssembly, and **web app** projects (with built-in DOM library and dev server).
 
 ## Installation
 
@@ -45,9 +45,11 @@ With `cargo install`, you need the hokkaido compiler on `PATH` or `HOKKAIDO_HOME
 | Command | Description |
 |---------|-------------|
 | `otaru new <name>` | Scaffold a new project (Hokkaido by default) |
-| `otaru new <name> --wasm` | Scaffold a new WebAssembly project |
+| `otaru new <name> --web` | Scaffold a new web app project (DOM library, dev server) |
+| `otaru new <name> --wasm` | Scaffold a new WebAssembly project (legacy) |
 | `otaru init` | Initialize the current directory as a project (`cargo init` equivalent) |
-| `otaru init --wasm` | Initialize as a WebAssembly project |
+| `otaru init --web` | Initialize as a web app project |
+| `otaru init --wasm` | Initialize as a WebAssembly project (legacy) |
 | `otaru build` | Build the project (auto-detects Hokkaido or C/C++) |
 | `otaru build --release` / `-r` | Build with `-O2` optimizations |
 | `otaru build -f` | Force rebuild, ignoring cache |
@@ -68,6 +70,7 @@ With `cargo install`, you need the hokkaido compiler on `PATH` or `HOKKAIDO_HOME
 | `otaru run <file.hk>` | Compile and run a single file |
 | `otaru add <name> --git <url>` | Add a git dependency |
 | `otaru add <name> --path <path>` | Add a local dependency |
+| `otaru add <name> --npm` | Install via npm and record in manifest |
 | `otaru install` | Clone/fetch all dependencies |
 
 ### C/C++-specific
@@ -136,6 +139,57 @@ otaru run hello.hk
 otaru build kernel.hk --freestanding
 # Produces build/kernel.o — link with ld.lld manually
 ```
+
+## Quick Start — Web App (sapporo DOM)
+
+```bash
+otaru new mywebapp --web
+cd mywebapp
+
+# Edit src/main.hk, then:
+otaru build          # compile to dist/mywebapp.wasm
+otaru run            # build + dev server + open browser
+```
+
+The generated project includes the sapporo DOM library:
+
+```
+mywebapp/
+├── otaru.toml         # [build] type = "web"
+├── hk.mod
+├── std/
+├── sapporo/
+│   └── sapporo.hk     # DOM library (import "sapporo")
+├── sapporo.js          # JavaScript bridge
+├── index.html          # Sapporo.load() host page
+├── .gitignore
+└── src/
+    └── main.hk        # import "sapporo" with DOM calls
+```
+
+**`otaru build`** compiles all `.hk` files to `dist/`, links with `wasm-ld`, and copies
+`sapporo.js` and `index.html` to `dist/`. Incremental — only recompiles changed files.
+
+**`otaru run`** builds the project, starts a Python HTTP server on port 8080 serving
+`dist/`, and opens the browser automatically.
+
+**`index.html`** loads `sapporo.js` and calls `Sapporo.load("mywebapp.wasm")` to
+instantiate the WASM module and call `main()`. No JavaScript knowledge required.
+
+Write your app using the sapporo DOM library:
+
+```ocaml
+package main
+
+import "sapporo"
+
+fn main() -> int {
+    sapporo::set_text("output", "Hello from Hokkaido!")
+    return 0
+}
+```
+
+See [sapporo docs](../sapporo/docs/docs.md) and [examples](../sapporo/docs/examples.md).
 
 ## Quick Start — WebAssembly
 
@@ -302,6 +356,30 @@ mywasm/
     └── serve.sh       # Local dev server
 ```
 
+### Web app project (sapporo DOM)
+
+```
+mywebapp/
+├── otaru.toml         # [build] type = "web"
+├── hk.mod
+├── std/
+├── sapporo/
+│   └── sapporo.hk     # DOM library (imported via import "sapporo")
+├── sapporo.js          # JavaScript bridge (Sapporo.load)
+├── index.html          # Host page with Sapporo.load()
+├── .gitignore          # dist/, sapporo/, node_modules/
+└── src/
+    └── main.hk        # import "sapporo" with DOM calls
+```
+
+Build output goes to `dist/`:
+```
+dist/
+├── mywebapp.wasm       # Compiled WASM module
+├── sapporo.js          # JavaScript loader
+└── index.html          # HTML host page
+```
+
 ### C/C++ project
 
 ```
@@ -366,6 +444,25 @@ type = "wasm"
 
 `otaru build` handles the full pipeline: hokkaido compile → wasm-ld link → `.wasm` output.
 No extra flags needed — the target triple (`wasm32-unknown-unknown`) is selected automatically.
+
+### `otaru.toml` — Web app project (sapporo DOM)
+
+```toml
+[package]
+name = "mywebapp"
+version = "0.1.0"
+
+[build]
+type = "web"
+sources = ["src"]          # Directories to scan for .hk files (default: ["src"])
+dist = "dist"              # Output directory (default: "dist")
+cflags = []                # Extra hokkaido compiler flags
+ldflags = []               # Extra wasm-ld flags
+```
+
+`otaru new <name> --web` generates this config along with `index.html`, `sapporo.js`,
+and `sapporo/sapporo.hk` (the DOM library). `otaru build` compiles to `dist/` and
+`otaru run` starts a dev server with auto browser open.
 
 ### `otaru.toml` — C/C++ project (single target)
 
@@ -449,6 +546,7 @@ links the result together with any C object files and external libraries.
 | `prebuild` | string | — | Shell command to run before compiling |
 | `llvm-config` | string | — | Path to `llvm-config` binary |
 | `llvm-components` | string[] | — | LLVM components (e.g. `["core", "support"]`) |
+| `dist` | string | `"dist"` | Output directory for `type = "web"` builds |
 
 ### `[scripts]` Reference
 
@@ -469,6 +567,7 @@ links the result together with any C object files and external libraries.
 | `sharedlib` | `build/lib<name>.so` | `cc -shared ... -o build/lib<name>.so` |
 | `object` | `build/<stem>.o` | `cc -c <source> -o build/<stem>.o` |
 | `wasm` | `build/<name>.wasm` | hokkaido compile + wasm-ld link |
+| `web` | `dist/<name>.wasm` | hokkaido compile + wasm-ld link + sapporo.js + index.html |
 
 ## Scripts
 

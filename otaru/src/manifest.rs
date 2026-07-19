@@ -79,13 +79,14 @@ pub struct Build {
     pub targets: Option<BTreeMap<String, Build>>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prebuild: Option<String>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "llvm-config")]
     pub llvm_config: Option<String>,
 
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "llvm-components")]
     pub llvm_components: Option<Vec<String>>,
+
+    /// Output directory for web builds (default: "dist")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dist: Option<String>,
 }
 
 fn is_default_compiler(s: &str) -> bool {
@@ -105,9 +106,9 @@ impl Default for Build {
             libraries: vec![],
             lib_dirs: vec![],
             targets: None,
-            prebuild: None,
             llvm_config: None,
             llvm_components: None,
+            dist: None,
         }
     }
 }
@@ -133,5 +134,19 @@ impl Manifest {
             .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
         fs::write(path, content)
             .map_err(|e| format!("Failed to write {}: {}", path.display(), e))
+    }
+}
+
+impl Build {
+    pub fn is_web(&self) -> bool {
+        self.kind == "web"
+    }
+
+    pub fn is_wasm(&self) -> bool {
+        self.kind == "wasm"
+    }
+
+    pub fn dist_dir(&self) -> &str {
+        self.dist.as_deref().unwrap_or("dist")
     }
 }

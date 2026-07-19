@@ -25,19 +25,17 @@ Instructions for AI agents working on this repository.
 - **Build**: Built automatically with hokkaido
 - **Features**: Diagnostics, hover, completion, go-to-definition, find references
 
-### otaru (Package Manager)
+### otaru (Package Manager & Build Tool)
 - **Location**: `otaru/`
 - **Language**: Rust
 - **Version**: `otaru/Cargo.toml` + `otaru/default.nix`
 - **Build**: `cargo build --manifest-path otaru/Cargo.toml`
-- **Features**: Project scaffolding, dependency management, build orchestration
+- **Features**: Project scaffolding, dependency management, build orchestration, C/C++ builds, WASM compilation, web app scaffolding (`--web`), dev server, DOM library bundling, npm dependency support
 
-### sapporo (Web App Toolkit)
-- **Location**: `sapporo-cli/` (CLI), `sapporo/` (library)
-- **Language**: Rust (CLI), .hk (library)
-- **Version**: `sapporo-cli/Cargo.toml` + `sapporo-cli/default.nix`
-- **Build**: `cargo build --manifest-path sapporo-cli/Cargo.toml`
-- **Features**: WASM compilation, dev server, DOM bindings
+### sapporo (Web App Toolkit) — DEPRECATED
+- **Location**: `sapporo/` (library only — DOM bindings `.hk` + `.js`)
+- **Note**: `sapporo-cli/` is **deprecated**. All CLI features merged into otaru (`otaru new --web`, `otaru build`, `otaru run`). Use `otaru` instead.
+- **Library**: `sapporo/sapporo/sapporo.hk` and `sapporo/sapporo.js` are embedded in otaru via `include_bytes!` and bundled into web projects at scaffold time.
 
 ### cubical (Rust Crate)
 - **Location**: Root `Cargo.toml`
@@ -48,7 +46,7 @@ Instructions for AI agents working on this repository.
 ### std (Standard Library)
 - **Location**: `std/`
 - **Language**: .hk (Hokkaido)
-- **Version**: N/A (ships with hokkaido/otaru/sapporo)
+- **Version**: N/A (ships with hokkaido/otaru)
 - **Usage**: `import "std"` in .hk files
 
 ## Version Management
@@ -59,7 +57,7 @@ All versions live in `versions.toml`. Never edit version numbers directly in oth
 
 ```bash
 ./scripts/bump-version.sh --show              # View current versions
-./scripts/bump-version.sh --set sapporo 0.4.1 # Bump a component
+./scripts/bump-version.sh --set otaru 0.8.0   # Bump a component
 ./scripts/bump-version.sh --apply             # Re-apply versions.toml to all files
 ./scripts/bump-version.sh --commit            # Apply + git commit
 ```
@@ -69,7 +67,7 @@ All versions live in `versions.toml`. Never edit version numbers directly in oth
 | Component | Version | Files Updated |
 |-----------|---------|---------------|
 | hokkaido | 0.20.5 | `default.nix` |
-| otaru | 0.7.1 | `otaru/Cargo.toml`, `otaru/default.nix`, `otaru/Cargo.lock` |
+| otaru | 0.8.0 | `otaru/Cargo.toml`, `otaru/default.nix`, `otaru/Cargo.lock` |
 | sapporo | 0.4.0 | `sapporo-cli/Cargo.toml`, `sapporo-cli/default.nix`, `sapporo-cli/Cargo.lock` |
 | cubical | 0.3.0 | `Cargo.toml`, `Cargo.lock` |
 
@@ -86,7 +84,7 @@ All versions live in `versions.toml`. Never edit version numbers directly in oth
 When you change functionality, check and update:
 
 1. **README.md** — Project overview, quick start, features
-2. **Component READMEs** — `otaru/README.md`, `sapporo-cli/README.md`, `src-cpp/lsp/README.md`
+2. **Component READMEs** — `otaru/README.md`, `src-cpp/lsp/README.md`
 3. **`sapporo/docs/*.md`** — API docs, examples, tutorials
 4. **`docs/*.md`** — User-facing documentation
 5. **`AGENTS.md`** — This file (version table, workflows)
@@ -135,9 +133,8 @@ hokkaido/
 ├── default.nix          # Hokkaido compiler (C++)
 ├── Cargo.toml           # Cubical crate (Rust)
 ├── std/                 # Standard library
-├── otaru/               # Package manager (Rust)
-├── sapporo-cli/         # Web app toolkit CLI (Rust)
-├── sapporo/             # Web app toolkit library
+├── otaru/               # Package manager + build tool (Rust)
+├── sapporo/             # Web app library (.hk + .js, embedded in otaru)
 ├── src-cpp/lsp/         # Language server (C++)
 ├── install.sh           # Official installer
 ├── versions.toml        # Single source of truth for versions
