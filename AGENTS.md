@@ -136,6 +136,15 @@ hokkaido/
 ├── otaru/               # Package manager + build tool (Rust)
 ├── sapporo/             # Web app library (.hk + .js, embedded in otaru)
 ├── src-cpp/lsp/         # Language server (C++)
+├── test/                # Compiler tests
+│   ├── cubical/         # Cubical backend tests (inputs/*.cub + *.hk)
+│   ├── phases/          # Compiler phase progression tests
+│   ├── features/        # Individual feature tests
+│   ├── examples/        # Demo/example programs
+│   ├── packages/        # Package/module system tests
+│   └── run.sh           # Test runner script
+├── test-app/            # Sapporo web app test project
+├── testnix/             # Nix build test project
 ├── install.sh           # Official installer
 ├── versions.toml        # Single source of truth for versions
 ├── scripts/             # Automation scripts
@@ -161,5 +170,6 @@ hokkaido/
 
 - Run `cargo test` for Rust components
 - Run `cmake .. && make && ctest` for C++ components
+- Run `./test/run.sh` to run all compiler tests (or `./test/run.sh <category>` for cubical/phases/features/examples/packages)
 - Test CLI tools manually after changes
 - Verify examples work before committing

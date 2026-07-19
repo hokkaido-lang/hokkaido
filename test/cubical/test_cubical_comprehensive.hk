@@ -6,11 +6,11 @@ let n: cubical = "data Nat = | zero : Nat | suc : Nat -> Nat\ndef main : Nat = s
 // ── 2. Bool (int8) ──────────────────────────────────────────
 let t: cubical = "data Bool = | true : Bool | false : Bool\ndef main : Bool = true"
 let f: cubical = "data Bool = | false : Bool | true : Bool\ndef main : Bool = false"
-let b2: cubical = "../test/cubical_bool.cub"
+let b2: cubical = "inputs/cubical_bool.cub"
 
 // ── 3. Pair (LLVM struct) ───────────────────────────────────
 let pair: cubical = "data Nat = | zero : Nat | suc : Nat -> Nat\ndef main : Nat * Nat = (suc (suc zero) , suc zero)"
-let pair_file: cubical = "../test/cubical_pair.cub"
+let pair_file: cubical = "inputs/cubical_pair.cub"
 
 // ── 4. Nested pair ──────────────────────────────────────────
 let nested: cubical = "data Nat = | zero : Nat | suc : Nat -> Nat\ndef main : Nat * (Nat * Nat) = (suc zero , (suc (suc zero) , suc (suc (suc zero))))"

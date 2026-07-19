@@ -9,7 +9,7 @@ namespace math {
 }
 
 fn main() -> int {
-    let n: cubical = "../test/example.cub"
+    let n: cubical = "../cubical/inputs/example.cub"
     let a: int = math::square(5)
     let b: int = math::trig::double_it(3)
     let p: math::Point = p

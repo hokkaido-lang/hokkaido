@@ -8,3 +8,4 @@ Makefile
 target/
 otaru/target
 result-otaru
+testnix/build/

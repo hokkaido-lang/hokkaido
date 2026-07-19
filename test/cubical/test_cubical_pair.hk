@@ -4,7 +4,7 @@ extern fn printf(fmt: string, ...) -> int
 let p1: cubical = "data Nat = | zero : Nat | suc : Nat -> Nat\ndef main : Nat * Nat = (suc (suc zero) , suc zero)"
 
 // Pair from .cub file
-let p2: cubical = "../test/cubical_pair.cub"
+let p2: cubical = "inputs/cubical_pair.cub"
 
 // Nested pair: (1, (2, 0))
 let p3: cubical = "data Nat = | zero : Nat | suc : Nat -> Nat\ndef main : Nat * (Nat * Nat) = (suc zero , (suc (suc zero) , zero))"
