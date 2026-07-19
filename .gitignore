@@ -1,7 +1,5 @@
-# 빌드 디렉토리 전체 제외
 build/
 
-# CMake 관련 임시 파일들
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
@@ -9,4 +7,3 @@ Makefile
 
 target/
 otaru/target
-hokup/target
