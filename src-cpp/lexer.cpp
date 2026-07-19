@@ -1,6 +1,7 @@
 #include "lexer.h"
 
 #include <cctype>
+#include <unordered_map>
 
 char Lexer::peek() {
   if (pos >= input.size()) return '\0';
@@ -295,53 +296,44 @@ Token Lexer::lex_identifier(int l, int c) {
     id += advance();
   }
 
-  if (id == "let") return {TokenType::Let, id, 0, l, c};
-  if (id == "include") return {TokenType::Include, id, 0, l, c};
-  if (id == "import") return {TokenType::Import, id, 0, l, c};
-  if (id == "package") return {TokenType::Package, id, 0, l, c};
-  if (id == "pub") return {TokenType::Pub, id, 0, l, c};
-  if (id == "namespace") return {TokenType::Namespace, id, 0, l, c};
-  if (id == "extern") return {TokenType::Extern, id, 0, l, c};
-  if (id == "fn") return {TokenType::Fn, id, 0, l, c};
-  if (id == "lambda") return {TokenType::Lambda, id, 0, l, c};
-  if (id == "return") return {TokenType::Return, id, 0, l, c};
-  if (id == "asm") return {TokenType::Asm, id, 0, l, c};
-  if (id == "atomic") return {TokenType::Atomic, id, 0, l, c};
-  if (id == "if") return {TokenType::If, id, 0, l, c};
-  if (id == "else") return {TokenType::Else, id, 0, l, c};
-  if (id == "for") return {TokenType::For, id, 0, l, c};
-  if (id == "break") return {TokenType::Break, id, 0, l, c};
-  if (id == "continue") return {TokenType::Continue, id, 0, l, c};
-  if (id == "match") return {TokenType::Match, id, 0, l, c};
-  if (id == "mut") return {TokenType::Mut, id, 0, l, c};
-  if (id == "enum") return {TokenType::Enum, id, 0, l, c};
-  if (id == "null") return {TokenType::Null, id, 0, l, c};
-  if (id == "cubical") return {TokenType::Cubical, id, 0, l, c};
-  if (id == "int") return {TokenType::Int64, id, 0, l, c};
-  if (id == "int8") return {TokenType::Int8, id, 0, l, c};
-  if (id == "int16") return {TokenType::Int16, id, 0, l, c};
-  if (id == "int32") return {TokenType::Int32, id, 0, l, c};
-  if (id == "int64") return {TokenType::Int64, id, 0, l, c};
-  if (id == "uint8") return {TokenType::Uint8, id, 0, l, c};
-  if (id == "uint16") return {TokenType::Uint16, id, 0, l, c};
-  if (id == "uint32") return {TokenType::Uint32, id, 0, l, c};
-  if (id == "uint64") return {TokenType::Uint64, id, 0, l, c};
-  if (id == "float") return {TokenType::Float64, id, 0, l, c};
-  if (id == "float16") return {TokenType::Float16, id, 0, l, c};
-  if (id == "float32") return {TokenType::Float32, id, 0, l, c};
-  if (id == "float64") return {TokenType::Float64, id, 0, l, c};
-  if (id == "bool") return {TokenType::Bool, id, 0, l, c};
-  if (id == "string") return {TokenType::String, id, 0, l, c};
-  if (id == "void") return {TokenType::Void, id, 0, l, c};
-  if (id == "char") return {TokenType::Char, id, 0, l, c};
-  if (id == "struct") return {TokenType::Struct, id, 0, l, c};
-  if (id == "trait") return {TokenType::Trait, id, 0, l, c};
-  if (id == "impl") return {TokenType::Impl, id, 0, l, c};
-  if (id == "region") return {TokenType::Region, id, 0, l, c};
-  if (id == "true") return {TokenType::True, id, 1.0, l, c};
-  if (id == "false") return {TokenType::False, id, 0.0, l, c};
+  const auto &kws = keywords();
+  auto it = kws.find(id);
+  if (it != kws.end()) {
+    double val = (it->second == TokenType::True)  ? 1.0
+               : (it->second == TokenType::False) ? 0.0 : 0.0;
+    return {it->second, id, val, l, c};
+  }
 
   return {TokenType::Identifier, id, 0, l, c};
+}
+
+const std::unordered_map<std::string, TokenType> &Lexer::keywords() {
+  static const std::unordered_map<std::string, TokenType> kw = {
+    {"let", TokenType::Let},       {"fn", TokenType::Fn},
+    {"lambda", TokenType::Lambda}, {"return", TokenType::Return},
+    {"asm", TokenType::Asm},       {"if", TokenType::If},
+    {"else", TokenType::Else},     {"for", TokenType::For},
+    {"break", TokenType::Break},   {"continue", TokenType::Continue},
+    {"atomic", TokenType::Atomic}, {"struct", TokenType::Struct},
+    {"include", TokenType::Include}, {"namespace", TokenType::Namespace},
+    {"extern", TokenType::Extern}, {"trait", TokenType::Trait},
+    {"impl", TokenType::Impl},     {"pub", TokenType::Pub},
+    {"import", TokenType::Import}, {"package", TokenType::Package},
+    {"match", TokenType::Match},   {"enum", TokenType::Enum},
+    {"null", TokenType::Null},     {"mut", TokenType::Mut},
+    {"cubical", TokenType::Cubical}, {"region", TokenType::Region},
+    {"int", TokenType::Int64},     {"int8", TokenType::Int8},
+    {"int16", TokenType::Int16},   {"int32", TokenType::Int32},
+    {"int64", TokenType::Int64},   {"uint8", TokenType::Uint8},
+    {"uint16", TokenType::Uint16}, {"uint32", TokenType::Uint32},
+    {"uint64", TokenType::Uint64}, {"float", TokenType::Float64},
+    {"float16", TokenType::Float16}, {"float32", TokenType::Float32},
+    {"float64", TokenType::Float64}, {"bool", TokenType::Bool},
+    {"string", TokenType::String}, {"void", TokenType::Void},
+    {"char", TokenType::Char},     {"true", TokenType::True},
+    {"false", TokenType::False},
+  };
+  return kw;
 }
 
 Token Lexer::lex_char_literal(int l, int c) {

@@ -26,6 +26,27 @@ inline void cg_error(llvm::raw_ostream &os, Expr *expr, const std::string &msg) 
     os << "error: " << msg << "\n";
 }
 
+inline void cg_error(llvm::raw_ostream &os, Decl *decl, const std::string &msg) {
+  if (decl && decl->line > 0)
+    os << error_at(decl->file, decl->line, decl->col, msg) << "\n";
+  else
+    os << "error: " << msg << "\n";
+}
+
+inline void cg_error(llvm::raw_ostream &os, Stmt *stmt, const std::string &msg) {
+  if (stmt && stmt->line > 0)
+    os << error_at(stmt->file, stmt->line, stmt->col, msg) << "\n";
+  else
+    os << "error: " << msg << "\n";
+}
+
+inline void cg_error(llvm::raw_ostream &os, Pattern *pat, const std::string &msg) {
+  if (pat && pat->line > 0)
+    os << error_at(pat->file, pat->line, pat->col, msg) << "\n";
+  else
+    os << "error: " << msg << "\n";
+}
+
 // =========================================================================
 // Hokkaido Language — Code Generator
 // =========================================================================
@@ -33,6 +54,13 @@ inline void cg_error(llvm::raw_ostream &os, Expr *expr, const std::string &msg) 
 inline bool is_unsigned_type(TypeKind kind) {
   return kind == TypeKind::Uint8 || kind == TypeKind::Uint16 ||
          kind == TypeKind::Uint32 || kind == TypeKind::Uint64;
+}
+
+inline bool needs_type_annotation(TypeKind kind, int pointer_depth = 0, int array_size = 0) {
+  return kind == TypeKind::Fn || kind == TypeKind::Struct || kind == TypeKind::Enum ||
+         kind == TypeKind::Tuple || kind == TypeKind::Slice ||
+         kind == TypeKind::Ref || kind == TypeKind::MutRef ||
+         pointer_depth > 0 || array_size > 0;
 }
 
 class CodeGen {
@@ -99,32 +127,35 @@ private:
 
   // Struct declarations
   void register_struct_decl(StructDecl *decl);
-  llvm::StructType *get_struct_type(const std::string &name);
-  int get_struct_field_index(const std::string &struct_name, const std::string &field_name);
-  TypeAnnotation get_struct_field_type(const std::string &struct_name, const std::string &field_name);
+  [[nodiscard]] int get_struct_field_index(const std::string &struct_name, const std::string &field_name);
+  [[nodiscard]] TypeAnnotation get_struct_field_type(const std::string &struct_name, const std::string &field_name);
   // Generic struct templates (name -> AST)
   std::map<std::string, StructDecl *> struct_templates;
-  std::string struct_mangled_name(const std::string &name,
+  [[nodiscard]] std::string struct_mangled_name(const std::string &name,
                                    const std::vector<TypeAnnotation> &type_args);
-  llvm::StructType *monomorphize_struct(const std::string &name,
+  [[nodiscard]] llvm::StructType *monomorphize_struct(const std::string &name,
                                          const std::vector<TypeAnnotation> &type_args);
 
   // Enum declarations
   void register_enum_decl(AdtDecl *decl);
-  int get_enum_variant_index(const std::string &enum_name, const std::string &variant_name);
-  const std::vector<StructField> *get_enum_variant_fields(
+  [[nodiscard]] int get_enum_variant_index(const std::string &enum_name, const std::string &variant_name);
+  [[nodiscard]] const std::vector<StructField> *get_enum_variant_fields(
       const std::string &enum_name, const std::string &variant_name);
 
   // Resolve the type annotation for an expression without evaluating it
-  TypeAnnotation resolve_expr_type(Expr *expr);
+  [[nodiscard]] TypeAnnotation resolve_expr_type(Expr *expr);
 
   // Get a pointer to the memory location of an lvalue expression
-  llvm::Value *get_lvalue_ptr(Expr *expr, llvm::Type **out_type = nullptr);
+  [[nodiscard]] llvm::Value *get_lvalue_ptr(Expr *expr, llvm::Type **out_type = nullptr);
 
   // Let declarations / statements
   bool gen_let_decl(LetDecl *decl);
   bool gen_global_let_decl(LetDecl *decl);
   bool gen_let_stmt(LetStmt *stmt);
+
+  // Unified let initialization (shared by gen_let_decl and gen_let_stmt)
+  bool gen_let_init(const std::string &name, TypeAnnotation &type_ann,
+                    Expr *init_expr);
   bool alloc_and_store(const std::string &name, TypeKind kind,
                        llvm::Value *init, llvm::Type *llvm_type,
                        TypeAnnotation ann = {});
@@ -144,36 +175,48 @@ private:
   bool gen_for_stmt(ForStmt *stmt);
 
   // Expression evaluation
-  llvm::Value *eval_expr(Expr *expr, llvm::Type *expected_type);
+  [[nodiscard]] llvm::Value *eval_expr(Expr *expr, llvm::Type *expected_type);
+
+  // Expression evaluation — extracted sub-handlers
+  [[nodiscard]] llvm::Value *eval_region_alloc(CallExpr *call);
+  [[nodiscard]] llvm::Value *eval_constructor(ConstructorExpr *ctor, llvm::Type *expected_type);
+  [[nodiscard]] llvm::Value *eval_closure(ClosureExpr *closure, llvm::Type *expected_type);
+  [[nodiscard]] llvm::Value *eval_call(CallExpr *call, llvm::Type *expected_type);
+  [[nodiscard]] llvm::Value *eval_method_call(MethodCallExpr *mcall, llvm::Type *expected_type);
+  [[nodiscard]] llvm::Value *eval_atomic(AtomicExpr *atm);
+  [[nodiscard]] llvm::Value *eval_binary(BinaryExpr *bin, llvm::Type *expected_type);
+  [[nodiscard]] llvm::Value *eval_compound_assign(CompoundAssignExpr *compound);
+  [[nodiscard]] llvm::Value *eval_if_expr(IfExpr *ifexpr, llvm::Type *expected_type);
+  [[nodiscard]] llvm::Value *eval_match(MatchExpr *match, llvm::Type *expected_type);
 
   // Value generators (per-type)
-  llvm::Value *eval_int_init(Expr *expr);
-  llvm::Value *eval_float_init(Expr *expr);
-  llvm::Value *eval_string_init(Expr *expr);
-  llvm::Value *eval_cubical_init(Expr *expr, std::string *debug_out);
+  [[nodiscard]] llvm::Value *eval_int_init(Expr *expr);
+  [[nodiscard]] llvm::Value *eval_float_init(Expr *expr);
+  [[nodiscard]] llvm::Value *eval_string_init(Expr *expr);
+  [[nodiscard]] llvm::Value *eval_cubical_init(Expr *expr, std::string *debug_out);
 
   // Array helpers
-  llvm::Value *eval_array_init(Expr *expr, llvm::ArrayType *array_type);
-  llvm::Value *eval_array_literal(ArrayLitExpr *arr, llvm::ArrayType *array_type);
+  [[nodiscard]] llvm::Value *eval_array_init(Expr *expr, llvm::ArrayType *array_type);
+  [[nodiscard]] llvm::Value *eval_array_literal(ArrayLitExpr *arr, llvm::ArrayType *array_type);
 
   // LLVM type helpers
-  llvm::Type *get_llvm_type(TypeKind kind);
-  llvm::Type *get_llvm_type(const TypeAnnotation &ann);
-  llvm::StructType *get_tuple_type(const std::vector<TypeAnnotation> &elem_types);
-  static std::string tuple_type_key(const std::vector<TypeAnnotation> &elem_types);
-  llvm::StructType *get_slice_type(const TypeAnnotation &elem_ann);
+  [[nodiscard]] llvm::Type *get_llvm_type(TypeKind kind);
+  [[nodiscard]] llvm::Type *get_llvm_type(const TypeAnnotation &ann);
+  [[nodiscard]] llvm::StructType *get_tuple_type(const std::vector<TypeAnnotation> &elem_types);
+  [[nodiscard]] std::string tuple_type_key(const std::vector<TypeAnnotation> &elem_types);
+  [[nodiscard]] llvm::StructType *get_slice_type(const TypeAnnotation &elem_ann);
 
   // Pattern matching helpers
-  llvm::Value *gen_pattern_check(Pattern *pat, llvm::Value *val,
-                                  const TypeAnnotation &val_ann);
+  [[nodiscard]] llvm::Value *gen_pattern_check(Pattern *pat, llvm::Value *val,
+                                   const TypeAnnotation &val_ann);
   bool gen_pattern_bind(Pattern *pat, llvm::Value *val,
                          const TypeAnnotation &val_ann);
 
   // Cubical structured value helpers
-  llvm::Constant *build_cubical_constant(const cubical_value::CubicalValue *val);
-  llvm::Type *build_cubical_type(const cubical_value::CubicalValue *val);
-  std::string mangle_ann(const TypeAnnotation &ann);
-  std::string mangle_name(const std::string &fn_name,
+  [[nodiscard]] llvm::Constant *build_cubical_constant(const cubical_value::CubicalValue *val);
+  [[nodiscard]] llvm::Type *build_cubical_type(const cubical_value::CubicalValue *val);
+  [[nodiscard]] std::string mangle_ann(const TypeAnnotation &ann);
+  [[nodiscard]] std::string mangle_name(const std::string &fn_name,
                            const std::vector<TypeAnnotation> &type_args);
   void substitute_type_params(TypeAnnotation &ann,
                                 const std::vector<std::string> &param_names,
@@ -196,7 +239,7 @@ private:
 
   // Function pointer wrapper helpers (for &fn_name expressions)
   std::map<std::string, llvm::GlobalVariable *> fnval_globals;
-  llvm::GlobalVariable *get_fnval_wrapper(const std::string &fn_name,
+  [[nodiscard]] llvm::GlobalVariable *get_fnval_wrapper(const std::string &fn_name,
                                            llvm::Function *f);
 
   // Source file base directory, used to resolve .cub file paths.

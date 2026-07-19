@@ -88,7 +88,7 @@ Constant *CodeGen::build_cubical_constant(const cubical_value::CubicalValue *val
 Value *CodeGen::eval_cubical_init(Expr *expr, std::string *debug_out) {
   auto *str = dynamic_cast<StringExpr *>(expr);
   if (!str) {
-    errs() << "Error: cubical variable requires a string (inline source or file path)\n";
+    cg_error(errs(), expr, "cubical variable requires a string (inline source or file path)");
     return nullptr;
   }
 
@@ -103,7 +103,7 @@ Value *CodeGen::eval_cubical_init(Expr *expr, std::string *debug_out) {
     }
     std::ifstream ifs(file_path);
     if (!ifs) {
-      errs() << "Error: cannot open cubical file '" << file_path.string() << "'\n";
+      cg_error(errs(), expr, "cannot open cubical file '" + file_path.string() + "'");
       return nullptr;
     }
     cubical_source.assign((std::istreambuf_iterator<char>(ifs)),
@@ -112,7 +112,7 @@ Value *CodeGen::eval_cubical_init(Expr *expr, std::string *debug_out) {
 
   cubical_value cv(cubical_source);
   if (!cv.valid()) {
-    errs() << "Error: cubical evaluation failed: " << cv.error() << "\n";
+    cg_error(errs(), expr, "cubical evaluation failed: " + cv.error());
     return nullptr;
   }
 

@@ -139,7 +139,7 @@ void CodeGen::register_struct_decl(StructDecl *decl) {
   for (auto &field : decl->fields) {
     Type *field_type = get_llvm_type(field.type_ann);
     if (!field_type) {
-      errs() << "Error: invalid field type in struct '" << decl->name << "'\n";
+      cg_error(errs(), decl, "invalid field type in struct '" + decl->name + "'");
       return;
     }
     member_types.push_back(field_type);
@@ -149,12 +149,6 @@ void CodeGen::register_struct_decl(StructDecl *decl) {
   st->setBody(member_types);
   struct_types[decl->name] = st;
   struct_fields[decl->name] = fields_info;
-}
-
-StructType *CodeGen::get_struct_type(const std::string &name) {
-  auto it = struct_types.find(name);
-  if (it == struct_types.end()) return nullptr;
-  return it->second;
 }
 
 int CodeGen::get_struct_field_index(const std::string &struct_name,
@@ -230,60 +224,13 @@ int CodeGen::get_enum_variant_index(const std::string &enum_name,
 }
 
 // -------------------------------------------------------------------------
-// Type annotation helpers
+// Type annotation → string (used for cache keys)
 // -------------------------------------------------------------------------
-
-static std::string type_ann_to_string(const TypeAnnotation &ann) {
-  switch (ann.kind) {
-    case TypeKind::Void:    return "void";
-    case TypeKind::Int8:    return "i8";
-    case TypeKind::Int16:   return "i16";
-    case TypeKind::Int32:   return "i32";
-    case TypeKind::Int64:   return "i64";
-    case TypeKind::Uint8:   return "u8";
-    case TypeKind::Uint16:  return "u16";
-    case TypeKind::Uint32:  return "u32";
-    case TypeKind::Uint64:  return "u64";
-    case TypeKind::Float16: return "f16";
-    case TypeKind::Float32: return "f32";
-    case TypeKind::Float64: return "f64";
-    case TypeKind::Bool:    return "bool";
-    case TypeKind::String:  return "str";
-    case TypeKind::Char:    return "char";
-    case TypeKind::Cubical: return "cub";
-    case TypeKind::Struct:
-    case TypeKind::TypeParam: {
-      std::string s = ann.struct_name;
-      for (auto &c : s) if (c == ':') c = '_';
-      return s;
-    }
-    case TypeKind::Tuple: {
-      std::string s = "tup";
-      for (auto &et : ann.tuple_types)
-        s += "_" + type_ann_to_string(et);
-      return s;
-    }
-    case TypeKind::Slice:
-      return "slice_" + type_ann_to_string(ann.tuple_types[0]);
-    case TypeKind::Ref:
-      return "ref_" + type_ann_to_string(ann.tuple_types[0]);
-    case TypeKind::MutRef:
-      return "mutref_" + type_ann_to_string(ann.tuple_types[0]);
-    case TypeKind::Fn: {
-      std::string s = "fn";
-      for (size_t pi = 0; pi + 1 < ann.tuple_types.size(); pi++)
-        s += "_" + type_ann_to_string(ann.tuple_types[pi]);
-      s += "_to_" + type_ann_to_string(ann.tuple_types.back());
-      return s;
-    }
-  }
-  return "?";
-}
 
 std::string CodeGen::tuple_type_key(const std::vector<TypeAnnotation> &elem_types) {
   std::string key = "tuple";
   for (auto &et : elem_types)
-    key += "_" + type_ann_to_string(et);
+    key += "_" + mangle_ann(et);
   return key;
 }
 
@@ -306,7 +253,7 @@ llvm::StructType *CodeGen::get_tuple_type(const std::vector<TypeAnnotation> &ele
 
 llvm::StructType *CodeGen::get_slice_type(const TypeAnnotation &elem_ann) {
   Type *elem_type = get_llvm_type(elem_ann);
-  std::string key = "slice_" + type_ann_to_string(elem_ann);
+  std::string key = "slice_" + mangle_ann(elem_ann);
   auto it = slice_type_cache.find(key);
   if (it != slice_type_cache.end()) return it->second;
 

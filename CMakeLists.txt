@@ -51,6 +51,10 @@ set(HOKKAIDO_SOURCES
     src-cpp/cubical.cpp
     src-cpp/lexer.cpp
     src-cpp/parser.cpp
+    src-cpp/parser_types.cpp
+    src-cpp/parser_decls.cpp
+    src-cpp/parser_stmts.cpp
+    src-cpp/parser_exprs.cpp
     src-cpp/codegen.cpp
     src-cpp/codegen_types.cpp
     src-cpp/codegen_expr.cpp
@@ -82,6 +86,10 @@ set(HOK_LSP_SOURCES
     src-cpp/lsp/lsp.cpp
     src-cpp/lexer.cpp
     src-cpp/parser.cpp
+    src-cpp/parser_types.cpp
+    src-cpp/parser_decls.cpp
+    src-cpp/parser_stmts.cpp
+    src-cpp/parser_exprs.cpp
 )
 
 add_executable(hok-lsp ${HOK_LSP_SOURCES})

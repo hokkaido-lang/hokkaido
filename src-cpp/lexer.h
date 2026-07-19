@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 
 // =========================================================================
 // Hokkaido Language — Lexer
@@ -50,6 +51,8 @@ class Lexer {
   void skip_whitespace();
   void skip_line_comment();
   void skip_block_comment();
+
+  static const std::unordered_map<std::string, TokenType> &keywords();
 
 public:
   Lexer(const std::string &src) : input(src) {}

@@ -26,8 +26,7 @@ bool CodeGen::check_region_lifetime(ReturnStmt *stmt) {
   if (!stmt->value) return true;
   if (auto *id = dynamic_cast<IdentExpr *>(stmt->value.get())) {
     if (region_allocated_vars.count(id->name)) {
-      errs() << "Error: cannot return pointer '" << id->name
-             << "' — region will be freed before the function returns\n";
+      cg_error(errs(), stmt, "cannot return pointer '" + id->name + "' — region will be freed before the function returns");
       return false;
     }
   }
@@ -57,7 +56,7 @@ bool CodeGen::gen_stmt(Stmt *stmt) {
     Value *v = eval_expr(expr->expr.get(), Type::getInt64Ty(Context));
     return v != nullptr;
   }
-  errs() << "Error: unknown statement type\n";
+  cg_error(errs(), stmt, "unknown statement type");
   return false;
 }
 
@@ -74,7 +73,7 @@ bool CodeGen::gen_return_stmt(ReturnStmt *stmt) {
   }
 
   if (!stmt->value) {
-    errs() << "Error: non-void function must return a value\n";
+    cg_error(errs(), stmt, "non-void function must return a value");
     return false;
   }
 
@@ -165,7 +164,7 @@ bool CodeGen::gen_for_stmt(ForStmt *stmt) {
 bool CodeGen::gen_break_stmt(BreakStmt *stmt) {
   if (stmt->label.empty()) {
     if (loop_stack.empty()) {
-      errs() << "Error: 'break' outside of loop\n";
+      cg_error(errs(), stmt, "'break' outside of loop");
       return false;
     }
     Builder.CreateBr(loop_stack.back().end_bb);
@@ -177,14 +176,14 @@ bool CodeGen::gen_break_stmt(BreakStmt *stmt) {
       return true;
     }
   }
-  errs() << "Error: no loop with label '" << stmt->label << "' for break\n";
+  cg_error(errs(), stmt, "no loop with label '" + stmt->label + "' for break");
   return false;
 }
 
 bool CodeGen::gen_continue_stmt(ContinueStmt *stmt) {
   if (stmt->label.empty()) {
     if (loop_stack.empty()) {
-      errs() << "Error: 'continue' outside of loop\n";
+      cg_error(errs(), stmt, "'continue' outside of loop");
       return false;
     }
     Builder.CreateBr(loop_stack.back().update_bb);
@@ -196,7 +195,7 @@ bool CodeGen::gen_continue_stmt(ContinueStmt *stmt) {
       return true;
     }
   }
-  errs() << "Error: no loop with label '" << stmt->label << "' for continue\n";
+  cg_error(errs(), stmt, "no loop with label '" + stmt->label + "' for continue");
   return false;
 }
 

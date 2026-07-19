@@ -24,7 +24,7 @@ Value *CodeGen::gen_pattern_check(Pattern *pat, Value *val,
       return Builder.CreateFCmpOEQ(val, lit_val);
     if (val->getType()->isPointerTy())
       return Builder.CreateICmpEQ(val, lit_val);
-    errs() << "Error: unsupported type for literal pattern\n";
+    cg_error(errs(), pat, "unsupported type for literal pattern");
     return nullptr;
   }
 
@@ -60,8 +60,7 @@ Value *CodeGen::gen_pattern_check(Pattern *pat, Value *val,
     if (is_variant) {
       int vi = get_enum_variant_index(val_ann.struct_name, sp_short);
       if (vi < 0) {
-        errs() << "Error: '" << sp->struct_name << "' is not a variant of enum '"
-               << val_ann.struct_name << "'\n";
+        cg_error(errs(), pat, "'" + sp->struct_name + "' is not a variant of enum '" + val_ann.struct_name + "'");
         return nullptr;
       }
       variant_data_idx = 1 + vi;
@@ -75,8 +74,7 @@ Value *CodeGen::gen_pattern_check(Pattern *pat, Value *val,
         std::string struct_key = val_ann.struct_name + "::" + sp_short;
         int idx = get_struct_field_index(struct_key, field_name);
         if (idx < 0) {
-          errs() << "Error: variant '" << sp->struct_name
-                 << "' has no field '" << field_name << "'\n";
+          cg_error(errs(), pat, "variant '" + sp->struct_name + "' has no field '" + field_name + "'");
           return nullptr;
         }
         Value *field_val = Builder.CreateExtractValue(val,
@@ -91,15 +89,14 @@ Value *CodeGen::gen_pattern_check(Pattern *pat, Value *val,
 
     StructType *st = dyn_cast<StructType>(val->getType());
     if (!st) {
-      errs() << "Error: struct pattern on non-struct value\n";
+      cg_error(errs(), pat, "struct pattern on non-struct value");
       return nullptr;
     }
     Value *cond = ConstantInt::getTrue(Context);
     for (auto &[field_name, sub_pat] : sp->fields) {
       int idx = get_struct_field_index(sp->struct_name, field_name);
       if (idx < 0) {
-        errs() << "Error: struct '" << sp->struct_name << "' has no field '"
-               << field_name << "'\n";
+        cg_error(errs(), pat, "struct '" + sp->struct_name + "' has no field '" + field_name + "'");
         return nullptr;
       }
       Value *field_val = Builder.CreateExtractValue(val, {(unsigned)idx}, field_name);
@@ -111,7 +108,7 @@ Value *CodeGen::gen_pattern_check(Pattern *pat, Value *val,
     return cond;
   }
 
-  errs() << "Error: unknown pattern type\n";
+  cg_error(errs(), pat, "unknown pattern type");
   return nullptr;
 }
 
@@ -175,6 +172,6 @@ bool CodeGen::gen_pattern_bind(Pattern *pat, Value *val,
     return true;
   }
 
-  errs() << "Error: unknown pattern type in bind\n";
+  cg_error(errs(), pat, "unknown pattern type in bind");
   return false;
 }
