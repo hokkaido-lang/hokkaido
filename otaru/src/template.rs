@@ -2,11 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::manifest::{Build, Manifest, Package};
-use crate::utils::find_std_dir;
-
-// Embed sapporo library files at compile time (same relative path as sapporo-cli used)
-const SAPPORO_HK: &[u8] = include_bytes!("../../sapporo/sapporo/sapporo.hk");
-const SAPPORO_JS: &[u8] = include_bytes!("../../sapporo/sapporo.js");
+use crate::utils::{find_sapporo_hk, find_sapporo_js, find_std_dir};
 
 /// Copy a directory recursively.
 pub fn copy_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -121,6 +117,12 @@ fn write_generic_main_hk(project_dir: &Path) {
 /// Write sapporo.hk to a directory's sapporo/ subdirectory for compiler import resolution.
 /// Used by both scaffolding and cbuild (web builds).
 pub fn write_sapporo_hk_to(project_dir: &Path) {
+    let src = find_sapporo_hk().unwrap_or_else(|| {
+        eprintln!("Error: sapporo.hk not found.");
+        eprintln!("Install sapporo library or set HOKKAIDO_SAPPORO to the sapporo directory.");
+        std::process::exit(1);
+    });
+
     let hk_dir = project_dir.join("sapporo");
     let hk_file = hk_dir.join("sapporo.hk");
 
@@ -129,8 +131,8 @@ pub fn write_sapporo_hk_to(project_dir: &Path) {
         std::process::exit(1);
     });
 
-    fs::write(&hk_file, SAPPORO_HK).unwrap_or_else(|e| {
-        eprintln!("Error writing {}: {}", hk_file.display(), e);
+    fs::copy(&src, &hk_file).unwrap_or_else(|e| {
+        eprintln!("Error copying {}: {}", src.display(), e);
         std::process::exit(1);
     });
 
@@ -143,8 +145,15 @@ pub fn write_sapporo_hk_to(project_dir: &Path) {
 /// Write sapporo.js to a directory.
 /// Used by both scaffolding and cbuild (web builds).
 pub fn write_sapporo_js_to(dest_dir: &Path) {
-    fs::write(dest_dir.join("sapporo.js"), SAPPORO_JS).unwrap_or_else(|e| {
-        eprintln!("Error writing sapporo.js: {}", e);
+    let src = find_sapporo_js().unwrap_or_else(|| {
+        eprintln!("Error: sapporo.js not found.");
+        eprintln!("Install sapporo library or set HOKKAIDO_SAPPORO to the sapporo directory.");
+        std::process::exit(1);
+    });
+
+    let dst = dest_dir.join("sapporo.js");
+    fs::copy(&src, &dst).unwrap_or_else(|e| {
+        eprintln!("Error copying sapporo.js: {}", e);
         std::process::exit(1);
     });
 }

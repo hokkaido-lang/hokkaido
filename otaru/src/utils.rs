@@ -133,6 +133,103 @@ pub fn find_std_dir() -> Option<PathBuf> {
 }
 
 // ---------------------------------------------------------------------------
+// Sapporo library discovery (DOM bindings)
+// ---------------------------------------------------------------------------
+
+/// Finds sapporo.hk (the Hokkaido DOM library).
+/// Returns the path to sapporo.hk if found.
+pub fn find_sapporo_hk() -> Option<PathBuf> {
+    // 1. HOKKAIDO_SAPPORO env var
+    if let Ok(sapporo_path) = std::env::var("HOKKAIDO_SAPPORO") {
+        let candidate = Path::new(&sapporo_path).join("sapporo.hk");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+        // Also check sapporo/sapporo.hk subdirectory layout
+        let candidate = Path::new(&sapporo_path).join("sapporo").join("sapporo.hk");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    // 2. Walk up from binary location
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let mut dir = parent.to_path_buf();
+            loop {
+                // Dev tree: <root>/sapporo/sapporo/sapporo.hk
+                let candidate = dir.join("sapporo").join("sapporo").join("sapporo.hk");
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+                // Nix layout: <root>/share/otaru/sapporo/sapporo.hk
+                let candidate = dir.join("share/otaru/sapporo/sapporo.hk");
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+                if !dir.pop() {
+                    break;
+                }
+            }
+        }
+    }
+
+    // 3. HOKKAIDO_HOME fallback
+    if let Ok(home) = std::env::var("HOKKAIDO_HOME") {
+        let candidate = Path::new(&home).join("../sapporo/sapporo/sapporo.hk");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    None
+}
+
+/// Finds sapporo.js (the JavaScript bridge).
+/// Returns the path to sapporo.js if found.
+pub fn find_sapporo_js() -> Option<PathBuf> {
+    // 1. HOKKAIDO_SAPPORO env var
+    if let Ok(sapporo_path) = std::env::var("HOKKAIDO_SAPPORO") {
+        let candidate = Path::new(&sapporo_path).join("sapporo.js");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    // 2. Walk up from binary location
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let mut dir = parent.to_path_buf();
+            loop {
+                // Dev tree: <root>/sapporo/sapporo.js
+                let candidate = dir.join("sapporo").join("sapporo.js");
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+                // Nix layout: <root>/share/otaru/sapporo/sapporo.js
+                let candidate = dir.join("share/otaru/sapporo/sapporo.js");
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+                if !dir.pop() {
+                    break;
+                }
+            }
+        }
+    }
+
+    // 3. HOKKAIDO_HOME fallback
+    if let Ok(home) = std::env::var("HOKKAIDO_HOME") {
+        let candidate = Path::new(&home).join("../sapporo/sapporo.js");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    None
+}
+
+// ---------------------------------------------------------------------------
 // File utilities
 // ---------------------------------------------------------------------------
 
