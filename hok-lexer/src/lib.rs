@@ -10,7 +10,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
     Eof,
-    Let, Fn, Lambda, Return, Asm, If, Else, For, Break, Continue, Atomic,
+    Let, Fn, Lambda, Return, Asm, If, Else, For, While, In, Break, Continue, Atomic,
     Struct, Include, Namespace, Extern,
     Trait, Impl,
     Pub, Import, Package,
@@ -28,7 +28,7 @@ pub enum TokenType {
     AndAnd, OrOr, BitOr, Xor, Shr, Shl,
     PlusEq, MinusEq, StarEq, SlashEq, PercentEq,
     AndEq, OrEq, XorEq, ShlEq, ShrEq,
-    Semicolon, Comma, Colon, ColonColon, Dot, Ellipsis,
+    Semicolon, Comma, Colon, ColonColon, Dot, DotDot, DotDotEq, Ellipsis,
     Newline,
     LParen, RParen, LBrace, RBrace,
     LSquare, RSquare,
@@ -68,7 +68,9 @@ impl Lexer {
             ("let", TokenType::Let),       ("fn", TokenType::Fn),
             ("lambda", TokenType::Lambda), ("return", TokenType::Return),
             ("asm", TokenType::Asm),       ("if", TokenType::If),
-            ("else", TokenType::Else),     ("for", TokenType::For),
+            ("else", TokenType::Else),                 ("for", TokenType::For),
+            ("while", TokenType::While),
+            ("in", TokenType::In),
             ("break", TokenType::Break),   ("continue", TokenType::Continue),
             ("atomic", TokenType::Atomic), ("struct", TokenType::Struct),
             ("include", TokenType::Include), ("namespace", TokenType::Namespace),
@@ -218,9 +220,17 @@ impl Lexer {
             return (Token { ty: TokenType::Colon, num_val: 0.0, line: l, col: c }, ":".to_string());
         }
         if ch == '.' {
+            if self.peek_offset(1) == '.' && self.peek_offset(2) == '=' {
+                self.advance(); self.advance(); self.advance();
+                return (Token { ty: TokenType::DotDotEq, num_val: 0.0, line: l, col: c }, "..=".to_string());
+            }
             if self.peek_offset(1) == '.' && self.peek_offset(2) == '.' {
                 self.advance(); self.advance(); self.advance();
                 return (Token { ty: TokenType::Ellipsis, num_val: 0.0, line: l, col: c }, "...".to_string());
+            }
+            if self.peek_offset(1) == '.' {
+                self.advance(); self.advance();
+                return (Token { ty: TokenType::DotDot, num_val: 0.0, line: l, col: c }, "..".to_string());
             }
             self.advance();
             return (Token { ty: TokenType::Dot, num_val: 0.0, line: l, col: c }, ".".to_string());
@@ -404,9 +414,12 @@ impl Lexer {
             num.push(self.advance());
         }
         if self.pos < self.input.len() && self.peek() == '.' {
-            num.push(self.advance());
-            while self.pos < self.input.len() && self.peek().is_ascii_digit() {
+            // Don't consume `.` if followed by `.` (range) or `=` (range inclusive)
+            if self.peek_offset(1) != '.' && self.peek_offset(1) != '=' {
                 num.push(self.advance());
+                while self.pos < self.input.len() && self.peek().is_ascii_digit() {
+                    num.push(self.advance());
+                }
             }
         }
         let val: f64 = num.parse().unwrap_or(0.0);
@@ -813,11 +826,29 @@ mod tests {
 
     #[test]
     fn for_loop() {
-        // `0..10` → number absorbs `0.` as float, then `.10` → Dot + Number(10)
         assert_eq!(lex_types("for i in 0..10 { }"), vec![
-            TokenType::For, TokenType::Identifier, TokenType::Identifier,
-            TokenType::Number, TokenType::Dot, TokenType::Number,
+            TokenType::For, TokenType::Identifier, TokenType::In,
+            TokenType::Number, TokenType::DotDot, TokenType::Number,
             TokenType::LBrace, TokenType::RBrace,
+        ]);
+    }
+
+    #[test]
+    fn for_loop_inclusive() {
+        assert_eq!(lex_types("for i in 0..=10 { }"), vec![
+            TokenType::For, TokenType::Identifier, TokenType::In,
+            TokenType::Number, TokenType::DotDotEq, TokenType::Number,
+            TokenType::LBrace, TokenType::RBrace,
+        ]);
+    }
+
+    #[test]
+    fn while_loop() {
+        assert_eq!(lex_types("while x > 0 { x = x - 1 }"), vec![
+            TokenType::While, TokenType::Identifier, TokenType::Greater,
+            TokenType::Number, TokenType::LBrace, TokenType::Identifier,
+            TokenType::Equals, TokenType::Identifier, TokenType::Minus,
+            TokenType::Number, TokenType::RBrace,
         ]);
     }
 

@@ -8,7 +8,7 @@
 
 enum class TokenType {
   Eof,
-  Let, Fn, Lambda, Return, Asm, If, Else, For, Break, Continue, Atomic, Struct, Include, Namespace, Extern,
+  Let, Fn, Lambda, Return, Asm, If, Else, For, While, In, Break, Continue, Atomic, Struct, Include, Namespace, Extern,
   Trait, Impl,
   Pub, Import, Package,
   Match, Enum,
@@ -24,7 +24,7 @@ enum class TokenType {
   AndAnd, OrOr, BitOr, Xor, Shr, Shl,
   PlusEq, MinusEq, StarEq, SlashEq, PercentEq,
   AndEq, OrEq, XorEq, ShlEq, ShrEq,
-  Semicolon, Comma, Colon, ColonColon, Dot, Ellipsis,
+  Semicolon, Comma, Colon, ColonColon, Dot, DotDot, DotDotEq, Ellipsis,
   Newline,
   LParen, RParen, LBrace, RBrace,
   LSquare, RSquare,

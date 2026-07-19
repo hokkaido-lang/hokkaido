@@ -56,6 +56,20 @@ inline bool is_unsigned_type(TypeKind kind) {
          kind == TypeKind::Uint32 || kind == TypeKind::Uint64;
 }
 
+inline TypeKind infer_typekind_from_llvm(llvm::Type *ty) {
+  if (!ty) return TypeKind::Void;
+  if (ty->isIntegerTy(1))  return TypeKind::Bool;
+  if (ty->isIntegerTy(8))  return TypeKind::Int8;
+  if (ty->isIntegerTy(16)) return TypeKind::Int16;
+  if (ty->isIntegerTy(32)) return TypeKind::Int32;
+  if (ty->isIntegerTy(64)) return TypeKind::Int64;
+  if (ty->isHalfTy())      return TypeKind::Float16;
+  if (ty->isFloatTy())     return TypeKind::Float32;
+  if (ty->isDoubleTy())    return TypeKind::Float64;
+  if (ty->isPointerTy())   return TypeKind::String;
+  return TypeKind::Int64; // fallback
+}
+
 inline bool needs_type_annotation(TypeKind kind, int pointer_depth = 0, int array_size = 0) {
   return kind == TypeKind::Fn || kind == TypeKind::Struct || kind == TypeKind::Enum ||
          kind == TypeKind::Tuple || kind == TypeKind::Slice ||
@@ -268,6 +282,7 @@ private:
   std::vector<LoopInfo> loop_stack;
   bool gen_break_stmt(BreakStmt *stmt);
   bool gen_continue_stmt(ContinueStmt *stmt);
+  bool gen_while_stmt(WhileStmt *stmt);
   bool gen_region_stmt(RegionStmt *stmt);
 
   // Region lifetime tracking helpers

@@ -1,0 +1,87 @@
+// Test: match as expression + integer/char patterns
+
+enum Opt {
+    Some { val: int64 }
+    None
+}
+
+fn main() -> int64 {
+    // Test 1: match as expression in let (int patterns)
+    let x = 42
+    let label = match x {
+        0 => 1
+        1 => 2
+        _ => 3
+    }
+
+    // Test 2: match with integer literal patterns
+    let v = 2
+    let result = match v {
+        1 => 10
+        2 => 20
+        3 => 30
+        _ => 99
+    }
+
+    // Test 3: match with char patterns
+    let ch = 'a'
+    let val = match ch {
+        'a' => 1
+        'b' => 2
+        'c' => 3
+        _ => 0
+    }
+
+    // Test 4: match in arithmetic expression
+    let w = 1
+    let computed = match w {
+        0 => 100
+        1 => 200
+        _ => 0
+    } + 50
+
+    // Test 5: enum match as expression (inferred type)
+    let opt: Opt = Opt::Some { 77 }
+    let opt_val = match opt {
+        Opt::Some { val: n } => n
+        Opt::None => 0
+    }
+
+    // Test 6: nested match as expression
+    let a = 1
+    let b = 2
+    let nested = match a {
+        0 => match b {
+            0 => 10
+            _ => 20
+        }
+        _ => 30
+    }
+
+    // Test 7: match in return with explicit type (was already working)
+    let opt2: Opt = Opt::Some { 88 }
+    let opt2_val: int64 = match opt2 {
+        Opt::Some { val: n } => n
+        Opt::None => 0
+    }
+
+    // Test 8: negative number patterns
+    let neg = -1
+    let neg_result = match neg {
+        -1 => 10
+        0 => 20
+        1 => 30
+        _ => 0
+    }
+
+    // Test 9: bool patterns
+    let flag = true
+    let bool_val = match flag {
+        true => 1
+        false => 0
+    }
+
+    // label=3, result=20, val=1, computed=250, opt_val=77, nested=30, opt2_val=88, neg_result=10, bool_val=1
+    // 3+20+1+250+77+30+88+10+1 = 480
+    return label + result + val + computed + opt_val + nested + opt2_val + neg_result + bool_val
+}

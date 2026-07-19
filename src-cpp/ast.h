@@ -12,6 +12,7 @@
 
 enum class TypeKind {
   Void,
+  Infer,  // type inferred from init expression
   Int8,
   Int16,
   Int32,
@@ -330,6 +331,12 @@ struct ForStmt : Stmt {
   std::unique_ptr<Stmt> init;
   std::unique_ptr<Expr> condition;
   std::unique_ptr<Expr> update;
+  std::vector<std::unique_ptr<Stmt>> body;
+};
+
+struct WhileStmt : Stmt {
+  std::string label;
+  std::unique_ptr<Expr> condition;
   std::vector<std::unique_ptr<Stmt>> body;
 };
 

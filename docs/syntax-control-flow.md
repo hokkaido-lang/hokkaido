@@ -54,6 +54,43 @@ if a {
 The `if` construct is also an **expression** that produces a value when an `else` branch
 is present (see [If-expressions](/docs/syntax-expressions#if-expressions)).
 
+## While loop
+
+A `while` loop repeats its body as long as a condition is truthy:
+
+```
+while condition {
+    body
+}
+```
+
+The condition is evaluated before each iteration. If falsy on the first check, the body
+never executes. The condition is coerced to `bool` (non-zero is truthy).
+
+```
+let i: int = 0
+while i < 10 {
+    i = i + 1
+}
+// i is 10
+```
+
+`while` supports `break`, `continue`, and labeled break/continue — the same as `for`:
+
+```
+let x: int = 0
+'outer: while x < 100 {
+    let y: int = 0
+    while y < 10 {
+        if x + y > 15 {
+            break 'outer
+        }
+        y = y + 1
+    }
+    x = x + 1
+}
+```
+
 ## For loop
 
 A `for` loop has three parts: initializer, condition, and update expression, separated
@@ -78,19 +115,6 @@ for let i: int = 0; i < 10; i = i + 1 {
 }
 ```
 
-### While-like loop
-
-Omit the init and update for a while loop:
-
-```
-let done: bool = false
-for ; done; {
-    // runs while done is false
-    // ...
-    done = true
-}
-```
-
 ### Infinite loop
 
 Omit all three parts:
@@ -99,6 +123,55 @@ Omit all three parts:
 for ;; {
     // runs forever — exit with break or return
 }
+```
+
+## For-in loop
+
+A `for-in` loop iterates over a range of integers using `..` (exclusive) or `..=`
+(inclusive):
+
+```
+for i in start..end {
+    body
+}
+```
+
+The variable `i` is declared by the loop (no `let` keyword needed) and takes values
+from `start` up to but not including `end`. The `..=` form includes the upper bound:
+
+```
+// exclusive: i = 0, 1, 2, 3, 4
+for i in 0..5 {
+    // ...
+}
+
+// inclusive: i = 0, 1, 2, 3, 4, 5
+for i in 0..=5 {
+    // ...
+}
+```
+
+The range expressions are evaluated once before the loop starts. The loop variable is
+an `int64` and can be used freely in the body. `break`, `continue`, and labels work
+as with any other loop:
+
+```
+'outer: for i in 0..10 {
+    for j in 0..10 {
+        if i + j >= 15 {
+            break 'outer
+        }
+    }
+}
+```
+
+### Desugaring
+
+For-in loops are syntactic sugar for a C-style `for` loop. `for i in a..b` desugars to:
+
+```
+for let i = a; i < b; i = i + 1 { ... }       // exclusive (..)
+for let i = a; i <= b; i = i + 1 { ... }      // inclusive (..=)
 ```
 
 ### Break
@@ -171,45 +244,129 @@ for let i: int = 0; i < 10; i += 1 {
 
 ## Match
 
-The `match` expression performs pattern matching on an enum value, dispatching to the
-arm that corresponds to the variant's tag.
+The `match` expression performs pattern matching on a value, dispatching to the
+arm whose pattern matches. It works with enums, integers, characters, and booleans.
 
 ```
 match value {
-    Variant1 { field1, field2 } => {
-        // body using field1, field2
-    }
-    Variant2 { field } => {
-        // body using field
-    }
+    pattern1 => expr_or_block
+    pattern2 => expr_or_block
     // ...
 }
 ```
 
-Each arm consists of a variant name, an optional field-binding list in curly braces,
-`=>`, and a body block.
+### Enum patterns
 
-### Destructuring fields
-
-The fields listed inside the curly braces are bound to local variables of the same name
-and type as the enum variant's fields. These local variables are visible only inside the
-arm's body.
+Matching on an enum value binds the variant's fields:
 
 ```
 enum Shape {
-    Circle { radius: float64 },
-    Rect { w: float64, h: float64 },
+    Circle { radius: float64 }
+    Rect { w: float64, h: float64 }
 }
 
 fn area(s: Shape) -> float64 {
-    match s {
-        Circle { radius } => {
-            return 3.14159 * radius * radius
-        }
-        Rect { w, h } => {
-            return w * h
-        }
+    return match s {
+        Shape::Circle { radius } => 3.14159 * radius * radius
+        Shape::Rect { w, h } => w * h
     }
+}
+```
+
+### Integer patterns
+
+Integer literals can be used as patterns:
+
+```
+let v: int = 2
+let label: int = match v {
+    1 => 10
+    2 => 20
+    3 => 30
+    _ => 99
+}
+```
+
+Negative integer literals work too:
+
+```
+let x: int = -1
+let r: int = match x {
+    -1 => 10
+    0 => 20
+    1 => 30
+    _ => 0
+}
+```
+
+### Char patterns
+
+Character literals can be used as patterns:
+
+```
+let ch: char = 'a'
+let val: int = match ch {
+    'a' => 1
+    'b' => 2
+    'c' => 3
+    _ => 0
+}
+```
+
+### Bool patterns
+
+Boolean literals `true` and `false` work as patterns:
+
+```
+let flag: bool = true
+let v: int = match flag {
+    true => 1
+    false => 0
+}
+```
+
+### Wildcard pattern
+
+The `_` pattern matches anything and acts as a catch-all:
+
+```
+let x: int = 42
+let v: int = match x {
+    0 => 100
+    _ => 999     // matches everything else
+}
+```
+
+### Match as expression
+
+`match` is an expression — it evaluates to a value. The type is inferred from the arms:
+
+```
+let x: int = 42
+let label: int = match x {
+    0 => 1
+    1 => 2
+    _ => 3
+}
+```
+
+`match` can be used anywhere an expression is expected — in arithmetic, function calls,
+return statements, or nested inside other expressions:
+
+```
+let w: int = 1
+let computed: int = match w {
+    0 => 100
+    1 => 200
+    _ => 0
+} + 50
+
+let nested: int = match a {
+    0 => match b {
+        0 => 10
+        _ => 20
+    }
+    _ => 30
 }
 ```
 
@@ -219,17 +376,6 @@ The compiler emits a **warning** when not all enum variants are covered by match
 If no arm matches (which can happen with unmatched variants), a default null value is
 returned. Future versions may make this a hard error or require an explicit `_ => {}`
 catch-all arm.
-
-### Non-enum match
-
-Matching on non-enum types (integers, strings) is not supported. Only enum-tagged dispatch
-is available.
-
-### Expression context
-
-`match` is an expression. The body blocks evaluate to whatever they evaluate to, but
-currently the result is not unified across arms — each arm executes its body for side
-effects and/or `return`. A future version may allow match to yield a value.
 
 ## Region
 

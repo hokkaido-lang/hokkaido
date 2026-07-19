@@ -93,6 +93,9 @@ TypeAnnotation CodeGen::resolve_expr_type(Expr *expr) {
   }
   if (auto *ifexpr = dynamic_cast<IfExpr *>(expr))
     return resolve_expr_type(ifexpr->then_expr.get());
+  if (auto *match = dynamic_cast<MatchExpr *>(expr))
+    if (!match->arms.empty())
+      return resolve_expr_type(match->arms[0].expr.get());
   if (auto *tup = dynamic_cast<TupleExpr *>(expr)) {
     TypeAnnotation ann = {TypeKind::Tuple};
     for (auto &el : tup->elements)
@@ -396,6 +399,16 @@ Value *CodeGen::eval_match(MatchExpr *match, Type *expected_type) {
   Value *val = eval_expr(match->value.get(), val_type);
   if (!val) return nullptr;
 
+  // Infer return type from first arm when expected_type is not provided
+  if (!expected_type) {
+    if (!match->arms.empty()) {
+      TypeAnnotation arm_ann = resolve_expr_type(match->arms[0].expr.get());
+      if (arm_ann.kind != TypeKind::Void)
+        expected_type = get_llvm_type(arm_ann);
+    }
+    if (!expected_type) expected_type = Type::getInt64Ty(Context);
+  }
+
   auto saved_named_values = named_values;
   Function *fn = Builder.GetInsertBlock()->getParent();
   AllocaInst *result_alloca = Builder.CreateAlloca(expected_type, nullptr, "match_result");
@@ -439,7 +452,14 @@ Value *CodeGen::eval_binary(BinaryExpr *bin, Type *expected_type) {
   Value *r = eval_expr(bin->right.get(), expected_type);
   if (!l || !r) return nullptr;
 
-  bool is_float = expected_type && expected_type->isFPOrFPVectorTy();
+  // Auto-promote int to float when types are mixed
+  if (l->getType()->isFloatingPointTy() && r->getType()->isIntegerTy()) {
+    r = Builder.CreateSIToFP(r, l->getType());
+  } else if (r->getType()->isFloatingPointTy() && l->getType()->isIntegerTy()) {
+    l = Builder.CreateSIToFP(l, r->getType());
+  }
+
+  bool is_float = l->getType()->isFloatingPointTy();
 
   // Pointer arithmetic: ptr + idx, ptr - idx
   if ((bin->op == BinOp::Add || bin->op == BinOp::Sub) &&
@@ -475,32 +495,36 @@ Value *CodeGen::eval_binary(BinaryExpr *bin, Type *expected_type) {
     case BinOp::Mod:
       return is_unsigned ? Builder.CreateURem(l, r) : Builder.CreateSRem(l, r);
     case BinOp::Eq: {
-      Value *cmp = Builder.CreateICmpEQ(l, r);
+      Value *cmp = is_float ? Builder.CreateFCmpOEQ(l, r) : Builder.CreateICmpEQ(l, r);
       return (expected_type && !expected_type->isIntegerTy(1))
                  ? Builder.CreateZExt(cmp, expected_type) : cmp;
     }
     case BinOp::Ne: {
-      Value *cmp = Builder.CreateICmpNE(l, r);
+      Value *cmp = is_float ? Builder.CreateFCmpONE(l, r) : Builder.CreateICmpNE(l, r);
       return (expected_type && !expected_type->isIntegerTy(1))
                  ? Builder.CreateZExt(cmp, expected_type) : cmp;
     }
     case BinOp::Less: {
-      Value *cmp = is_unsigned ? Builder.CreateICmpULT(l, r) : Builder.CreateICmpSLT(l, r);
+      Value *cmp = is_float ? Builder.CreateFCmpOLT(l, r)
+                  : (is_unsigned ? Builder.CreateICmpULT(l, r) : Builder.CreateICmpSLT(l, r));
       return (expected_type && !expected_type->isIntegerTy(1))
                  ? Builder.CreateZExt(cmp, expected_type) : cmp;
     }
     case BinOp::Greater: {
-      Value *cmp = is_unsigned ? Builder.CreateICmpUGT(l, r) : Builder.CreateICmpSGT(l, r);
+      Value *cmp = is_float ? Builder.CreateFCmpOGT(l, r)
+                  : (is_unsigned ? Builder.CreateICmpUGT(l, r) : Builder.CreateICmpSGT(l, r));
       return (expected_type && !expected_type->isIntegerTy(1))
                  ? Builder.CreateZExt(cmp, expected_type) : cmp;
     }
     case BinOp::Le: {
-      Value *cmp = is_unsigned ? Builder.CreateICmpULE(l, r) : Builder.CreateICmpSLE(l, r);
+      Value *cmp = is_float ? Builder.CreateFCmpOLE(l, r)
+                  : (is_unsigned ? Builder.CreateICmpULE(l, r) : Builder.CreateICmpSLE(l, r));
       return (expected_type && !expected_type->isIntegerTy(1))
                  ? Builder.CreateZExt(cmp, expected_type) : cmp;
     }
     case BinOp::Ge: {
-      Value *cmp = is_unsigned ? Builder.CreateICmpUGE(l, r) : Builder.CreateICmpSGE(l, r);
+      Value *cmp = is_float ? Builder.CreateFCmpOGE(l, r)
+                  : (is_unsigned ? Builder.CreateICmpUGE(l, r) : Builder.CreateICmpSGE(l, r));
       return (expected_type && !expected_type->isIntegerTy(1))
                  ? Builder.CreateZExt(cmp, expected_type) : cmp;
     }
@@ -1013,6 +1037,8 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
   if (auto *num = dynamic_cast<NumberExpr *>(expr)) {
     if (expected_type && expected_type->isFPOrFPVectorTy())
       return ConstantFP::get(expected_type, num->value);
+    if (!expected_type && num->value != (int64_t)num->value)
+      return ConstantFP::get(Type::getDoubleTy(Context), num->value);
     Type *t = expected_type ? expected_type : Type::getInt64Ty(Context);
     return ConstantInt::get(t, (int64_t)num->value);
   }

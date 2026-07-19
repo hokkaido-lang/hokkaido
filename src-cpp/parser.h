@@ -81,6 +81,7 @@ private:
   std::unique_ptr<ReturnStmt> parse_return_stmt();
   std::unique_ptr<IfStmt> parse_if_stmt();
   std::unique_ptr<ForStmt> parse_for_stmt();
+  std::unique_ptr<WhileStmt> parse_while_stmt();
   std::unique_ptr<BreakStmt> parse_break_stmt();
   std::unique_ptr<ContinueStmt> parse_continue_stmt();
   std::unique_ptr<Stmt> parse_region_stmt();

@@ -240,20 +240,27 @@ There are no implicit conversions except:
 
 ### Declaration
 
-Variables are declared with `let`, which always requires a type annotation and an initializer:
+Variables are declared with `let`. A type annotation is optional — if omitted, the type
+is inferred from the initializer:
 
 ```
-let name: type = expression
+let name: type = expression     // explicit type
+let name = expression           // type inferred
 ```
 
 ```
-let count: int = 0
-let label: string = "hello"
-let ptr: int* = &count
-let flag: bool = true
-let arr: int[3] = [10, 20, 30]
-let p: Point = Point { x: 1, y: 2 }
+let count: int = 0              // explicit
+let label: string = "hello"     // explicit
+let x = 42                      // inferred as int64
+let pi = 3.14                   // inferred as float64 (fractional → float)
+let flag = true                 // inferred as bool
+let arr: int[3] = [10, 20, 30] // explicit
+let p = Point { x: 1, y: 2 }  // inferred as Point
 ```
+
+Type inference works for integer literals (infers `int64`), float literals (infers `float64`),
+booleans, strings, enum values, and struct constructors. The type annotation is required when
+the initializer is a function call or when the type cannot be unambiguously determined.
 
 ### Mutability
 

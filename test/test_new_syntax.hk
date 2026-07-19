@@ -1,0 +1,102 @@
+// Test: let type inference
+fn test_let_inference() -> int64 {
+    let a = 100
+    let b = 200
+    let result = a + b
+    let c: int64 = 300
+    return result + c
+}
+
+// Test: while loop
+fn test_while_loop() -> int64 {
+    let i = 0
+    let sum = 0
+    while i < 10 {
+        sum = sum + i
+        i = i + 1
+    }
+    return sum
+}
+
+// Test: for-in exclusive range
+fn test_for_in_exclusive() -> int64 {
+    let total = 0
+    for j in 0..5 {
+        total = total + j
+    }
+    return total
+}
+
+// Test: for-in inclusive range
+fn test_for_in_inclusive() -> int64 {
+    let fact = 1
+    for k in 1..=5 {
+        fact = fact * k
+    }
+    return fact
+}
+
+// Test: while with break
+fn test_while_break() -> int64 {
+    let x = 0
+    while true {
+        if x == 7 {
+            break
+        }
+        x = x + 1
+    }
+    return x
+}
+
+// Test: while with continue
+fn test_while_continue() -> int64 {
+    let y = 0
+    let skipped = 0
+    while y < 10 {
+        y = y + 1
+        if y == 5 {
+            continue
+        }
+        skipped = skipped + 1
+    }
+    return skipped
+}
+
+// Test: nested while
+fn test_nested_while() -> int64 {
+    let outer = 0
+    let count = 0
+    while outer < 3 {
+        let inner = 0
+        while inner < 4 {
+            count = count + 1
+            inner = inner + 1
+        }
+        outer = outer + 1
+    }
+    return count
+}
+
+// Test: for-in with break
+fn test_for_in_break() -> int64 {
+    let found = 0
+    for ii in 0..100 {
+        if ii == 42 {
+            found = ii
+            break
+        }
+    }
+    return found
+}
+
+fn main() -> int64 {
+    let r1 = test_let_inference()     // 600
+    let r2 = test_while_loop()        // 45
+    let r3 = test_for_in_exclusive()  // 10
+    let r4 = test_for_in_inclusive()  // 120
+    let r5 = test_while_break()       // 7
+    let r6 = test_while_continue()    // 9
+    let r7 = test_nested_while()      // 12
+    let r8 = test_for_in_break()      // 42
+    return r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8
+}

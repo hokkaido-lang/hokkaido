@@ -582,22 +582,23 @@ bool Parser::parse_let_common(TypeAnnotation &ann, std::string &name,
   name = cur_tok.text;
   next_token();
 
-  if (cur_tok.type != TokenType::Colon) {
-    set_error("expected ':' after variable name");
-    return false;
-  }
-  next_token();
+  // Optional type annotation: `let name = expr` or `let name: Type = expr`
+  if (cur_tok.type == TokenType::Colon) {
+    next_token();
+    ann = parse_type_annotation();
+    if (has_error) return false;
 
-  ann = parse_type_annotation();
-  if (has_error) return false;
-
-  if (ann.kind == TypeKind::Void) {
-    set_error("variable cannot have void type");
-    return false;
+    if (ann.kind == TypeKind::Void) {
+      set_error("variable cannot have void type");
+      return false;
+    }
+  } else {
+    // No type annotation — infer from init expression
+    ann.kind = TypeKind::Infer;
   }
 
   if (cur_tok.type != TokenType::Equals) {
-    set_error("expected '=' after type");
+    set_error("expected '=' after " + std::string(ann.kind == TypeKind::Infer ? "name" : "type"));
     return false;
   }
   next_token();

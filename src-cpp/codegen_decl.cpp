@@ -80,6 +80,16 @@ bool CodeGen::gen_global_let_decl(LetDecl *decl) {
 
 bool CodeGen::gen_let_init(const std::string &name, TypeAnnotation &type_ann,
                            Expr *init_expr) {
+  // Type inference: evaluate init first, then determine type
+  if (type_ann.kind == TypeKind::Infer) {
+    Value *init_val = eval_expr(init_expr, nullptr);
+    if (!init_val) return false;
+    Type *init_ty = init_val->getType();
+    type_ann.kind = infer_typekind_from_llvm(init_ty);
+    Type *llvm_type = get_llvm_type(type_ann);
+    return alloc_and_store(name, type_ann.kind, init_val, llvm_type, type_ann);
+  }
+
   Type *llvm_type = get_llvm_type(type_ann);
   if (!llvm_type) return false;
 

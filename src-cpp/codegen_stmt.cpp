@@ -46,6 +46,8 @@ bool CodeGen::gen_stmt(Stmt *stmt) {
     return gen_if_stmt(if_);
   if (auto *for_ = dynamic_cast<ForStmt *>(stmt))
     return gen_for_stmt(for_);
+  if (auto *while_ = dynamic_cast<WhileStmt *>(stmt))
+    return gen_while_stmt(while_);
   if (auto *brk = dynamic_cast<BreakStmt *>(stmt))
     return gen_break_stmt(brk);
   if (auto *cont = dynamic_cast<ContinueStmt *>(stmt))
@@ -154,6 +156,35 @@ bool CodeGen::gen_for_stmt(ForStmt *stmt) {
     Value *v = eval_expr(stmt->update.get(), Type::getInt64Ty(Context));
     if (!v) return false;
   }
+  if (!Builder.GetInsertBlock()->getTerminator())
+    Builder.CreateBr(cond_bb);
+
+  Builder.SetInsertPoint(end_bb);
+  return true;
+}
+
+bool CodeGen::gen_while_stmt(WhileStmt *stmt) {
+  Function *fn = Builder.GetInsertBlock()->getParent();
+
+  BasicBlock *cond_bb = BasicBlock::Create(Context, "while.cond", fn);
+  BasicBlock *body_bb = BasicBlock::Create(Context, "while.body", fn);
+  BasicBlock *end_bb = BasicBlock::Create(Context, "while.end", fn);
+
+  Builder.CreateBr(cond_bb);
+
+  Builder.SetInsertPoint(cond_bb);
+  Value *cond = eval_expr(stmt->condition.get(), nullptr);
+  if (!cond) return false;
+  if (!cond->getType()->isIntegerTy(1))
+    cond = Builder.CreateICmpNE(cond, ConstantInt::get(cond->getType(), 0));
+  Builder.CreateCondBr(cond, body_bb, end_bb);
+
+  Builder.SetInsertPoint(body_bb);
+  loop_stack.push_back({stmt->label, cond_bb, end_bb});
+  for (auto &s : stmt->body) {
+    if (!gen_stmt(s.get())) return false;
+  }
+  loop_stack.pop_back();
   if (!Builder.GetInsertBlock()->getTerminator())
     Builder.CreateBr(cond_bb);
 
