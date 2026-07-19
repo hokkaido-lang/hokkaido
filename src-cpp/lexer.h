@@ -1,10 +1,9 @@
 #pragma once
 
 #include <string>
-#include <unordered_map>
 
 // =========================================================================
-// Hokkaido Language — Lexer
+// Hokkaido Language — Lexer (Rust-backed via FFI)
 // =========================================================================
 
 enum class TokenType {
@@ -41,27 +40,16 @@ struct Token {
 };
 
 class Lexer {
-  std::string input;
-  size_t pos = 0;
-  int line = 1;
-  int col = 1;
-
-  char peek();
-  char advance();
-  void skip_whitespace();
-  void skip_line_comment();
-  void skip_block_comment();
-
-  static const std::unordered_map<std::string, TokenType> &keywords();
+  struct LexerData *data_ = nullptr;
 
 public:
-  Lexer(const std::string &src) : input(src) {}
+  Lexer(const std::string &src);
+  ~Lexer();
+
+  Lexer(const Lexer&) = delete;
+  Lexer& operator=(const Lexer&) = delete;
+  Lexer(Lexer &&other) noexcept;
+  Lexer& operator=(Lexer &&other) noexcept;
 
   Token next_token();
-
-private:
-  Token lex_string(int l, int c);
-  Token lex_number(int l, int c);
-  Token lex_char_literal(int l, int c);
-  Token lex_identifier(int l, int c);
 };
