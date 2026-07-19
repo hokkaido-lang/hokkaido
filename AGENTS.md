@@ -66,8 +66,8 @@ All versions live in `versions.toml`. Never edit version numbers directly in oth
 
 | Component | Version | Files Updated |
 |-----------|---------|---------------|
-| hokkaido | 0.21.0 | `default.nix` |
-| otaru | 0.8.0 | `otaru/Cargo.toml`, `otaru/default.nix`, `otaru/Cargo.lock` |
+| hokkaido | 0.21.1 | `default.nix` |
+| otaru | 0.8.1 | `otaru/Cargo.toml`, `otaru/default.nix`, `otaru/Cargo.lock` |
 | sapporo | 0.4.0 | `sapporo-cli/Cargo.toml`, `sapporo-cli/default.nix`, `sapporo-cli/Cargo.lock` |
 | cubical | 0.3.0 | `Cargo.toml`, `Cargo.lock` |
 

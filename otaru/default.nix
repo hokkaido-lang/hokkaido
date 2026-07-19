@@ -11,7 +11,7 @@ in
 
 pkgs.rustPlatform.buildRustPackage {
   pname = "otaru";
-  version = "0.8.0";
+  version = "0.8.1";
 
   src = ./.;
 
