@@ -1,0 +1,60 @@
+import "std"
+
+fn add(x: int, y: int) -> int { return x + y }
+fn mul(x: int, y: int) -> int { return x * y }
+fn double(x: int) -> int { return x * 2 }
+fn inc(x: int) -> int { return x + 1 }
+fn is_even(x: int) -> bool { if x % 2 == 0 { return true } else { return false } }
+fn is_positive(x: int) -> bool { if x > 0 { return true } else { return false } }
+
+extern fn printf(fmt: string, ...) -> int
+
+fn main() -> int {
+    let arr: int[5] = [1, 2, 3, 4, 5]
+
+    // ── Composition ──────────────────────────────────────────
+    printf("twice: %ld (expect 12)\n", std::twice(&double, 3))
+    printf("thrice: %ld (expect 3)\n", std::thrice(&inc, 0))
+    printf("compose: %ld (expect 12)\n", std::compose_apply(&double, &inc, 5))
+    printf("apply_n: %ld (expect 16)\n", std::apply_n(&double, 3, 2))
+
+    // ── Fold / Reduce ────────────────────────────────────────
+    printf("fold add: %ld (expect 15)\n", std::fold_int(&add, 0, arr, 5))
+    printf("fold mul: %ld (expect 120)\n", std::fold_int(&mul, 1, arr, 5))
+    printf("reduce: %ld (expect 15)\n", std::reduce_int(&add, arr, 5))
+
+    // ── Predicate ────────────────────────────────────────────
+    printf("any even: %d (expect 1)\n", std::any_int(&is_even, arr, 5))
+    printf("all even: %d (expect 0)\n", std::all_int(&is_even, arr, 5))
+    printf("find even: %ld (expect 1)\n", std::find_int(&is_even, arr, 5))
+    printf("count even: %ld (expect 2)\n", std::count_int(&is_even, arr, 5))
+
+    // ── Transform ────────────────────────────────────────────
+    let dst: int[5] = [0, 0, 0, 0, 0]
+    std::map_int_into(&double, arr, dst, 5)
+    printf("map: %ld %ld %ld %ld %ld (expect 2 4 6 8 10)\n", dst[0], dst[1], dst[2], dst[3], dst[4])
+
+    let filtered: int[5] = [0, 0, 0, 0, 0]
+    let n: int = std::filter_int(&is_even, arr, 5, filtered)
+    printf("filter count: %ld (expect 2)\n", n)
+
+    // ── Aggregate ────────────────────────────────────────────
+    printf("sum: %ld (expect 15)\n", std::sum_int(arr, 5))
+    printf("min: %ld (expect 1)\n", std::min_int(arr, 5))
+    printf("max: %ld (expect 5)\n", std::max_int(arr, 5))
+
+    // ── Memory ───────────────────────────────────────────────
+    region R {
+        let buf: int8* = __region_alloc(16)
+        let buf2: int8* = __region_alloc(16)
+        std::mem_set(buf, 42, 16)
+        printf("mem_find_byte: %ld (expect 0)\n", std::mem_find_byte(buf, 42, 16))
+        std::mem_zero(buf, 16)
+        printf("mem_find_byte after zero: %ld (expect -1)\n", std::mem_find_byte(buf, 42, 16))
+        std::mem_copy(buf2, buf, 16)
+        printf("mem_eq: %d (expect 1)\n", std::mem_eq(buf, buf2, 16))
+    }
+
+    printf("ALL OK\n")
+    return 0
+}

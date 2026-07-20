@@ -1,7 +1,5 @@
 package std
 
-// Pure-memory operations (no libc dependency, works in WASM freestanding)
-
 pub fn mem_copy(dst: int8*, src: int8*, n: int64) -> void {
     for let i: int64 = 0; i < n; i = i + 1 {
         dst[i] = src[i]
@@ -17,9 +15,7 @@ pub fn mem_set(ptr: int8*, val: int8, n: int64) -> void {
 }
 
 pub fn mem_zero(ptr: int8*, n: int64) -> void {
-    for let i: int64 = 0; i < n; i = i + 1 {
-        ptr[i] = 0
-    }
+    mem_set(ptr, 0, n)
     return
 }
 
@@ -41,22 +37,11 @@ pub fn mem_swap(a: int8*, b: int8*, n: int64) -> void {
     return
 }
 
-pub fn mem_find(haystack: int8*, needle: int8*, h_len: int64, n_len: int64) -> int64 {
-    if n_len == 0 {
-        return 0
-    }
-    if n_len > h_len {
-        return -1
-    }
-    let limit: int64 = h_len - n_len
-    for let i: int64 = 0; i <= limit; i = i + 1 {
-        if mem_eq(haystack + i, needle, n_len) {
+pub fn mem_find_byte(haystack: int8*, needle: int8, h_len: int64) -> int64 {
+    for let i: int64 = 0; i < h_len; i = i + 1 {
+        if haystack[i] == needle {
             return i
         }
     }
     return -1
-}
-
-pub fn mem_contains(haystack: int8*, needle: int8*, h_len: int64, n_len: int64) -> bool {
-    return mem_find(haystack, needle, h_len, n_len) != -1
 }
