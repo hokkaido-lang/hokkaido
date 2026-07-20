@@ -448,12 +448,20 @@ Value *CodeGen::eval_match(MatchExpr *match, Type *expected_type) {
 }
 
 Value *CodeGen::eval_binary(BinaryExpr *bin, Type *expected_type) {
-  // Never propagate expected_type to operands — it corrupts loads (i1 instead of
-  // i64 for comparisons) and breaks pointer arithmetic (ptr loaded as integer).
-  // Instead, operands are evaluated at their natural types, and the result is
-  // coerced to expected_type at the end if needed.
-  Value *l = eval_expr(bin->left.get(), nullptr);
-  Value *r = eval_expr(bin->right.get(), nullptr);
+  // Evaluate operands using their own annotations.  Passing the enclosing
+  // expression's expected type corrupts operand loads (for example, loading an
+  // int64 as i1 in `x % 2 == 0`), while passing nullptr leaves expressions such
+  // as slice subscripts without a load type.
+  auto eval_operand = [this, expected_type](Expr *operand) -> Value * {
+    TypeAnnotation annotation = resolve_expr_type(operand);
+    Type *operand_type = annotation.kind == TypeKind::Void
+                             ? expected_type
+                             : get_llvm_type(annotation);
+    return eval_expr(operand, operand_type);
+  };
+
+  Value *l = eval_operand(bin->left.get());
+  Value *r = eval_operand(bin->right.get());
   if (!l || !r) return nullptr;
 
   // Auto-promote int to float when types are mixed
@@ -538,7 +546,7 @@ Value *CodeGen::eval_binary(BinaryExpr *bin, Type *expected_type) {
       Value *l_bool = Builder.CreateICmpNE(l, ConstantInt::get(l->getType(), 0));
       Builder.CreateCondBr(l_bool, rhs_bb, merge_bb);
       Builder.SetInsertPoint(rhs_bb);
-      Value *r_val = eval_expr(bin->right.get(), nullptr);
+      Value *r_val = eval_operand(bin->right.get());
       if (!r_val) return nullptr;
       Value *r_bool = Builder.CreateICmpNE(r_val, ConstantInt::get(r_val->getType(), 0));
       Builder.CreateStore(r_bool, result_alloca);
@@ -1237,14 +1245,19 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
       return nullptr;
     }
     Type *load_type = expected_type;
-    if (is_array_sub)
+    if (is_slice_sub) {
+      load_type = get_llvm_type(base_ann.tuple_types[0]);
+    } else if (is_array_sub)
       load_type = get_llvm_type(TypeAnnotation{base_ann.kind, 0, 0, base_ann.struct_name});
     else if (is_ptr_sub) {
       TypeAnnotation elem_ann = base_ann;
       elem_ann.pointer_depth--;
       load_type = get_llvm_type(elem_ann);
     }
-    if (!load_type) load_type = expected_type;
+    if (!load_type) {
+      cg_error(errs(), expr, "cannot determine subscript element type");
+      return nullptr;
+    }
     return Builder.CreateLoad(load_type, elem_ptr);
   }
 

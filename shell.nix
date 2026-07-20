@@ -3,6 +3,7 @@
 pkgs.mkShell {
 
   buildInputs = with pkgs; [
+    python3
     llvmPackages.llvm
     llvmPackages.libllvm
   ];

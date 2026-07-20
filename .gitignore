@@ -9,3 +9,7 @@ target/
 otaru/target
 result-otaru
 testnix/build/
+
+.venv
+# Added by code-review-graph
+.code-review-graph/
