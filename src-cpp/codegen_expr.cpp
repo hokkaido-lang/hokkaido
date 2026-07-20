@@ -448,8 +448,12 @@ Value *CodeGen::eval_match(MatchExpr *match, Type *expected_type) {
 }
 
 Value *CodeGen::eval_binary(BinaryExpr *bin, Type *expected_type) {
-  Value *l = eval_expr(bin->left.get(), expected_type);
-  Value *r = eval_expr(bin->right.get(), expected_type);
+  // Never propagate expected_type to operands — it corrupts loads (i1 instead of
+  // i64 for comparisons) and breaks pointer arithmetic (ptr loaded as integer).
+  // Instead, operands are evaluated at their natural types, and the result is
+  // coerced to expected_type at the end if needed.
+  Value *l = eval_expr(bin->left.get(), nullptr);
+  Value *r = eval_expr(bin->right.get(), nullptr);
   if (!l || !r) return nullptr;
 
   // Auto-promote int to float when types are mixed
@@ -485,48 +489,45 @@ Value *CodeGen::eval_binary(BinaryExpr *bin, Type *expected_type) {
   TypeAnnotation l_ann = resolve_expr_type(bin->left.get());
   bool is_unsigned = is_unsigned_type(l_ann.kind);
 
+  Value *result = nullptr;
   switch (bin->op) {
-    case BinOp::Add: return is_float ? Builder.CreateFAdd(l, r) : Builder.CreateAdd(l, r);
-    case BinOp::Sub: return is_float ? Builder.CreateFSub(l, r) : Builder.CreateSub(l, r);
-    case BinOp::Mul: return is_float ? Builder.CreateFMul(l, r) : Builder.CreateMul(l, r);
+    case BinOp::Add: result = is_float ? Builder.CreateFAdd(l, r) : Builder.CreateAdd(l, r); break;
+    case BinOp::Sub: result = is_float ? Builder.CreateFSub(l, r) : Builder.CreateSub(l, r); break;
+    case BinOp::Mul: result = is_float ? Builder.CreateFMul(l, r) : Builder.CreateMul(l, r); break;
     case BinOp::Div:
-      return is_float ? Builder.CreateFDiv(l, r)
-                      : (is_unsigned ? Builder.CreateUDiv(l, r) : Builder.CreateSDiv(l, r));
+      result = is_float ? Builder.CreateFDiv(l, r)
+                        : (is_unsigned ? Builder.CreateUDiv(l, r) : Builder.CreateSDiv(l, r));
+      break;
     case BinOp::Mod:
-      return is_unsigned ? Builder.CreateURem(l, r) : Builder.CreateSRem(l, r);
+      result = is_unsigned ? Builder.CreateURem(l, r) : Builder.CreateSRem(l, r);
+      break;
     case BinOp::Eq: {
-      Value *cmp = is_float ? Builder.CreateFCmpOEQ(l, r) : Builder.CreateICmpEQ(l, r);
-      return (expected_type && !expected_type->isIntegerTy(1))
-                 ? Builder.CreateZExt(cmp, expected_type) : cmp;
+      result = is_float ? Builder.CreateFCmpOEQ(l, r) : Builder.CreateICmpEQ(l, r);
+      break;
     }
     case BinOp::Ne: {
-      Value *cmp = is_float ? Builder.CreateFCmpONE(l, r) : Builder.CreateICmpNE(l, r);
-      return (expected_type && !expected_type->isIntegerTy(1))
-                 ? Builder.CreateZExt(cmp, expected_type) : cmp;
+      result = is_float ? Builder.CreateFCmpONE(l, r) : Builder.CreateICmpNE(l, r);
+      break;
     }
     case BinOp::Less: {
-      Value *cmp = is_float ? Builder.CreateFCmpOLT(l, r)
+      result = is_float ? Builder.CreateFCmpOLT(l, r)
                   : (is_unsigned ? Builder.CreateICmpULT(l, r) : Builder.CreateICmpSLT(l, r));
-      return (expected_type && !expected_type->isIntegerTy(1))
-                 ? Builder.CreateZExt(cmp, expected_type) : cmp;
+      break;
     }
     case BinOp::Greater: {
-      Value *cmp = is_float ? Builder.CreateFCmpOGT(l, r)
+      result = is_float ? Builder.CreateFCmpOGT(l, r)
                   : (is_unsigned ? Builder.CreateICmpUGT(l, r) : Builder.CreateICmpSGT(l, r));
-      return (expected_type && !expected_type->isIntegerTy(1))
-                 ? Builder.CreateZExt(cmp, expected_type) : cmp;
+      break;
     }
     case BinOp::Le: {
-      Value *cmp = is_float ? Builder.CreateFCmpOLE(l, r)
+      result = is_float ? Builder.CreateFCmpOLE(l, r)
                   : (is_unsigned ? Builder.CreateICmpULE(l, r) : Builder.CreateICmpSLE(l, r));
-      return (expected_type && !expected_type->isIntegerTy(1))
-                 ? Builder.CreateZExt(cmp, expected_type) : cmp;
+      break;
     }
     case BinOp::Ge: {
-      Value *cmp = is_float ? Builder.CreateFCmpOGE(l, r)
+      result = is_float ? Builder.CreateFCmpOGE(l, r)
                   : (is_unsigned ? Builder.CreateICmpUGE(l, r) : Builder.CreateICmpSGE(l, r));
-      return (expected_type && !expected_type->isIntegerTy(1))
-                 ? Builder.CreateZExt(cmp, expected_type) : cmp;
+      break;
     }
     case BinOp::And: {
       Function *fn = Builder.GetInsertBlock()->getParent();
@@ -537,30 +538,50 @@ Value *CodeGen::eval_binary(BinaryExpr *bin, Type *expected_type) {
       Value *l_bool = Builder.CreateICmpNE(l, ConstantInt::get(l->getType(), 0));
       Builder.CreateCondBr(l_bool, rhs_bb, merge_bb);
       Builder.SetInsertPoint(rhs_bb);
-      Value *r_val = eval_expr(bin->right.get(), expected_type);
+      Value *r_val = eval_expr(bin->right.get(), nullptr);
       if (!r_val) return nullptr;
       Value *r_bool = Builder.CreateICmpNE(r_val, ConstantInt::get(r_val->getType(), 0));
       Builder.CreateStore(r_bool, result_alloca);
       Builder.CreateBr(merge_bb);
       Builder.SetInsertPoint(merge_bb);
-      Value *result = Builder.CreateLoad(Type::getInt1Ty(Context), result_alloca);
-      return (expected_type && !expected_type->isIntegerTy(1))
-                 ? Builder.CreateZExt(result, expected_type) : result;
+      result = Builder.CreateLoad(Type::getInt1Ty(Context), result_alloca);
+      break;
     }
     case BinOp::Or: {
       Value *lb = Builder.CreateICmpNE(l, ConstantInt::get(l->getType(), 0));
       Value *rb = Builder.CreateICmpNE(r, ConstantInt::get(r->getType(), 0));
-      Value *cmp = Builder.CreateOr(lb, rb);
-      return (expected_type && !expected_type->isIntegerTy(1))
-                 ? Builder.CreateZExt(cmp, expected_type) : cmp;
+      result = Builder.CreateOr(lb, rb);
+      break;
     }
-    case BinOp::Shr: return is_unsigned ? Builder.CreateLShr(l, r) : Builder.CreateAShr(l, r);
-    case BinOp::Shl: return Builder.CreateShl(l, r);
-    case BinOp::BitAnd: return Builder.CreateAnd(l, r);
-    case BinOp::BitOr:  return Builder.CreateOr(l, r);
-    case BinOp::Xor:    return Builder.CreateXor(l, r);
+    case BinOp::Shr: result = is_unsigned ? Builder.CreateLShr(l, r) : Builder.CreateAShr(l, r); break;
+    case BinOp::Shl: result = Builder.CreateShl(l, r); break;
+    case BinOp::BitAnd: result = Builder.CreateAnd(l, r); break;
+    case BinOp::BitOr:  result = Builder.CreateOr(l, r); break;
+    case BinOp::Xor:    result = Builder.CreateXor(l, r); break;
   }
-  return nullptr;
+
+  if (!result || !expected_type || result->getType() == expected_type)
+    return result;
+
+  // Coerce result to expected_type
+  Type *res_ty = result->getType();
+  if (expected_type->isIntegerTy(1) && res_ty->isIntegerTy() && !res_ty->isIntegerTy(1))
+    return Builder.CreateTrunc(result, expected_type);
+  if (expected_type->isIntegerTy() && !expected_type->isIntegerTy(1) && res_ty->isIntegerTy(1))
+    return Builder.CreateZExt(result, expected_type);
+  if (expected_type->isIntegerTy() && res_ty->isIntegerTy() &&
+      expected_type->getIntegerBitWidth() != res_ty->getIntegerBitWidth())
+    return expected_type->getIntegerBitWidth() < res_ty->getIntegerBitWidth()
+               ? Builder.CreateTrunc(result, expected_type)
+               : Builder.CreateZExt(result, expected_type);
+  if (expected_type->isFPOrFPVectorTy() && res_ty->isIntegerTy())
+    return Builder.CreateSIToFP(result, expected_type);
+  if (expected_type->isIntegerTy() && res_ty->isFPOrFPVectorTy())
+    return Builder.CreateFPToSI(result, expected_type);
+  if (expected_type->isFPOrFPVectorTy() && res_ty->isFPOrFPVectorTy())
+    return Builder.CreateFPCast(result, expected_type);
+
+  return result;
 }
 
 Value *CodeGen::eval_closure(ClosureExpr *closure, Type *expected_type) {
