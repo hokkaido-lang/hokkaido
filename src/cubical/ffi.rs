@@ -210,6 +210,8 @@ fn eval_cubical_source(source: &str) -> Result<String, String> {
                 return Err("import not supported".to_string());
             }
             crate::cubical::parser::Decl::Data(dt) => {
+                crate::cubical::syntax::check_datatype_positivity(&dt)
+                    .map_err(|e| format!("{}", e))?;
                 env.declare_datatype(dt);
             }
             crate::cubical::parser::Decl::Def { name, ty, val } => {
@@ -261,6 +263,8 @@ fn eval_cubical_json(source: &str) -> Result<String, String> {
                 return Err("import not supported".to_string());
             }
             crate::cubical::parser::Decl::Data(dt) => {
+                crate::cubical::syntax::check_datatype_positivity(&dt)
+                    .map_err(|e| format!("{}", e))?;
                 env.declare_datatype(dt);
             }
             crate::cubical::parser::Decl::Def { name, ty, val } => {

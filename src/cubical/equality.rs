@@ -540,5 +540,63 @@ fn eta_eq_uncached(fuel: usize, ctx: &Ctx, t1: &Term, t2: &Term, memo: &mut EtaM
         );
     }
 
+    // ------------------------------------------------------------------
+    // Cubical form congruence (structural: no fuel consumed)
+    // ------------------------------------------------------------------
+    if let (Term::THComp(a1, phi1, u1, u01), Term::THComp(a2, phi2, u2, u02)) = (t1, t2) {
+        return and_result(
+            and_result(
+                eta_eq_memo(fuel, ctx, a1, a2, memo),
+                eta_eq_memo(fuel, ctx, phi1, phi2, memo),
+            ),
+            and_result(
+                eta_eq_memo(fuel, ctx, u1, u2, memo),
+                eta_eq_memo(fuel, ctx, u01, u02, memo),
+            ),
+        );
+    }
+    if let (Term::TGlue(a1, phi1, te1), Term::TGlue(a2, phi2, te2)) = (t1, t2) {
+        return and_result(
+            and_result(
+                eta_eq_memo(fuel, ctx, a1, a2, memo),
+                eta_eq_memo(fuel, ctx, phi1, phi2, memo),
+            ),
+            eta_eq_memo(fuel, ctx, te1, te2, memo),
+        );
+    }
+    if let (Term::TGlueElem(phi1, t1v, a1), Term::TGlueElem(phi2, t2v, a2)) = (t1, t2) {
+        return and_result(
+            and_result(
+                eta_eq_memo(fuel, ctx, phi1, phi2, memo),
+                eta_eq_memo(fuel, ctx, t1v, t2v, memo),
+            ),
+            eta_eq_memo(fuel, ctx, a1, a2, memo),
+        );
+    }
+    if let (Term::TUnglue(phi1, te1, g1), Term::TUnglue(phi2, te2, g2)) = (t1, t2) {
+        return and_result(
+            and_result(
+                eta_eq_memo(fuel, ctx, phi1, phi2, memo),
+                eta_eq_memo(fuel, ctx, te1, te2, memo),
+            ),
+            eta_eq_memo(fuel, ctx, g1, g2, memo),
+        );
+    }
+    if let (Term::TTransport(p1, x1), Term::TTransport(p2, x2)) = (t1, t2) {
+        return and_result(
+            eta_eq_memo(fuel, ctx, p1, p2, memo),
+            eta_eq_memo(fuel, ctx, x1, x2, memo),
+        );
+    }
+    if let (Term::TUa(e1), Term::TUa(e2)) = (t1, t2) {
+        return eta_eq_memo(fuel, ctx, e1, e2, memo);
+    }
+    if let (Term::TEquiv(a1, b1), Term::TEquiv(a2, b2)) = (t1, t2) {
+        return and_result(
+            eta_eq_memo(fuel, ctx, a1, a2, memo),
+            eta_eq_memo(fuel, ctx, b1, b2, memo),
+        );
+    }
+
     NotEqual
 }

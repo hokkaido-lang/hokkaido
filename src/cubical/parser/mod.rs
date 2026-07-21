@@ -150,6 +150,9 @@ pub fn typecheck_program(
                 return Err("import requires a file path; use cubical::run instead".to_string());
             }
             Decl::Data(dt) => {
+                // Check positivity before making the datatype available.
+                crate::cubical::syntax::check_datatype_positivity(&dt)
+                    .map_err(|e| format!("{}", e))?;
                 // Make the datatype available to all subsequent declarations.
                 dts.push(dt);
             }

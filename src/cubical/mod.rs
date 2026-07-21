@@ -199,6 +199,11 @@ fn load_import(
 }
 
 fn process_data(dt: &crate::cubical::syntax::Datatype, env: &mut Env) -> Result<(), RunError> {
+    // Check positivity before registering the datatype.
+    crate::cubical::syntax::check_datatype_positivity(dt)
+        .map_err(|e| RunError::Type(Box::new(crate::cubical::typechecker::TypeError::Other(
+            format!("{}", e),
+        ))))?;
     env.declare_datatype(dt.clone());
     for con in &dt.cons {
         for arg_ty in &con.arg_tys {

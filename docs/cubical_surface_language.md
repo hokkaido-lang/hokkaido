@@ -48,6 +48,10 @@ data S1 =
   | loop : S1 [ base , base ]
 ```
 
+#### Strict positivity
+
+Datatype definitions are checked for **strict positivity**. The declared type may only appear in negative positions (to the left of an arrow in the domain, or in a recursive constructor argument). Non-positive occurrences such as `data Bad = mk ((Bad -> Bad) -> Bad)` are rejected at parse time.
+
 ---
 
 ## Comments
@@ -298,11 +302,38 @@ transport <path> <element>
 
 Transports `element` along the path `path`.
 
+Transport reduces depending on the type family:
+
+| Family shape | Input | Result |
+|---|---|---|
+| Constant (`A` doesn't change with `i`) | any `x` | `x` (identity) |
+| `Univ n` | any `x` | `x` (universe transport is identity) |
+| Pi `(x : A) -> B` | `λx. f x` | `λx. transport B (f x)` |
+| `Path A u v` | `p` | `λj. transport A (p @ j)` |
+| Sigma `(x : A) * B` | `(a, b)` | `(transport A a, transport B (subst a))` |
+| `ua e` | `x` | `equivFwd e x` |
+| Glue `Glue A [φ] te` at face `φ` | `glue [φ] t a` | `glue [φ] t (hcomp A [φ] (λi. t) a)` |
+| Glue `Glue A [⊥] te` | any `x` | `transport (λi. A) x` |
+| Glue `Glue A [⊤] te` | any `x` | `transport (λi. dom(te)) x` |
+
+When the Glue face is non-trivial and the input is not a `glueElem` or the faces don't match, transport stays stuck (no reduction).
+
 ### Homogeneous composition
 
 ```
-hcomp <type> <phi> <system> <base>
+hcomp <type> <phi> <tube> <base>
 ```
+
+Reduces at concrete interval endpoints:
+
+| Application | Result |
+|---|---|
+| `(hcomp A ⊤ tube base) @ i` | `tube @ i` |
+| `(hcomp A ⊥ tube base) @ i` | `base` |
+| `(hcomp A φ tube base) @ 0` | `base` |
+| `(hcomp A φ tube base) @ 1` | `tube @ 1` |
+
+For non-trivial faces, `hcomp` stays stuck as an `VHComp` value until applied to a concrete endpoint.
 
 ### Univalence and equivalences
 
@@ -317,9 +348,25 @@ hcomp <type> <phi> <system> <base>
 
 | Syntax | Arguments | Meaning |
 |--------|-----------|---------|
-| `Glue A phi te` | `A phi te` | Glue type |
-| `glueElem phi t a` | `phi t a` | Construct a glue element (also `glue`) |
-| `unglue phi te g` | `phi te g` | Unglue an element |
+| `Glue A phi te` | `A phi te` | Glue type: `A` is the underlying type, `phi` is a face formula, `te` is a family of equivalences on `phi` |
+| `glueElem phi t a` | `phi t a` | Construct a glue element: `t` is in the equiv domain, `a` is in the underlying type `A` |
+| `unglue phi te g` | `phi te g` | Unglue an element `g` to the underlying type |
+
+Glue type reduction:
+
+| Face | Result |
+|---|---|
+| `Glue A ⊥ te` | `A` (face is empty) |
+| `Glue A ⊤ te` | `dom(te)` (face is full) |
+| `Glue A φ te` | stuck as `VGlue` for non-trivial `φ` |
+
+Glue element reduction:
+
+| Face | Result |
+|---|---|
+| `glue ⊤ t a` | `t` (cap is the full result) |
+| `glue ⊥ t a` | `a` (base is the full result) |
+| `glue φ t a` | stuck as `VGlueElem` for non-trivial `φ` |
 
 ---
 
