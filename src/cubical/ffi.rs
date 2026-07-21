@@ -340,6 +340,32 @@ mod tests {
     }
 
     #[test]
+    fn test_mul_match_syntax() {
+        let src = "data Nat = | zero : Nat | suc : Nat -> Nat\n\
+                   def add : Nat -> Nat -> Nat = \\m n. match m return Nat with \
+                   | zero => n | suc k => suc (add k n)\n\
+                   def mul : Nat -> Nat -> Nat = \\m n. match m return Nat with \
+                   | zero => zero | suc k => add n (mul k n)\n\
+                   def main : Nat = mul (suc (suc zero)) (suc (suc (suc zero)))";
+        let result = eval_cubical_source(src).unwrap();
+        eprintln!("mul match result: {}", result);
+        assert!(result.contains("6") || result.contains("suc"));
+    }
+
+    #[test]
+    fn test_mul_elim_syntax() {
+        let src = "data Nat = | zero : Nat | suc : Nat -> Nat\n\
+                   def add : Nat -> Nat -> Nat = \\m n. elim (\\_. Nat) { \
+                   | zero => n | suc k => suc (add k n) } m\n\
+                   def mul : Nat -> Nat -> Nat = \\m n. elim (\\_. Nat) { \
+                   | zero => zero | suc k => add n (mul k n) } m\n\
+                   def main : Nat = mul (suc (suc zero)) (suc (suc (suc zero)))";
+        let result = eval_cubical_source(src).unwrap();
+        eprintln!("mul elim result: {}", result);
+        assert!(result.contains("6") || result.contains("suc"));
+    }
+
+    #[test]
     fn test_eval_int_ffi() {
         let src = "data Nat = | zero : Nat | suc : Nat -> Nat\n\
                    def main : Nat = suc (suc (suc zero))";

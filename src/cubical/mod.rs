@@ -8,6 +8,9 @@ pub mod parser;
 pub mod syntax;
 pub mod typechecker;
 
+#[cfg(test)]
+pub mod dependent_pi_transport_test;
+
 use std::collections::HashSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -316,6 +319,23 @@ def main : (A B : U0) -> Equiv A B -> A -> B = transportExample\n";
         let output = run(&path).expect("transport over ua should typecheck");
         // `run()` prefers `main` over earlier definitions
         assert_eq!(output.name, "main");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_mul_via_run_path() {
+        let src = "data Nat = | zero : Nat | suc : Nat -> Nat\n\
+                   def add : Nat -> Nat -> Nat = \\m n. elim (\\_. Nat) { \
+                   | zero => n | suc k => suc (add k n) } m\n\
+                   def mul : Nat -> Nat -> Nat = \\m n. elim (\\_. Nat) { \
+                   | zero => zero | suc k => add n (mul k n) } m\n\
+                   def main : Nat = mul (suc (suc zero)) (suc (suc (suc zero)))";
+        let dir = std::env::temp_dir().join(format!("cubical_mul_test_{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("main.uwuc");
+        fs::write(&path, src).unwrap();
+        let output = run(&path).expect("mul should compute");
+        eprintln!("mul result: {}", output);
         let _ = fs::remove_dir_all(&dir);
     }
 }

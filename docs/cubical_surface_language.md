@@ -24,18 +24,21 @@ def id : (A : U0) -> A -> A = \A x. x
 ### Datatype declaration
 
 ```
-data <Name> =
+data <Name> [: <level>] =
   | <con1> : <type>
   | <con2> : <type>
   ...
 ```
 
-Constructors must return the declared datatype. A datatype must have at least one constructor.
+The `<level>` annotation (`: U_n`) is optional. When present, it sets the universe level of the datatype explicitly (e.g. `data D : U1 = ...`). When absent, the level is inferred as the maximum universe level among constructor argument types.
 
 Example:
 
 ```
 data Nat = | zero : Nat | suc : Nat -> Nat
+data Vec (A : U0) : U1 =
+  | vnil : Vec A
+  | vcons : A -> Vec A -> Vec A
 ```
 
 #### Path constructors
@@ -72,6 +75,8 @@ Line comments begin with `--` and extend to the end of the line.
 |--------|---------|
 | `U0`, `U1`, `U2`, … | Universe at level *n* |
 | `Type` | Alias for `U0` |
+
+Universes support **cumulativity**: `U_n` is a subtype of `U_m` whenever `n ≤ m`. This means a term typed at a lower universe level can be used wherever a higher universe is expected. The cumulativity is checked structurally — for Pi types, the domain is contravariant and the codomain is covariant; for Sigma types, both components are covariant.
 
 ### Variables
 
@@ -333,7 +338,19 @@ Reduces at concrete interval endpoints:
 | `(hcomp A φ tube base) @ 0` | `base` |
 | `(hcomp A φ tube base) @ 1` | `tube @ 1` |
 
-For non-trivial faces, `hcomp` stays stuck as an `VHComp` value until applied to a concrete endpoint.
+When the base is a **lambda abstraction** and the type is a **Pi type**, hcomp decomposes pointwise:
+
+| Input | Result |
+|---|---|
+| `hcomp (Π x:A. B) φ (λi. λx. f i x) (λx. g x)` | `λx. hcomp (B x) φ (λi. f i x) (g x)` |
+
+When the base is a **pair** and the type is a **Sigma type**, hcomp decomposes into projections:
+
+| Input | Result |
+|---|---|
+| `hcomp (Σ x:A. B) φ (λi. p i , q i) (a , b)` | `(hcomp A φ (λi. fst (p i)) a, ...)` |
+
+For other non-trivial faces, `hcomp` stays stuck as an `VHComp` value until applied to a concrete endpoint.
 
 ### Univalence and equivalences
 
@@ -411,7 +428,7 @@ The following Unicode symbols are accepted as alternatives to their ASCII counte
 ```
 program  ::= decl*
 decl     ::= 'def' ident ':' term '=' term
-           | 'data' ident '=' ('|' con_decl)+
+           | 'data' ident (':' 'U' natural)? '=' ('|' con_decl)+
 
 con_decl ::= ident ':' term ('[' term ',' term ']')?
 

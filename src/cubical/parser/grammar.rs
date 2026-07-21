@@ -58,6 +58,19 @@ impl Parser {
 
     pub(super) fn parse_data_decl(&mut self) -> Result<Decl, ParseError> {
         let name = self.expect_ident("expected datatype name")?;
+
+        // Optional universe annotation: `data D : U_n = ...`
+        let mut uni_level: Option<i32> = None;
+        if self.consume(&TokenKind::Colon) {
+            let uni_name = self.expect_ident("expected universe level after ':'")?;
+            uni_level = Some(parse_universe(&uni_name).ok_or_else(|| {
+                self.error_here(format!(
+                    "expected universe level (e.g. U0, U1) after ':', got '{}'",
+                    uni_name
+                ))
+            })?);
+        }
+
         self.expect(
             TokenKind::Equals,
             format!("expected '=' after datatype name '{}'", name),
@@ -68,6 +81,7 @@ impl Parser {
             name: name.clone(),
             cons: Vec::new(),
             pcons: Vec::new(),
+            universe_level: None,
         };
         while self.consume(&TokenKind::Pipe) {
             let con_name = self.expect_ident("expected constructor name after '|'")?;
@@ -116,7 +130,7 @@ impl Parser {
                 name
             )));
         }
-        Ok(Decl::Data(Datatype { name, cons, pcons }))
+        Ok(Decl::Data(Datatype { name, cons, pcons, universe_level: uni_level }))
     }
 
     fn parse_constructor_type(

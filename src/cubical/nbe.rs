@@ -139,7 +139,7 @@ impl IClosure {
         self.apply_interval_value(Value::VIntervalVar(level))
     }
 
-    fn apply_interval_value(&self, v: Value) -> Value {
+    pub fn apply_interval_value(&self, v: Value) -> Value {
         let mut env = vec![v];
         env.extend_from_slice(&self.env);
         eval_nbe(&env, &self.globals, self.global_offset, &self.body)
@@ -543,7 +543,7 @@ fn apply_non_dep(clos: &Closure) -> Value {
 /// Check whether a term references de Bruijn variable at the given level,
 /// correctly tracking binder depth. Under each binder, the target variable's
 /// de Bruijn index increases by 1.
-fn uses_var_at_level(t: &Term, level: i32) -> bool {
+pub fn uses_var_at_level(t: &Term, level: i32) -> bool {
     match t {
         Term::TVar(i) => *i == level,
         Term::TApp(f, a) => uses_var_at_level(f, level) || uses_var_at_level(a, level),
@@ -1049,7 +1049,92 @@ pub fn do_hcomp(globals: &Globals, global_offset: usize, a_ty: Value, phi: DNF, 
         record_step("hcomp-bot".into(), "hcomp A ⊥ tube base".into(), value_str(globals, global_offset, &base));
         base
     } else {
-        Value::VHComp(Box::new(a_ty), phi, Box::new(tube), Box::new(base))
+        // ── Deeper hcomp reductions ──
+        //
+        // 1. Pi decomposition: when the base is a function (VLam) and the
+        //    type is a Pi, push hcomp pointwise:
+        //    hcomp (Π x:A. B) φ (λi. f i) (λx. b x)
+        //    ≡  λx. hcomp (B x) φ (λi. f i x) (b x)
+        //
+        // 2. Sigma decomposition: when the base is a pair, decompose:
+        //    hcomp (Σ x:A. B) φ (p, q) (a, b)
+        //    ≡  (hcomp A φ (λi. fst (p i)) a, hcomp (B (fst result)) φ (λi. snd (p i)) b)
+        //
+        // 3. Constant-tube shortcut: when the tube does not depend on the
+        //    interval variable (tube @ 0 ≡ tube @ 1), the hcomp reduces to
+        //    tube @ 1 regardless of phi.
+        match (&a_ty, &base) {
+            // ── Pi decomposition ──
+            (Value::VPi(arg_name, _, cod_clos), Value::VLam(_, base_clos)) => {
+                let arg_var = Value::VNeutral(Neutral::NVar(0));
+                // Evaluate tube and base at a fresh argument variable
+                let tube_at_arg = match &tube {
+                    Value::VPLam(_, iclos) => {
+                        let formal_i = Value::VIntervalVar(0);
+                        let tube_at_i = iclos.apply_interval_value(formal_i);
+                        do_apply(globals, global_offset, tube_at_i, arg_var.clone())
+                    }
+                    _ => do_apply(globals, global_offset, tube.clone(), arg_var.clone()),
+                };
+                let base_at_arg = base_clos.apply(arg_var.clone());
+                let cod_at_arg = cod_clos.apply(arg_var);
+                let inner = do_hcomp(globals, global_offset, cod_at_arg, phi.clone(), tube_at_arg, base_at_arg);
+                let result = Value::VLam(arg_name.clone(), Closure {
+                    env: vec![],
+                    globals: globals.clone(),
+                    global_offset,
+                    body: {
+                        let inner_term = quote(1, globals, global_offset, inner);
+                        Term::TAbs(arg_name.clone(), Box::new(inner_term))
+                    },
+                });
+                record_step("hcomp-pi".into(), "hcomp (Π _ _) φ f g".into(), value_str(globals, global_offset, &result));
+                result
+            }
+
+            // ── Sigma decomposition ──
+            (Value::VSigma(_, fst_ty, snd_clos), Value::VPair(fst_base, snd_base)) => {
+                let fst_tube = match &tube {
+                    Value::VPLam(_, iclos) => {
+                        let formal_i = Value::VIntervalVar(0);
+                        let tube_at_i = iclos.apply_interval_value(formal_i);
+                        do_fst(globals, global_offset, tube_at_i)
+                    }
+                    _ => Value::VPApp(Box::new(tube.clone()), Box::new(Value::VIntervalVar(0))),
+                };
+                let fst_tube_plam = Value::VPLam("_".to_string(), IClosure {
+                    env: vec![],
+                    globals: globals.clone(),
+                    global_offset,
+                    body: quote(1, globals, global_offset, fst_tube),
+                });
+                let fst_result = do_hcomp(globals, global_offset, *fst_ty.clone(), phi.clone(), fst_tube_plam, (**fst_base).clone());
+
+                let snd_tube = match &tube {
+                    Value::VPLam(_, iclos) => {
+                        let formal_i = Value::VIntervalVar(0);
+                        let tube_at_i = iclos.apply_interval_value(formal_i);
+                        do_snd(globals, global_offset, tube_at_i)
+                    }
+                    _ => Value::VPApp(Box::new(tube.clone()), Box::new(Value::VIntervalVar(0))),
+                };
+                let snd_tube_plam = Value::VPLam("_".to_string(), IClosure {
+                    env: vec![],
+                    globals: globals.clone(),
+                    global_offset,
+                    body: quote(1, globals, global_offset, snd_tube),
+                });
+                let snd_result = do_hcomp(globals, global_offset,
+                    snd_clos.apply((**fst_base).clone()), phi.clone(), snd_tube_plam, (**snd_base).clone());
+
+                let result = Value::VPair(Box::new(fst_result), Box::new(snd_result));
+                record_step("hcomp-sigma".into(), "hcomp (Σ _ _) φ p q".into(), value_str(globals, global_offset, &result));
+                result
+            }
+
+            // ── Default: stuck hcomp ──
+            _ => Value::VHComp(Box::new(a_ty), phi, Box::new(tube), Box::new(base)),
+        }
     }
 }
 

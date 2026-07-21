@@ -336,3 +336,59 @@ fn recursive_plus_case_parses_global_reference() {
     let decls = parse_program(src).expect("recursive def should parse");
     assert_eq!(decls.len(), 2);
 }
+
+#[test]
+fn cumulativity_universe_levels() {
+    // Test cumulativity: a term inferred at a lower universe level should be
+    // accepted at a higher universe level.
+    use crate::cubical::typechecker::check;
+    let ctx = Vec::new();
+
+    // lambda term \A x. x has inferred type (A : U0) -> A -> A : U0.
+    // Check it against (A : U1) -> A -> A — should succeed because the
+    // lambda just binds A and the body checks against the codomain.
+    let val = parse_term("\\A x. x").unwrap();
+    let ty = parse_term("(A : U1) -> A -> A").unwrap();
+    check(&ctx, &val, &ty)
+        .expect("\\A x. x should be accepted at type (A : U1) -> A -> A");
+
+    // Negative: a term that doesn't match the expected Pi should fail.
+    let val2 = parse_term("U0").unwrap();
+    let result = check(&ctx, &val2, &ty);
+    assert!(result.is_err(), "U0 should not be accepted at (A : U1) -> A -> A");
+}
+
+#[test]
+fn cumulativity_pi_types() {
+    use crate::cubical::typechecker::check;
+    let ctx = Vec::new();
+    let val = parse_term("\\A x. x").unwrap();
+    let ty = parse_term("(A : U1) -> A -> A").unwrap();
+    check(&ctx, &val, &ty).expect("(A : U0) -> A -> A should be accepted at (A : U1) -> A -> A");
+}
+
+#[test]
+fn data_universe_annotation_parses() {
+    let src = "data D : U1 = | mk : D";
+    let decls = parse_program(src).unwrap();
+    assert_eq!(decls.len(), 1);
+    match &decls[0] {
+        Decl::Data(dt) => {
+            assert_eq!(dt.name, "D");
+            assert_eq!(dt.universe_level, Some(1));
+        }
+        _ => panic!("expected data declaration"),
+    }
+}
+
+#[test]
+fn data_without_universe_annotation() {
+    let src = "data Nat = | zero : Nat | suc : Nat -> Nat";
+    let decls = parse_program(src).unwrap();
+    match &decls[0] {
+        Decl::Data(dt) => {
+            assert_eq!(dt.universe_level, None);
+        }
+        _ => panic!("expected data declaration"),
+    }
+}

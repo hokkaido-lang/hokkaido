@@ -248,7 +248,14 @@ fn type_level_dt(dts: &[Datatype], ctx: &Ctx, t: &Term) -> Result<Level, TypeErr
         }
         _ => match nbe_eval(t) {
             Term::TUniv(n) => Ok(n),
-            Term::TData(_) => Ok(0),
+            Term::TData(d) => {
+                // Use the annotated level if present, otherwise default to 0.
+                let level = dts.iter()
+                    .find(|dt| dt.name == d)
+                    .and_then(|dt| dt.universe_level)
+                    .unwrap_or(0);
+                Ok(level)
+            }
             Term::TIntervalTy => Ok(0),
             _ => {
                 let ty = infer_dt(dts, ctx, t)?;
@@ -899,6 +906,11 @@ pub fn infer_dt(dts: &[Datatype], ctx: &Ctx, t: &Term) -> Result<Term, TypeError
                 .find(|dt| &dt.name == d)
                 .ok_or_else(|| TypeError::UnknownDatatype(d.clone()))?;
 
+            // If the datatype has a universe-level annotation, use it directly.
+            if let Some(level) = dt.universe_level {
+                return Ok(Term::TUniv(level));
+            }
+
             let mut max_level: Level = 0;
 
             // Ordinary constructors
@@ -1512,9 +1524,17 @@ pub fn check_dt(dts: &[Datatype], ctx: &Ctx, t: &Term, ty: &Term) -> Result<(), 
             require_equal(ctx, &nbe_eval(ty), &nbe_eval(&inferred))
         }
 
-        // Fall through to inference.
+        // Fall through to inference + cumulativity.
         t => match infer_dt(dts, ctx, t) {
-            Ok(ty_) => require_equal(ctx, &nbe_eval(ty), &nbe_eval(&ty_)),
+            Ok(ty_) => {
+                let expected_nf = nbe_eval(ty);
+                let inferred_nf = nbe_eval(&ty_);
+                if cumulativity_check(&expected_nf, &inferred_nf) {
+                    Ok(())
+                } else {
+                    require_equal(ctx, &expected_nf, &inferred_nf)
+                }
+            }
             Err(e) => {
                 let reduced = nbe_eval(t);
                 if reduced == *t {
@@ -1524,6 +1544,37 @@ pub fn check_dt(dts: &[Datatype], ctx: &Ctx, t: &Term, ty: &Term) -> Result<(), 
                 }
             }
         },
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Universe cumulativity
+// ---------------------------------------------------------------------------
+
+/// Check whether `inferred` is a subtype of `expected` under cumulativity.
+///
+/// Rules:
+/// - `TUniv(n) ≤ TUniv(m)` when `n ≤ m` (cumulativity of universes)
+/// - `TPi(x, A, B) ≤ TPi(x, A', B')` when `A' ≤ A` (contravariant domain)
+///   and `B ≤ B'` (covariant codomain), checked recursively
+/// - `TSigma(x, A, B) ≤ TSigma(x, A', B')` when `A ≤ A'` and `B ≤ B'`
+///   (covariant in both), checked recursively
+fn cumulativity_check(expected: &Term, inferred: &Term) -> bool {
+    match (expected, inferred) {
+        // Universe cumulativity: U_n is subtype of U_m when n ≤ m
+        (Term::TUniv(m), Term::TUniv(n)) => n <= m,
+
+        // Pi cumulativity: contravariant in domain, covariant in codomain
+        (Term::TPi(_, a_exp, b_exp), Term::TPi(_, a_inf, b_inf)) => {
+            cumulativity_check(a_inf, a_exp) && cumulativity_check(b_exp, b_inf)
+        }
+
+        // Sigma cumulativity: covariant in both components
+        (Term::TSigma(_, a_exp, b_exp), Term::TSigma(_, a_inf, b_inf)) => {
+            cumulativity_check(a_exp, a_inf) && cumulativity_check(b_exp, b_inf)
+        }
+
+        _ => false,
     }
 }
 

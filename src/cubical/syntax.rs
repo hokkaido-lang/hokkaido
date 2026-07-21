@@ -154,6 +154,11 @@ pub struct Datatype {
     pub name: Name,
     pub cons: Vec<ConSig>,
     pub pcons: Vec<PConSig>,
+    /// Optional universe-level annotation: `data D : U_n = ...`
+    /// When `Some(n)`, the datatype lives in `U_n` regardless of its
+    /// constructor arguments. When `None`, the level is inferred as
+    /// `max` over constructor argument universe levels.
+    pub universe_level: Option<Level>,
 }
 
 impl Datatype {
@@ -767,6 +772,7 @@ mod tests {
                 ConSig { name: "suc".into(), arg_tys: vec![Term::TData("Nat".into())] },
             ],
             pcons: vec![],
+            universe_level: None,
         };
         assert!(check_datatype_positivity(&dt).is_ok());
     }
@@ -786,6 +792,7 @@ mod tests {
                 },
             ],
             pcons: vec![],
+            universe_level: None,
         };
         assert!(check_datatype_positivity(&dt).is_ok());
     }
@@ -806,6 +813,7 @@ mod tests {
                 )],
             }],
             pcons: vec![],
+            universe_level: None,
         };
         assert!(check_datatype_positivity(&dt).is_ok());
     }
@@ -825,6 +833,7 @@ mod tests {
                 )],
             }],
             pcons: vec![],
+            universe_level: None,
         };
         let err = check_datatype_positivity(&dt).unwrap_err();
         assert_eq!(err.datatype, "Bad");
@@ -851,6 +860,7 @@ mod tests {
                 )],
             }],
             pcons: vec![],
+            universe_level: None,
         };
         assert!(check_datatype_positivity(&dt).is_ok());
     }
@@ -874,6 +884,7 @@ mod tests {
                 )],
             }],
             pcons: vec![],
+            universe_level: None,
         };
         let err = check_datatype_positivity(&dt).unwrap_err();
         assert_eq!(err.datatype, "Bad");
@@ -893,6 +904,7 @@ mod tests {
                 )],
             }],
             pcons: vec![],
+            universe_level: None,
         };
         assert!(check_datatype_positivity(&dt).is_ok());
     }
@@ -910,6 +922,7 @@ mod tests {
                 face0: Term::TCon("S1".into(), "base".into(), vec![]),
                 face1: Term::TCon("S1".into(), "base".into(), vec![]),
             }],
+            universe_level: None,
         };
         assert!(check_datatype_positivity(&dt).is_ok());
     }
