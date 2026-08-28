@@ -27,7 +27,6 @@ Type *CodeGen::get_llvm_type(TypeKind kind) {
     case TypeKind::Bool:    return Type::getInt1Ty(Context);
     case TypeKind::String:  return PointerType::getUnqual(Context);
     case TypeKind::Char:    return Type::getInt8Ty(Context);
-    case TypeKind::Cubical: return Type::getInt64Ty(Context);
     case TypeKind::Ref:
     case TypeKind::MutRef:  return PointerType::getUnqual(Context);
     case TypeKind::Tuple:   return nullptr; // must use annotation overload

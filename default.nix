@@ -8,19 +8,12 @@ pkgs.stdenv.mkDerivation {
 
   nativeBuildInputs = with pkgs; [
     cmake
-    cargo
-    rustc
   ];
 
   buildInputs = with pkgs; [
     llvmPackages.llvm
     llvmPackages.libllvm
   ];
-
-  # cargo needs a writable CARGO_HOME during the build
-  preConfigure = ''
-    export CARGO_HOME=$TMPDIR/cargo-home
-  '';
 
   installPhase = ''
     runHook preInstall

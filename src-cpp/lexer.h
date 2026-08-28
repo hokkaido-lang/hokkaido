@@ -1,20 +1,24 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 // =========================================================================
-// Hokkaido Language — Lexer (Rust-backed via FFI)
+// Hokkaido Language — Lexer
 // =========================================================================
 
 enum class TokenType {
   Eof,
-  Let, Fn, Lambda, Return, Asm, If, Else, For, While, In, Break, Continue, Atomic, Struct, Include, Namespace, Extern,
+  Let, Fn, Lambda, Return, Asm, If, Else, For, While, In, Break, Continue, Atomic,
+  Struct, Include, Namespace, Extern,
   Trait, Impl,
   Pub, Import, Package,
   Match, Enum,
   Null, Mut,
   Tick,
-  Int8, Int16, Int32, Int64, Uint8, Uint16, Uint32, Uint64, Float16, Float32, Float64, Bool, String, Char, Void,
+  Int8, Int16, Int32, Int64, Uint8, Uint16, Uint32, Uint64,
+  Float16, Float32, Float64, Bool, String, Char, Void,
   Region,
   Identifier,
   Number, True, False,
@@ -40,16 +44,24 @@ struct Token {
 };
 
 class Lexer {
-  struct LexerData *data_ = nullptr;
+  std::vector<char> input_;
+  size_t pos_ = 0;
+  int line_ = 1;
+  int col_ = 1;
+  std::unordered_map<std::string, TokenType> keywords_;
+
+  char peek() const;
+  char peek_offset(size_t offset) const;
+  char advance();
+  void skip_whitespace();
+  void skip_line_comment();
+  void skip_block_comment();
+  Token lex_string(int l, int c);
+  Token lex_number(int l, int c);
+  Token lex_identifier(int l, int c);
+  Token lex_char_literal(int l, int c);
 
 public:
-  Lexer(const std::string &src);
-  ~Lexer();
-
-  Lexer(const Lexer&) = delete;
-  Lexer& operator=(const Lexer&) = delete;
-  Lexer(Lexer &&other) noexcept;
-  Lexer& operator=(Lexer &&other) noexcept;
-
+  explicit Lexer(const std::string &src);
   Token next_token();
 };

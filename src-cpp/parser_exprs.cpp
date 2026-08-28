@@ -303,7 +303,19 @@ std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
   // or positional: VariantName { expr, expr, ... }
   if (cur_tok.type == TokenType::Less || cur_tok.type == TokenType::LBrace) {
     auto *ident = dynamic_cast<IdentExpr *>(left.get());
-    if (ident && (known_variants.count(ident->name) > 0 || known_structs.count(ident->name) > 0)) {
+    bool is_known = false;
+    if (ident) {
+      is_known = known_variants.count(ident->name) > 0 || known_structs.count(ident->name) > 0;
+      // Also check unqualified name for namespaced structs (e.g. math::Point)
+      if (!is_known) {
+        auto pos = ident->name.rfind("::");
+        if (pos != std::string::npos) {
+          std::string unqualified = ident->name.substr(pos + 2);
+          is_known = known_variants.count(unqualified) > 0 || known_structs.count(unqualified) > 0;
+        }
+      }
+    }
+    if (is_known) {
       std::string variant_name = ident->name;
       std::vector<TypeAnnotation> ctor_type_args;
       if (cur_tok.type == TokenType::Less) {

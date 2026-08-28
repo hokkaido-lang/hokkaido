@@ -143,7 +143,6 @@ hokkaido/
 ## Tools
 
 - **nix**: Use when specific tool is not available
-- **cargo**: Rust package manager
 - **cmake**: C++ build system
 - **./scripts/bump-version.sh**: Version management
 
