@@ -37,19 +37,14 @@ jobs:
       - name: Build otaru via flake
         run: nix build .#otaru -L -o result-otaru
 
-      - name: Build sapporo via flake
-        run: nix build .#sapporo -L -o result-sapporo
-
       - name: Package binaries
         run: |
           mkdir -p dist/bin dist/share
           # hokkaido compiler binaries (hok-lsp only ships from the hokkaido output)
           cp result-hokkaido/bin/hokkaido dist/bin/
           cp result-hokkaido/bin/hok-lsp  dist/bin/
-          # otaru package manager (bundles its own copy of hokkaido)
+          # otaru package manager (bundles hokkaido + sapporo)
           cp result-otaru/bin/otaru dist/bin/
-          # sapporo web app toolkit (library embedded in binary)
-          cp result-sapporo/bin/sapporo dist/bin/
           # std library (shared, found via HOKKAIDO_STD or relative path)
           cp -r std dist/share/std
           tar -C dist -czf hokkaido-${{ matrix.asset_suffix }}.tar.gz bin share
