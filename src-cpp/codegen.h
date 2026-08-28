@@ -14,7 +14,6 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include "ast.h"
-#include "cubical.h"
 #include "error.h"
 
 /// Write a compiler error with source location to the given output stream.
@@ -207,7 +206,6 @@ private:
   [[nodiscard]] llvm::Value *eval_int_init(Expr *expr);
   [[nodiscard]] llvm::Value *eval_float_init(Expr *expr);
   [[nodiscard]] llvm::Value *eval_string_init(Expr *expr);
-  [[nodiscard]] llvm::Value *eval_cubical_init(Expr *expr, std::string *debug_out);
 
   // Array helpers
   [[nodiscard]] llvm::Value *eval_array_init(Expr *expr, llvm::ArrayType *array_type);
@@ -226,9 +224,6 @@ private:
   bool gen_pattern_bind(Pattern *pat, llvm::Value *val,
                          const TypeAnnotation &val_ann);
 
-  // Cubical structured value helpers
-  [[nodiscard]] llvm::Constant *build_cubical_constant(const cubical_value::CubicalValue *val);
-  [[nodiscard]] llvm::Type *build_cubical_type(const cubical_value::CubicalValue *val);
   [[nodiscard]] std::string mangle_ann(const TypeAnnotation &ann);
   [[nodiscard]] std::string mangle_name(const std::string &fn_name,
                            const std::vector<TypeAnnotation> &type_args);
@@ -256,7 +251,7 @@ private:
   [[nodiscard]] llvm::GlobalVariable *get_fnval_wrapper(const std::string &fn_name,
                                            llvm::Function *f);
 
-  // Source file base directory, used to resolve .cub file paths.
+  // Source file base directory
   std::string base_dir;
 
   // Region state

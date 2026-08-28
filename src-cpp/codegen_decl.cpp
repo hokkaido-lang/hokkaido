@@ -45,21 +45,6 @@ bool CodeGen::gen_global_let_decl(LetDecl *decl) {
   Type *llvm_type = get_llvm_type(decl->type_ann);
   if (!llvm_type) return false;
 
-  if (decl->type_ann.kind == TypeKind::Cubical) {
-    std::string debug;
-    Value *init = eval_cubical_init(decl->init_expr.get(), &debug);
-    if (!init) return false;
-    std::cout << "  " << decl->name << " = " << debug << "\n";
-
-    auto *gv = new GlobalVariable(M, init->getType(), true,
-                                   GlobalVariable::InternalLinkage,
-                                   cast<Constant>(init), decl->name);
-    gv->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
-    global_values[decl->name] = gv;
-    named_types[decl->name] = TypeKind::Int64;
-    return true;
-  }
-
   Value *init = eval_expr(decl->init_expr.get(), llvm_type);
   if (!init) return false;
 
@@ -167,12 +152,6 @@ bool CodeGen::gen_let_init(const std::string &name, TypeAnnotation &type_ann,
       init = eval_expr(init_expr, Type::getInt8Ty(Context)); break;
     case TypeKind::String:
       init = eval_string_init(init_expr); break;
-    case TypeKind::Cubical: {
-      std::string debug;
-      init = eval_cubical_init(init_expr, &debug);
-      if (init) std::cout << "  " << name << " = " << debug << "\n";
-      break;
-    }
     case TypeKind::Tuple:
       init = eval_expr(init_expr, llvm_type); break;
     case TypeKind::Slice:

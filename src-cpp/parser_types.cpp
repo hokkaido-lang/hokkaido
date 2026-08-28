@@ -67,9 +67,6 @@ TypeAnnotation Parser::parse_type_annotation() {
   } else if (cur_tok.type == TokenType::Char) {
     ann = {TypeKind::Char};
     next_token();
-  } else if (cur_tok.type == TokenType::Cubical) {
-    ann = {TypeKind::Cubical};
-    next_token();
   } else if (cur_tok.type == TokenType::LParen) {
     // Tuple type: (T1, T2, ...)
     next_token(); // consume '('
@@ -165,7 +162,7 @@ TypeAnnotation Parser::parse_type_annotation() {
       }
     }
   } else {
-    set_error("expected type (void, int8, int16, int32, int64, uint8, uint16, uint32, uint64, float, bool, string, char, cubical, tuple, or struct name)");
+    set_error("expected type (void, int8, int16, int32, int64, uint8, uint16, uint32, uint64, float, bool, string, char, tuple, or struct name)");
     ann = {TypeKind::Int64};
     has_error = true;
     return ann;

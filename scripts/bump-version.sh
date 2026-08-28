@@ -99,20 +99,6 @@ apply_component() {
             fi
             ;;
 
-        cubical)
-            # Root Cargo.toml
-            if [ -f "Cargo.toml" ]; then
-                sed_inplace '/^\[package\]/,/version/{s/version = "[^"]*"/version = "'"$version"'"/}' "Cargo.toml"
-                echo "    updated Cargo.toml"
-                files_updated=$((files_updated + 1))
-            fi
-            # Regenerate root Cargo.lock
-            if [ -f "Cargo.lock" ]; then
-                cargo check 2>/dev/null && echo "    updated Cargo.lock" || echo "    (cargo check skipped)"
-                files_updated=$((files_updated + 1))
-            fi
-            ;;
-
         *)
             echo "    WARNING: unknown component '$component', skipping"
             return
@@ -125,11 +111,10 @@ apply_component() {
 # ── Update AGENTS.md version table ───────────────────────────────────────────
 
 update_agents_md() {
-    local hokkaido_ver otaru_ver sapporo_ver cubical_ver
+    local hokkaido_ver otaru_ver sapporo_ver
     hokkaido_ver=$(get_version hokkaido)
     otaru_ver=$(get_version otaru)
     sapporo_ver=$(get_version sapporo)
-    cubical_ver=$(get_version cubical)
 
     if [ ! -f "AGENTS.md" ]; then
         echo "  WARNING: AGENTS.md not found, skipping"
@@ -140,7 +125,6 @@ update_agents_md() {
     sed_inplace 's/| hokkaido | [0-9.]* |/| hokkaido | '"$hokkaido_ver"' |/' "AGENTS.md"
     sed_inplace 's/| otaru | [0-9.]* |/| otaru | '"$otaru_ver"' |/' "AGENTS.md"
     sed_inplace 's/| sapporo | [0-9.]* |/| sapporo | '"$sapporo_ver"' |/' "AGENTS.md"
-    sed_inplace 's/| cubical | [0-9.]* |/| cubical | '"$cubical_ver"' |/' "AGENTS.md"
 
     echo "  updated AGENTS.md"
 }
@@ -151,7 +135,7 @@ cmd_apply() {
     echo "Applying versions from $VERSIONS_TOML..."
     echo
 
-    for component in hokkaido otaru sapporo cubical; do
+    for component in hokkaido otaru sapporo; do
         local version
         version=$(get_version "$component")
         if [ -z "$version" ]; then
@@ -201,7 +185,7 @@ cmd_show() {
     echo
     printf "  %-12s %s\n" "Component" "Version"
     printf "  %-12s %s\n" "---------" "-------"
-    for component in hokkaido otaru sapporo cubical; do
+    for component in hokkaido otaru sapporo; do
         local version
         version=$(get_version "$component")
         printf "  %-12s %s\n" "$component" "$version"
@@ -211,7 +195,6 @@ cmd_show() {
     printf "  %-30s %s\n" "File" "Field"
     printf "  %-30s %s\n" "----" "-----"
     printf "  %-30s %s\n" "default.nix" "hokkaido"
-    printf "  %-30s %s\n" "Cargo.toml" "cubical"
     printf "  %-30s %s\n" "otaru/Cargo.toml" "otaru"
     printf "  %-30s %s\n" "otaru/default.nix" "otaru"
     printf "  %-30s %s\n" "sapporo-cli/Cargo.toml" "sapporo"
@@ -227,7 +210,7 @@ cmd_commit() {
     git diff --cached --quiet && echo "Nothing to commit." && return 0
     git commit -m "chore: bump versions
 
-$(for c in hokkaido otaru sapporo cubical; do
+$(for c in hokkaido otaru sapporo; do
     v=$(get_version "$c")
     echo "- $c: $v"
 done)"
@@ -249,7 +232,7 @@ Commands:
   --show                  Show current versions and managed files
   --commit                Apply + git commit
 
-Components: hokkaido, otaru, sapporo, cubical
+Components: hokkaido, otaru, sapporo
 
 Examples:
   $0 --show

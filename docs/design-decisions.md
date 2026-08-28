@@ -233,7 +233,6 @@ base_type  ::= "int8" | "int16" | "int32" | "int64" | "int"
              | "uint8" | "uint16" | "uint32" | "uint64"
              | "float16" | "float32" | "float64" | "float"
              | "bool" | "string" | "void" | "char"
-             | "cubical"
              | ident                          // struct/enum/type-param name
              | "(" type ("," type)* ")"       // tuple type
              | "fn" "(" (type ("," type)*)? ")" ("->" type)?  // function type

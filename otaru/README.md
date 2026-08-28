@@ -492,12 +492,11 @@ version = "0.1.0"
 
 [build.targets.hokkaido]
 type = "executable"
-sources = ["src-cpp/main.cpp", "src-cpp/cubical.cpp", "src-cpp/lexer.cpp",
+sources = ["src-cpp/main.cpp", "src-cpp/lexer.cpp",
            "src-cpp/parser.cpp", "src-cpp/codegen.cpp"]
 include_dirs = ["src-cpp"]
 link = ["LLVM", "pthread", "dl", "m"]
 cflags = ["-std=c++17"]
-libraries = ["target/release/libcubical_c.a"]
 
 [build.targets.hok-lsp]
 type = "executable"

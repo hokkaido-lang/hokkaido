@@ -205,7 +205,6 @@ std::string CodeGen::mangle_ann(const TypeAnnotation &ann) {
       case TypeKind::Bool:    return "bool";
       case TypeKind::String:  return "str";
       case TypeKind::Char:    return "char";
-      case TypeKind::Cubical: return "cub";
       case TypeKind::Struct:
       case TypeKind::TypeParam: {
         std::string s = a.struct_name;

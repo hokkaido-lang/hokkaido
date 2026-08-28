@@ -13,7 +13,7 @@ Instructions for AI agents working on this repository.
 
 ### hokkaido (C++ compiler)
 - **Location**: Root directory (`default.nix`, `CMakeLists.txt`)
-- **Language**: C++ (with Rust cubical backend)
+- **Language**: C++
 - **Version**: `default.nix` → `version = "..."`
 - **Build**: `cmake .. && make`
 - **Outputs**: `hokkaido` compiler, `hok-lsp` language server
@@ -36,12 +36,6 @@ Instructions for AI agents working on this repository.
 - **Location**: `sapporo/` (library only — DOM bindings `.hk` + `.js`)
 - **Note**: `sapporo-cli/` is **deprecated**. All CLI features merged into otaru (`otaru new --web`, `otaru build`, `otaru run`). Use `otaru` instead.
 - **Library**: `sapporo/sapporo/sapporo.hk` and `sapporo/sapporo.js` are embedded in otaru via `include_bytes!` and bundled into web projects at scaffold time.
-
-### cubical (Rust Crate)
-- **Location**: Root `Cargo.toml`
-- **Language**: Rust
-- **Version**: `Cargo.toml` → `version = "..."`
-- **Build**: `cargo build`
 
 ### std (Standard Library)
 - **Location**: `std/`
@@ -69,7 +63,6 @@ All versions live in `versions.toml`. Never edit version numbers directly in oth
 | hokkaido | 0.22.0 | `default.nix` |
 | otaru | 0.8.1 | `otaru/Cargo.toml`, `otaru/default.nix`, `otaru/Cargo.lock` |
 | sapporo | 0.4.0 | `sapporo-cli/Cargo.toml`, `sapporo-cli/default.nix`, `sapporo-cli/Cargo.lock` |
-| cubical | 0.3.0 | `Cargo.toml`, `Cargo.lock` |
 
 ### When to Bump Versions
 
@@ -131,13 +124,11 @@ When you change functionality, check and update:
 ```
 hokkaido/
 ├── default.nix          # Hokkaido compiler (C++)
-├── Cargo.toml           # Cubical crate (Rust)
 ├── std/                 # Standard library
 ├── otaru/               # Package manager + build tool (Rust)
 ├── sapporo/             # Web app library (.hk + .js, embedded in otaru)
 ├── src-cpp/lsp/         # Language server (C++)
 ├── test/                # Compiler tests
-│   ├── cubical/         # Cubical backend tests (inputs/*.cub + *.hk)
 │   ├── phases/          # Compiler phase progression tests
 │   ├── features/        # Individual feature tests
 │   ├── examples/        # Demo/example programs
@@ -170,7 +161,7 @@ hokkaido/
 
 - Run `cargo test` for Rust components
 - Run `cmake .. && make && ctest` for C++ components
-- Run `./test/run.sh` to run all compiler tests (or `./test/run.sh <category>` for cubical/phases/features/examples/packages)
+- Run `./test/run.sh` to run all compiler tests (or `./test/run.sh <category>` for phases/features/examples/packages)
 - Test CLI tools manually after changes
 - Verify examples work before committing
 

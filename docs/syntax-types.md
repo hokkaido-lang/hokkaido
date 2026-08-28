@@ -31,7 +31,6 @@ Every value in Hokkaido has a type, specified with a type annotation using colon
 | `char`    | 8-bit character (alias for `uint8` with distinct literal syntax `'a'`) | 1 byte |
 | `string`  | Opaque string type (internally a pointer) | 8 bytes |
 | `void`    | No value (function returns only)     | 0 bytes   |
-| `cubical` | Compile-time cubical expression (see [Cubical](/docs/syntax-ffi-cubical#cubical)) | 8 bytes |
 
 ```
 let a: int8 = -128

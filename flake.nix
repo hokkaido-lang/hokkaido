@@ -1,5 +1,5 @@
 {
-  description = "hokkaido — LLVM-based compiler with Rust cubical backend";
+  description = "hokkaido — LLVM-based compiler";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

@@ -23,7 +23,7 @@ fn name(param: type) {
 
 Each parameter has an explicit type annotation, just like `let`. Parameters are always
 passed by value. There are no default arguments, optional parameters, or variadic
-parameters (except in [C FFI](/docs/syntax-ffi-cubical#c-ffi) declarations).
+parameters (except in [C FFI](/docs/syntax-ffi#c-ffi) declarations).
 
 ```
 fn greet(name: string, count: int) {

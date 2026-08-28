@@ -4,7 +4,6 @@
 #
 # Usage:
 #   ./test/run.sh              Run all tests
-#   ./test/run.sh cubical      Run only cubical tests
 #   ./test/run.sh phases       Run only phase tests
 #   ./test/run.sh features     Run only feature tests
 #   ./test/run.sh examples     Run only examples
@@ -101,14 +100,6 @@ category="${1:-all}"
 
 echo -e "${BOLD}Running tests...${NC}"
 echo
-
-if [ "$category" = "all" ] || [ "$category" = "cubical" ]; then
-    echo -e "${BOLD}cubical/${NC}"
-    for f in "$TESTDIR"/cubical/*.hk; do
-        [ -f "$f" ] && run_test "$f"
-    done
-    echo
-fi
 
 if [ "$category" = "all" ] || [ "$category" = "phases" ]; then
     echo -e "${BOLD}phases/${NC}"

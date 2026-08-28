@@ -1,5 +1,0 @@
-data Nat =
-  | zero : Nat
-  | suc  : Nat -> Nat
-
-def main : Nat * Nat = (suc (suc zero) , suc zero)

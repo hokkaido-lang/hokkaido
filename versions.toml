@@ -11,8 +11,5 @@ version = "0.8.1"
 [sapporo]
 version = "0.4.0"
 
-[cubical]
-version = "0.3.0"
-
 [hokkaio]
 version = "0.22.1"

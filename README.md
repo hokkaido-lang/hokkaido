@@ -1,16 +1,15 @@
 # hokkaido
 
-An LLVM-based systems programming language with cubical compile-time evaluation, WebAssembly support, and a web UI framework.
+An LLVM-based systems programming language with WebAssembly support and a web UI framework.
 
 ## What's in the box
 
 | Package | Description | Language |
 |---------|-------------|----------|
-| [**hokkaido**](#hokkaido-compiler) | Compiler (LLVM + cubical backend) | C++ / Rust |
+| [**hokkaido**](#hokkaido-compiler) | Compiler (LLVM-based) | C++ / Rust |
 | [**hok-lsp**](#hok-lsp) | Language server for IDE support | C++ |
 | [**otaru**](#otaru-package-manager) | Package manager, build tool, and web app scaffold | Rust |
 | [**sapporo**](#sapporo-web-ui) | Web UI library (DOM bindings) — CLI merged into otaru | JavaScript / Hokkaido |
-| **cubical** | Compile-time evaluation backend (static lib) | Rust |
 
 ## Quick start
 
@@ -96,8 +95,7 @@ export PATH="$PWD/build:$PWD/otaru/target/release:$PATH"
 - [Expressions](docs/syntax-expressions.md)
 - [Data structures](docs/syntax-data-structures.md)
 - [Modules and imports](docs/syntax-modules.md)
-- [FFI and cubical](docs/syntax-ffi-cubical.md)
-- [Cubical surface language](docs/cubical_surface_language.md)
+- [C FFI and freestanding mode](docs/syntax-ffi.md)
 - [Standard library](docs/stdlib.md)
 - [Design decisions](docs/design-decisions.md)
 

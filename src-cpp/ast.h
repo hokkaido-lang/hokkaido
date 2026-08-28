@@ -27,7 +27,6 @@ enum class TypeKind {
   Bool,
   String,
   Char,
-  Cubical,
   Tuple,
   Struct,
   Enum,

@@ -12,6 +12,4 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include "cubical.h"
-
 using namespace llvm;

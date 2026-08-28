@@ -1,6 +1,5 @@
-// hokkaido — LLVM-based compiler with cubical compile-time evaluation
-// The cubical type triggers compile-time evaluation of the cubical
-// expression. The result is embedded as an LLVM constant.
+// hokkaido — LLVM-based compiler
+// Compiles .hk (Hokkaido) source files to native code via LLVM.
 
 #include <cstdlib>
 #include <filesystem>
@@ -29,7 +28,6 @@
 
 #include "borrow_checker.h"
 #include "codegen.h"
-#include "cubical.h"
 #include "lexer.h"
 #include "parser.h"
 
@@ -103,7 +101,7 @@ static std::string find_dynamic_linker() {
 // =========================================================================
 
 void print_usage() {
-  std::cout << "hokkaido — LLVM-based compiler with cubical compile-time evaluation\n\n";
+  std::cout << "hokkaido — LLVM-based compiler\n\n";
   std::cout << "Usage:\n";
   std::cout << "  hokkaido input.hk                  Print LLVM IR to stdout\n";
   std::cout << "  hokkaido input.hk -o output         Compile to an object file (output.o)\n";
@@ -119,7 +117,6 @@ void print_usage() {
   std::cout << "                                       (requires wasm-ld for linking)\n";
   std::cout << "  hokkaido input.hk -o output --target wasm32-unknown-unknown\n";
   std::cout << "                                       Compile to bare WebAssembly object file\n";
-  std::cout << "  hokkaido input.cub                  Evaluate a .cub file\n\n";
   std::cout << "Optimization levels:\n";
   std::cout << "  -O0    No optimization (default, debug-friendly)\n";
   std::cout << "  -O1    Light optimization, preserves debuggability\n";
@@ -253,18 +250,6 @@ int main(int argc, char *argv[]) {
 
   IRBuilder<> Builder(Context);
 
-  // Handle .cub files (direct cubical evaluation)
-  if (filePath.extension() == ".cub" || filePath.extension() == ".uwuc") {
-    cubical_value cv(Content);
-    if (cv.valid()) {
-      std::cout << cv.str() << "\n";
-    } else {
-      std::cerr << "Error: cubical evaluation failed\n";
-      return 1;
-    }
-    return 0;
-  }
-
   // Handle .hk files (hokkaido language)
   if (filePath.extension() == ".hk") {
     Lexer lexer(Content);
@@ -356,6 +341,6 @@ int main(int argc, char *argv[]) {
   }
 
   std::cerr << "Unsupported file type: " << filePath.extension() << "\n";
-  std::cerr << "Supported: .hk (hokkaido), .cub\n";
+  std::cerr << "Supported: .hk (hokkaido)\n";
   return 1;
 }

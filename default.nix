@@ -31,7 +31,7 @@ pkgs.stdenv.mkDerivation {
   '';
 
   meta = with pkgs.lib; {
-    description = "Hokkaido compiler (LLVM + Rust cubical backend)";
+    description = "Hokkaido compiler (LLVM-based)";
     mainProgram = "hokkaido";
   };
 }

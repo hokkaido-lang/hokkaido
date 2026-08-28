@@ -1,8 +1,0 @@
-extern fn printf(fmt: string, ...) -> int
-
-let n: cubical = "inputs/example.cub"
-
-fn main() -> int {
-    printf("n = %ld (expected 5)\n", n)
-    return 0
-}

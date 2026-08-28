@@ -9,7 +9,6 @@ description = "Hokkaido programming language"
 
 # LLVM build configuration (replaces CMakeLists.txt)
 [build]
-prebuild = "cargo build --release"
 llvm-config = "/nix/store/238i6ljarh959f2dak1a8rsyiz6hnmgw-llvm-21.1.8-dev/bin/llvm-config"
 llvm-components = [
     "support", "core", "irreader", "codegen", "target",
@@ -28,7 +27,6 @@ compiler = "c++"
 cflags = ["-fexceptions"]
 sources = [
     "src-cpp/main.cpp",
-    "src-cpp/cubical.cpp",
     "src-cpp/lexer.cpp",
     "src-cpp/parser.cpp",
     "src-cpp/codegen.cpp",
@@ -41,7 +39,6 @@ sources = [
     "src-cpp/codegen_pattern.cpp",
     "src-cpp/borrow_checker.cpp",
 ]
-libraries = ["target/release/libcubical_c.a"]
 
 # LSP server binary
 [build.targets.hok-lsp]

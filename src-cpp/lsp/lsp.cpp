@@ -772,7 +772,6 @@ json::Value LSPServer::handle_completion(const json::Object &params) {
     {"bool", "type: boolean"},
     {"string", "type: string"},
     {"char", "type: character"},
-    {"cubical", "type: cubical"},
   };
 
   // Add known symbols from all open documents

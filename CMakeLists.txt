@@ -34,17 +34,6 @@ llvm_map_components_to_libnames(llvm_libs
     ${LLVM_TARGETS_TO_BUILD}
 )
 
-# Build the Rust cubical library as a static library
-set(CUBICAL_LIB "${CMAKE_SOURCE_DIR}/target/release/libcubical_c.a")
-
-# Custom target to build the Rust library
-add_custom_target(cubical_lib ALL
-    COMMAND cargo build --release
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    COMMENT "Building cubical Rust library..."
-    BYPRODUCTS ${CUBICAL_LIB}
-)
-
 # Build the Rust hok-lexer library as a static library
 set(HOK_LEXER_LIB "${CMAKE_SOURCE_DIR}/hok-lexer/target/release/libhok_lexer_c.a")
 
@@ -58,7 +47,6 @@ add_custom_target(hok_lexer_lib ALL
 # Explicit list of source files in src-cpp/
 set(HOKKAIDO_SOURCES
     src-cpp/main.cpp
-    src-cpp/cubical.cpp
     src-cpp/lexer.cpp
     src-cpp/parser.cpp
     src-cpp/parser_types.cpp
@@ -80,13 +68,12 @@ add_executable(hokkaido ${HOKKAIDO_SOURCES})
 
 target_include_directories(hokkaido PRIVATE src-cpp)
 
-# Add dependency on the Rust libraries
-add_dependencies(hokkaido cubical_lib hok_lexer_lib)
+# Add dependency on the Rust library
+add_dependencies(hokkaido hok_lexer_lib)
 
 target_link_libraries(hokkaido PRIVATE
     ${llvm_libs}
     ZLIB::ZLIB
-    ${CUBICAL_LIB}
     ${HOK_LEXER_LIB}
     pthread
     dl
