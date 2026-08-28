@@ -282,7 +282,7 @@ int main(int argc, char *argv[]) {
       }
     }
 
-    CodeGen cg(Context, *M, Builder, Freestanding, filePath.parent_path().string());
+    CodeGen cg(Context, *M, Builder, Freestanding);
     if (!cg.generate(decls)) {
       return 1;
     }

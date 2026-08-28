@@ -119,9 +119,8 @@ class CodeGen {
 
 public:
   CodeGen(llvm::LLVMContext &Ctx, llvm::Module &Mod, llvm::IRBuilder<> &Bld,
-          bool Freestanding = false, std::string BaseDir = "")
-      : Context(Ctx), M(Mod), Builder(Bld), freestanding(Freestanding),
-        base_dir(std::move(BaseDir)) {}
+          bool Freestanding = false)
+      : Context(Ctx), M(Mod), Builder(Bld), freestanding(Freestanding) {}
 
   bool generate(const std::vector<std::unique_ptr<Decl>> &decls);
 
@@ -250,9 +249,6 @@ private:
   std::map<std::string, llvm::GlobalVariable *> fnval_globals;
   [[nodiscard]] llvm::GlobalVariable *get_fnval_wrapper(const std::string &fn_name,
                                            llvm::Function *f);
-
-  // Source file base directory
-  std::string base_dir;
 
   // Region state
   struct RegionInfo {

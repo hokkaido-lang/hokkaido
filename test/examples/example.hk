@@ -11,6 +11,6 @@ namespace math {
 fn main() -> int {
     let a: int = math::square(5)
     let b: int = math::trig::double_it(3)
-    let p: math::Point = p
+    let p: math::Point = math::Point { x: 1, y: 2 }
     return b
 }

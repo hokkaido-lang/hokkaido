@@ -32,9 +32,8 @@ Instructions for AI agents working on this repository.
 - **Build**: `cargo build --manifest-path otaru/Cargo.toml`
 - **Features**: Project scaffolding, dependency management, build orchestration, C/C++ builds, WASM compilation, web app scaffolding (`--web`), dev server, DOM library bundling, npm dependency support
 
-### sapporo (Web App Toolkit) — DEPRECATED
-- **Location**: `sapporo/` (library only — DOM bindings `.hk` + `.js`)
-- **Note**: `sapporo-cli/` is **deprecated**. All CLI features merged into otaru (`otaru new --web`, `otaru build`, `otaru run`). Use `otaru` instead.
+### sapporo (Web App Toolkit)
+- **Location**: `sapporo/` (DOM bindings `.hk` + `.js`)
 - **Library**: `sapporo/sapporo/sapporo.hk` and `sapporo/sapporo.js` are embedded in otaru via `include_bytes!` and bundled into web projects at scaffold time.
 
 ### std (Standard Library)
@@ -62,7 +61,6 @@ All versions live in `versions.toml`. Never edit version numbers directly in oth
 |-----------|---------|---------------|
 | hokkaido | 0.22.0 | `default.nix` |
 | otaru | 0.8.1 | `otaru/Cargo.toml`, `otaru/default.nix`, `otaru/Cargo.lock` |
-| sapporo | 0.4.0 | `sapporo-cli/Cargo.toml`, `sapporo-cli/default.nix`, `sapporo-cli/Cargo.lock` |
 
 ### When to Bump Versions
 

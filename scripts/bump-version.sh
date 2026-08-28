@@ -80,23 +80,7 @@ apply_component() {
             ;;
 
         sapporo)
-            # sapporo-cli/Cargo.toml
-            if [ -f "sapporo-cli/Cargo.toml" ]; then
-                sed_inplace '/^\[package\]/,/version/{s/version = "[^"]*"/version = "'"$version"'"/}' "sapporo-cli/Cargo.toml"
-                echo "    updated sapporo-cli/Cargo.toml"
-                files_updated=$((files_updated + 1))
-            fi
-            # sapporo-cli/default.nix
-            if [ -f "sapporo-cli/default.nix" ]; then
-                sed_inplace 's/version = "[^"]*"/version = "'"$version"'"/' "sapporo-cli/default.nix"
-                echo "    updated sapporo-cli/default.nix"
-                files_updated=$((files_updated + 1))
-            fi
-            # Regenerate Cargo.lock
-            if [ -f "sapporo-cli/Cargo.lock" ]; then
-                (cd sapporo-cli && cargo check 2>/dev/null) && echo "    updated sapporo-cli/Cargo.lock" || echo "    (cargo check skipped)"
-                files_updated=$((files_updated + 1))
-            fi
+            # sapporo/ library (no versioned Cargo.toml — ships with otaru)
             ;;
 
         *)
@@ -197,8 +181,6 @@ cmd_show() {
     printf "  %-30s %s\n" "default.nix" "hokkaido"
     printf "  %-30s %s\n" "otaru/Cargo.toml" "otaru"
     printf "  %-30s %s\n" "otaru/default.nix" "otaru"
-    printf "  %-30s %s\n" "sapporo-cli/Cargo.toml" "sapporo"
-    printf "  %-30s %s\n" "sapporo-cli/default.nix" "sapporo"
     printf "  %-30s %s\n" "AGENTS.md" "all (version table)"
 }
 

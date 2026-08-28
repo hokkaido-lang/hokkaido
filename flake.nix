@@ -14,14 +14,12 @@
         otaru = pkgs.callPackage ./otaru/default.nix {
           inherit hokkaido;
         };
-        sapporo = pkgs.callPackage ./sapporo-cli/default.nix { };
       in
       {
         packages = {
           default = otaru;
           otaru = otaru;
           hokkaido = hokkaido;
-          sapporo = sapporo;
         };
 
         devShells.default = pkgs.mkShell {
