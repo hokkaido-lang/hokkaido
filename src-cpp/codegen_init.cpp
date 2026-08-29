@@ -16,7 +16,7 @@ Value *CodeGen::eval_int_init(Expr *expr) {
   if (auto *id = dynamic_cast<IdentExpr *>(expr)) {
     auto it = named_values.find(id->name);
     if (it == named_values.end()) {
-      cg_error(errs(), id, "undefined variable '" + id->name + "'");
+      cg_error(errs(), id, "undefined variable '" + id->name + "'", source_text);
       return nullptr;
     }
     return Builder.CreateLoad(Type::getInt64Ty(Context), it->second, id->name);

@@ -19,9 +19,9 @@ void Parser::skip_newlines() {
     cur_tok = lexer.next_token();
 }
 
-void Parser::set_error(const std::string &msg) {
+void Parser::set_error(const std::string &msg, const std::string &suggestion, int span) {
   has_error = true;
-  error_msg = error_at(source_file, cur_tok.line, cur_tok.col, msg);
+  error_msg = error_at(source_file, cur_tok.line, cur_tok.col, msg, source_text, suggestion, span);
 }
 
 // -------------------------------------------------------------------------

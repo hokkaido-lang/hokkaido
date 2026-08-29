@@ -138,7 +138,7 @@ void CodeGen::register_struct_decl(StructDecl *decl) {
   for (auto &field : decl->fields) {
     Type *field_type = get_llvm_type(field.type_ann);
     if (!field_type) {
-      cg_error(errs(), decl, "invalid field type in struct '" + decl->name + "'");
+      cg_error(errs(), decl, "invalid field type in struct '" + decl->name + "'", source_text);
       return;
     }
     member_types.push_back(field_type);

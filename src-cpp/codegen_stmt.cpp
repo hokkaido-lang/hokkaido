@@ -26,7 +26,7 @@ bool CodeGen::check_region_lifetime(ReturnStmt *stmt) {
   if (!stmt->value) return true;
   if (auto *id = dynamic_cast<IdentExpr *>(stmt->value.get())) {
     if (region_allocated_vars.count(id->name)) {
-      cg_error(errs(), stmt, "cannot return pointer '" + id->name + "' — region will be freed before the function returns");
+      cg_error(errs(), stmt, "cannot return pointer '" + id->name + "' — region will be freed before the function returns", source_text);
       return false;
     }
   }
@@ -58,7 +58,7 @@ bool CodeGen::gen_stmt(Stmt *stmt) {
     Value *v = eval_expr(expr->expr.get(), Type::getInt64Ty(Context));
     return v != nullptr;
   }
-  cg_error(errs(), stmt, "unknown statement type");
+  cg_error(errs(), stmt, "unknown statement type", source_text);
   return false;
 }
 
@@ -75,7 +75,7 @@ bool CodeGen::gen_return_stmt(ReturnStmt *stmt) {
   }
 
   if (!stmt->value) {
-    cg_error(errs(), stmt, "non-void function must return a value");
+    cg_error(errs(), stmt, "non-void function must return a value", source_text);
     return false;
   }
 
@@ -195,7 +195,7 @@ bool CodeGen::gen_while_stmt(WhileStmt *stmt) {
 bool CodeGen::gen_break_stmt(BreakStmt *stmt) {
   if (stmt->label.empty()) {
     if (loop_stack.empty()) {
-      cg_error(errs(), stmt, "'break' outside of loop");
+      cg_error(errs(), stmt, "'break' outside of loop", source_text);
       return false;
     }
     Builder.CreateBr(loop_stack.back().end_bb);
@@ -207,14 +207,14 @@ bool CodeGen::gen_break_stmt(BreakStmt *stmt) {
       return true;
     }
   }
-  cg_error(errs(), stmt, "no loop with label '" + stmt->label + "' for break");
+  cg_error(errs(), stmt, "no loop with label '" + stmt->label + "' for break", source_text);
   return false;
 }
 
 bool CodeGen::gen_continue_stmt(ContinueStmt *stmt) {
   if (stmt->label.empty()) {
     if (loop_stack.empty()) {
-      cg_error(errs(), stmt, "'continue' outside of loop");
+      cg_error(errs(), stmt, "'continue' outside of loop", source_text);
       return false;
     }
     Builder.CreateBr(loop_stack.back().update_bb);
@@ -226,7 +226,7 @@ bool CodeGen::gen_continue_stmt(ContinueStmt *stmt) {
       return true;
     }
   }
-  cg_error(errs(), stmt, "no loop with label '" + stmt->label + "' for continue");
+  cg_error(errs(), stmt, "no loop with label '" + stmt->label + "' for continue", source_text);
   return false;
 }
 

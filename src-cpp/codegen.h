@@ -17,34 +17,45 @@
 #include "error.h"
 
 /// Write a compiler error with source location to the given output stream.
-/// If expr is non-null and has line info, includes file:line:col.
-inline void cg_error(llvm::raw_ostream &os, Expr *expr, const std::string &msg) {
+/// If expr is non-null and has line info, includes file:line:col with source context.
+inline void cg_error(llvm::raw_ostream &os, Expr *expr, const std::string &msg,
+                     const std::string &source_text = "") {
   if (expr && expr->line > 0)
-    os << error_at(expr->file, expr->line, expr->col, msg) << "\n";
+    os << error_at(expr->file, expr->line, expr->col, msg, source_text) << "\n";
   else
     os << "error: " << msg << "\n";
 }
 
-inline void cg_error(llvm::raw_ostream &os, Decl *decl, const std::string &msg) {
+inline void cg_error(llvm::raw_ostream &os, Decl *decl, const std::string &msg,
+                     const std::string &source_text = "") {
   if (decl && decl->line > 0)
-    os << error_at(decl->file, decl->line, decl->col, msg) << "\n";
+    os << error_at(decl->file, decl->line, decl->col, msg, source_text) << "\n";
   else
     os << "error: " << msg << "\n";
 }
 
-inline void cg_error(llvm::raw_ostream &os, Stmt *stmt, const std::string &msg) {
+inline void cg_error(llvm::raw_ostream &os, Stmt *stmt, const std::string &msg,
+                     const std::string &source_text = "") {
   if (stmt && stmt->line > 0)
-    os << error_at(stmt->file, stmt->line, stmt->col, msg) << "\n";
+    os << error_at(stmt->file, stmt->line, stmt->col, msg, source_text) << "\n";
   else
     os << "error: " << msg << "\n";
 }
 
-inline void cg_error(llvm::raw_ostream &os, Pattern *pat, const std::string &msg) {
+inline void cg_error(llvm::raw_ostream &os, Pattern *pat, const std::string &msg,
+                     const std::string &source_text = "") {
   if (pat && pat->line > 0)
-    os << error_at(pat->file, pat->line, pat->col, msg) << "\n";
+    os << error_at(pat->file, pat->line, pat->col, msg, source_text) << "\n";
   else
     os << "error: " << msg << "\n";
 }
+
+// Convenience macros that automatically pass source_text from the CodeGen class.
+// Use these inside CodeGen member functions.
+#define CG_ERR_EXPR(os, expr, msg) cg_error(os, expr, msg, source_text)
+#define CG_ERR_DECL(os, decl, msg) cg_error(os, decl, msg, source_text)
+#define CG_ERR_STMT(os, stmt, msg) cg_error(os, stmt, msg, source_text)
+#define CG_ERR_PAT(os, pat, msg)   cg_error(os, pat, msg, source_text)
 
 // =========================================================================
 // Hokkaido Language — Code Generator
@@ -122,6 +133,7 @@ public:
           bool Freestanding = false)
       : Context(Ctx), M(Mod), Builder(Bld), freestanding(Freestanding) {}
 
+  void set_source_text(const std::string &text) { source_text = text; }
   bool generate(const std::vector<std::unique_ptr<Decl>> &decls);
 
 private:
@@ -130,6 +142,9 @@ private:
   // syscall, and `extern fn` declarations are rejected at compile time
   // since there is no libc to resolve them against.
   bool freestanding;
+
+  // Full source text for error rendering.
+  std::string source_text;
 
   // Top-level codegen
   bool gen_main_body(const std::vector<std::unique_ptr<Decl>> &decls);

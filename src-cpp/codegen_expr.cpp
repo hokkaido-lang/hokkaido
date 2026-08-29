@@ -180,7 +180,7 @@ Value *CodeGen::get_lvalue_ptr(Expr *expr, Type **out_type) {
         if (out_type) *out_type = gi->second->getValueType();
         return gi->second;
       }
-      cg_error(errs(), id, "undefined variable '" + id->name + "'");
+      cg_error(errs(), id, "undefined variable '" + id->name + "'", source_text);
       return nullptr;
     }
     if (out_type) *out_type = it->second->getAllocatedType();
@@ -235,7 +235,7 @@ Value *CodeGen::get_lvalue_ptr(Expr *expr, Type **out_type) {
       if (out_type) *out_type = pointee;
       return gep;
     }
-    cg_error(errs(), expr, "subscript requires an array or pointer");
+    cg_error(errs(), expr, "subscript requires an array or pointer", source_text);
     return nullptr;
   }
   if (auto *field = dynamic_cast<FieldAccessExpr *>(expr)) {
@@ -255,13 +255,13 @@ Value *CodeGen::get_lvalue_ptr(Expr *expr, Type **out_type) {
     if (!struct_ptr) return nullptr;
     StructType *st = dyn_cast<StructType>(struct_type);
     if (!st) {
-      cg_error(errs(), expr, "field access on non-struct type");
+      cg_error(errs(), expr, "field access on non-struct type", source_text);
       return nullptr;
     }
     std::string struct_name = st->getName().str();
     int field_idx = get_struct_field_index(struct_name, field->field);
     if (field_idx < 0) {
-      cg_error(errs(), expr, "struct '" + struct_name + "' has no field named '" + field->field + "'");
+      cg_error(errs(), expr, "struct '" + struct_name + "' has no field named '" + field->field + "'", source_text);
       return nullptr;
     }
     Value *field_ptr = Builder.CreateStructGEP(struct_type, struct_ptr, field_idx, field->field);
@@ -280,7 +280,7 @@ Value *CodeGen::get_lvalue_ptr(Expr *expr, Type **out_type) {
 
 Value *CodeGen::eval_region_alloc(CallExpr *call) {
   if (region_stack.empty()) {
-    cg_error(errs(), call, "__region_alloc called outside of a region");
+    cg_error(errs(), call, "__region_alloc called outside of a region", source_text);
     return nullptr;
   }
   RegionInfo &ri = region_stack.back();
@@ -338,7 +338,7 @@ Value *CodeGen::eval_constructor(ConstructorExpr *ctor, Type *expected_type) {
         actual_idx = get_struct_field_index(struct_key, field_name);
       }
       if (actual_idx < 0) {
-        cg_error(errs(), ctor, "variant '" + ctor->variant_name + "' has no field '" + field_name + "'");
+        cg_error(errs(), ctor, "variant '" + ctor->variant_name + "' has no field '" + field_name + "'", source_text);
         return nullptr;
       }
       Type *field_type = get_llvm_type(field_ann);
@@ -401,7 +401,7 @@ Value *CodeGen::eval_constructor(ConstructorExpr *ctor, Type *expected_type) {
         actual_idx = get_struct_field_index(struct_key, field_name);
       }
       if (actual_idx < 0) {
-        cg_error(errs(), ctor, "struct '" + struct_key + "' has no field '" + field_name + "'");
+        cg_error(errs(), ctor, "struct '" + struct_key + "' has no field '" + field_name + "'", source_text);
         return nullptr;
       }
       Type *field_type = get_llvm_type(field_ann);
@@ -413,7 +413,7 @@ Value *CodeGen::eval_constructor(ConstructorExpr *ctor, Type *expected_type) {
     return result;
   }
 
-  cg_error(errs(), ctor, "unknown variant '" + ctor->variant_name + "' in constructor expression");
+  cg_error(errs(), ctor, "unknown variant '" + ctor->variant_name + "' in constructor expression", source_text);
   return nullptr;
 }
 
@@ -814,11 +814,11 @@ Value *CodeGen::eval_call(CallExpr *call, Type *expected_type) {
     if (!M.getFunction(actual_callee)) {
       auto it = generic_templates.find(call->callee);
       if (it == generic_templates.end()) {
-        cg_error(errs(), call, "'" + call->callee + "' is not a generic function");
+        cg_error(errs(), call, "'" + call->callee + "' is not a generic function", source_text);
         return nullptr;
       }
       if (call->type_args.size() != it->second->type_params.size()) {
-        cg_error(errs(), call, "wrong number of type arguments for '" + call->callee + "'");
+        cg_error(errs(), call, "wrong number of type arguments for '" + call->callee + "'", source_text);
         return nullptr;
       }
       if (!monomorphize_and_codegen(it->second, call->type_args, actual_callee))
@@ -875,7 +875,7 @@ Value *CodeGen::eval_call(CallExpr *call, Type *expected_type) {
       }
       return Builder.CreateCall(call_ft, fn, args_v, "call");
     }
-    cg_error(errs(), call, "undefined function '" + call->callee + "'");
+    cg_error(errs(), call, "undefined function '" + call->callee + "'", source_text);
     return nullptr;
   }
 
@@ -883,11 +883,11 @@ Value *CodeGen::eval_call(CallExpr *call, Type *expected_type) {
   size_t fixed_params = callee->arg_size();
   if (callee->isVarArg()) {
     if (call->args.size() < fixed_params) {
-      cg_error(errs(), call, "too few arguments to '" + call->callee + "'");
+      cg_error(errs(), call, "too few arguments to '" + call->callee + "'", source_text);
       return nullptr;
     }
   } else if (fixed_params != call->args.size()) {
-    cg_error(errs(), call, "wrong number of arguments to '" + call->callee + "'");
+    cg_error(errs(), call, "wrong number of arguments to '" + call->callee + "'", source_text);
     return nullptr;
   }
 
@@ -914,17 +914,17 @@ Value *CodeGen::eval_method_call(MethodCallExpr *mcall, Type *expected_type) {
   if (obj_type.kind == TypeKind::Struct || obj_type.kind == TypeKind::Enum)
     type_name = obj_type.struct_name;
   else {
-    cg_error(errs(), mcall, "method call on non-struct/enum type");
+    cg_error(errs(), mcall, "method call on non-struct/enum type", source_text);
     return nullptr;
   }
   auto it = impl_methods.find({type_name, mcall->method_name});
   if (it == impl_methods.end()) {
-    cg_error(errs(), mcall, "type '" + type_name + "' has no method named '" + mcall->method_name + "'");
+    cg_error(errs(), mcall, "type '" + type_name + "' has no method named '" + mcall->method_name + "'", source_text);
     return nullptr;
   }
   Function *callee = M.getFunction(it->second);
   if (!callee) {
-    cg_error(errs(), mcall, "method '" + mcall->method_name + "' for type '" + type_name + "' has no compiled function");
+    cg_error(errs(), mcall, "method '" + mcall->method_name + "' for type '" + type_name + "' has no compiled function", source_text);
     return nullptr;
   }
 
@@ -933,7 +933,7 @@ Value *CodeGen::eval_method_call(MethodCallExpr *mcall, Type *expected_type) {
   if (!obj_val) return nullptr;
 
   if (callee->arg_size() != 1 + mcall->args.size()) {
-    cg_error(errs(), mcall, "wrong number of arguments for method '" + mcall->method_name + "' (expected " + std::to_string(callee->arg_size() - 1) + ", got " + std::to_string(mcall->args.size()) + ")");
+    cg_error(errs(), mcall, "wrong number of arguments for method '" + mcall->method_name + "' (expected " + std::to_string(callee->arg_size() - 1) + ", got " + std::to_string(mcall->args.size()) + ")", source_text);
     return nullptr;
   }
 
@@ -955,13 +955,13 @@ Value *CodeGen::eval_atomic(AtomicExpr *atm) {
   }
 
   if (atm->args.empty()) {
-    cg_error(errs(), atm, "atomic operation needs at least a pointer argument");
+    cg_error(errs(), atm, "atomic operation needs at least a pointer argument", source_text);
     return nullptr;
   }
   TypeAnnotation ptr_ann = resolve_expr_type(atm->args[0].get());
   bool is_ref = (ptr_ann.kind == TypeKind::Ref || ptr_ann.kind == TypeKind::MutRef);
   if (ptr_ann.pointer_depth < 1 && !is_ref) {
-    cg_error(errs(), atm, "first argument of atomic must be a pointer (&var or ptr)");
+    cg_error(errs(), atm, "first argument of atomic must be a pointer (&var or ptr)", source_text);
     return nullptr;
   }
   if (is_ref)
@@ -970,7 +970,7 @@ Value *CodeGen::eval_atomic(AtomicExpr *atm) {
     ptr_ann.pointer_depth--;
   Type *val_type = get_llvm_type(ptr_ann);
   if (!val_type || (!val_type->isIntegerTy() && atm->op != AtomicOp::Xchg)) {
-    cg_error(errs(), atm, "atomic operations require integer pointer types");
+    cg_error(errs(), atm, "atomic operations require integer pointer types", source_text);
     return nullptr;
   }
 
@@ -979,7 +979,7 @@ Value *CodeGen::eval_atomic(AtomicExpr *atm) {
 
   if (atm->op == AtomicOp::CmpXchg) {
     if (atm->args.size() < 3) {
-      cg_error(errs(), atm, "atomic cas needs 3 arguments (ptr, expected, desired)");
+      cg_error(errs(), atm, "atomic cas needs 3 arguments (ptr, expected, desired)", source_text);
       return nullptr;
     }
     Value *expected = eval_expr(atm->args[1].get(), val_type);
@@ -993,7 +993,7 @@ Value *CodeGen::eval_atomic(AtomicExpr *atm) {
   }
 
   if (atm->args.size() < 2) {
-    cg_error(errs(), atm, "atomic " + std::string(atm->op == AtomicOp::Xchg ? "xchg" : "rmw") + " needs 2 arguments (ptr, value)");
+    cg_error(errs(), atm, "atomic " + std::string(atm->op == AtomicOp::Xchg ? "xchg" : "rmw") + " needs 2 arguments (ptr, value)", source_text);
     return nullptr;
   }
   Value *val = eval_expr(atm->args[1].get(), val_type);
@@ -1008,7 +1008,7 @@ Value *CodeGen::eval_atomic(AtomicExpr *atm) {
     case AtomicOp::Or:   rmw_op = AtomicRMWInst::Or;   break;
     case AtomicOp::Xor:  rmw_op = AtomicRMWInst::Xor;  break;
     default:
-      cg_error(errs(), atm, "unsupported atomic operation");
+      cg_error(errs(), atm, "unsupported atomic operation", source_text);
       return nullptr;
   }
   return Builder.CreateAtomicRMW(rmw_op, ptr, val, MaybeAlign(),
@@ -1019,7 +1019,7 @@ Value *CodeGen::eval_compound_assign(CompoundAssignExpr *compound) {
   Type *target_type = nullptr;
   Value *target_ptr = get_lvalue_ptr(compound->target.get(), &target_type);
   if (!target_ptr) {
-    cg_error(errs(), compound, "invalid compound assignment target");
+    cg_error(errs(), compound, "invalid compound assignment target", source_text);
     return nullptr;
   }
   Value *current = Builder.CreateLoad(target_type, target_ptr);
@@ -1043,7 +1043,7 @@ Value *CodeGen::eval_compound_assign(CompoundAssignExpr *compound) {
     case BinOp::Shr:    result = is_unsigned ? Builder.CreateLShr(current, rhs)
                                              : Builder.CreateAShr(current, rhs); break;
     default:
-      cg_error(errs(), compound, "unsupported operator for compound assignment");
+      cg_error(errs(), compound, "unsupported operator for compound assignment", source_text);
       return nullptr;
   }
   Builder.CreateStore(result, target_ptr);
@@ -1112,7 +1112,7 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
       auto gi = global_values.find(id->name);
       if (gi != global_values.end())
         return Builder.CreateLoad(gi->second->getValueType(), gi->second, id->name);
-      cg_error(errs(), id, "undefined variable '" + id->name + "'");
+      cg_error(errs(), id, "undefined variable '" + id->name + "'", source_text);
       return nullptr;
     }
     Type *alloc_type = it->second->getAllocatedType();
@@ -1165,7 +1165,7 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
       st = dyn_cast<StructType>(get_llvm_type(ann));
     }
     if (!st) {
-      cg_error(errs(), expr, "cannot determine tuple type");
+      cg_error(errs(), expr, "cannot determine tuple type", source_text);
       return nullptr;
     }
     Value *result = UndefValue::get(st);
@@ -1188,7 +1188,7 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
       if (f && !f->isIntrinsic()) {
         llvm::GlobalVariable *gv = get_fnval_wrapper(fname, f);
         if (!gv) {
-          cg_error(errs(), expr, "failed to create function value for '" + fname + "'");
+          cg_error(errs(), expr, "failed to create function value for '" + fname + "'", source_text);
           return nullptr;
         }
         if (Builder.GetInsertBlock())
@@ -1201,7 +1201,7 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
     Type *ptr_type = nullptr;
     Value *lvalue_ptr = get_lvalue_ptr(borrow->operand.get(), &ptr_type);
     if (!lvalue_ptr) {
-      cg_error(errs(), expr, "address-of requires an lvalue expression");
+      cg_error(errs(), expr, "address-of requires an lvalue expression", source_text);
       return nullptr;
     }
     return lvalue_ptr;
@@ -1216,7 +1216,7 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
         if (gi != global_values.end())
           ptr = Builder.CreateLoad(gi->second->getValueType(), gi->second, id->name);
         else {
-          cg_error(errs(), id, "undefined variable '" + id->name + "'");
+          cg_error(errs(), id, "undefined variable '" + id->name + "'", source_text);
           return nullptr;
         }
       } else {
@@ -1267,7 +1267,7 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
       if (!pointee) pointee = Type::getInt8Ty(Context);
       elem_ptr = Builder.CreateGEP(pointee, arr_ptr, index, "elem_ptr");
     } else {
-      cg_error(errs(), expr, "subscript requires an array or pointer");
+      cg_error(errs(), expr, "subscript requires an array or pointer", source_text);
       return nullptr;
     }
     Type *load_type = expected_type;
@@ -1281,7 +1281,7 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
       load_type = get_llvm_type(elem_ann);
     }
     if (!load_type) {
-      cg_error(errs(), expr, "cannot determine subscript element type");
+      cg_error(errs(), expr, "cannot determine subscript element type", source_text);
       return nullptr;
     }
     return Builder.CreateLoad(load_type, elem_ptr);
@@ -1298,7 +1298,7 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
       return Builder.CreateExtractValue(obj_val, {(unsigned)idx}, field->field);
     }
     if (base_ann.kind != TypeKind::Struct) {
-      cg_error(errs(), expr, "field access on non-struct expression");
+      cg_error(errs(), expr, "field access on non-struct expression", source_text);
       return nullptr;
     }
     Type *base_llvm_type = get_llvm_type(base_ann);
@@ -1311,7 +1311,7 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
       struct_key = struct_mangled_name(base_ann.struct_name, base_ann.type_args);
     int field_idx = get_struct_field_index(struct_key, field->field);
     if (field_idx < 0) {
-      cg_error(errs(), expr, "struct '" + struct_key + "' has no field named '" + field->field + "'");
+      cg_error(errs(), expr, "struct '" + struct_key + "' has no field named '" + field->field + "'", source_text);
       return nullptr;
     }
     return Builder.CreateExtractValue(obj_val, {(unsigned)field_idx}, field->field);
@@ -1365,7 +1365,7 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
     if (!val) return nullptr;
     Value *target_ptr = get_lvalue_ptr(assign->target.get(), nullptr);
     if (!target_ptr) {
-      cg_error(errs(), expr, "invalid assignment target");
+      cg_error(errs(), expr, "invalid assignment target", source_text);
       return nullptr;
     }
     Builder.CreateStore(val, target_ptr);
@@ -1378,7 +1378,7 @@ Value *CodeGen::eval_expr(Expr *expr, Type *expected_type) {
   if (auto *compound = dynamic_cast<CompoundAssignExpr *>(expr))
     return eval_compound_assign(compound);
 
-  cg_error(errs(), expr, "unknown expression type");
+  cg_error(errs(), expr, "unknown expression type", source_text);
   return nullptr;
 }
 

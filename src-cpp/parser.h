@@ -34,13 +34,15 @@ class Parser {
 
   void next_token();
   void skip_newlines();
-  void set_error(const std::string &msg);
+  void set_error(const std::string &msg, const std::string &suggestion = "", int span = 1);
 
 public:
   Parser(Lexer &lex, std::string source_file, std::string base_dir,
          std::shared_ptr<std::set<std::string>> included_files = nullptr,
-         std::shared_ptr<std::set<std::string>> imported_packages = nullptr)
+         std::shared_ptr<std::set<std::string>> imported_packages = nullptr,
+         const std::string &source_text = "")
       : lexer(lex), source_file(std::move(source_file)), base_dir(std::move(base_dir)),
+        source_text(source_text),
         included_files(included_files ? std::move(included_files)
                                        : std::make_shared<std::set<std::string>>()),
         imported_packages(imported_packages ? std::move(imported_packages)
@@ -122,6 +124,9 @@ private:
 
   // Source file path for error reporting.
   std::string source_file;
+
+  // Full source text for error rendering (source lines + underlines).
+  std::string source_text;
 
   // Helpers to create AST nodes with source location pre-filled.
   template<typename T, typename... Args>

@@ -10,11 +10,11 @@
 - Direct syntax `fn<T>(args)` and turbofish `fn::<T>(args)` both work ✅
 - Constructor type arg inference (no need to write `Pair<int, int> { ... }`) ✅
 
-### Better Error Messages
-- Source spans with underline: `error: expected ';' --> src/main.hk:5:12`
-- Suggestion hints: `help: try adding a semicolon here`
-- Rename `error_at()` to carry start/end offsets, not just line/col
-- Colored output in terminal (ANSI escape codes)
+### ~~Better Error Messages~~ ✅ DONE
+- Source spans with underline + source line display ✅
+- Suggestion hints on common errors ✅
+- Colored output (ANSI escape codes, auto-detects terminal) ✅
+- `NO_COLOR` env var support ✅
 
 ### NLL Borrow Checker
 - Replace lexical borrows with non-lexical lifetimes

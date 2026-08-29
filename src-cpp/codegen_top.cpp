@@ -34,7 +34,7 @@ bool CodeGen::generate(const std::vector<std::unique_ptr<Decl>> &decls) {
 
       if (!fn->type_params.empty()) {
         if (fn->is_extern) {
-          cg_error(errs(), fn, "extern function '" + fn->name + "' cannot be generic");
+          cg_error(errs(), fn, "extern function '" + fn->name + "' cannot be generic", source_text);
           return false;
         }
         generic_templates[fn->name] = fn;
@@ -70,12 +70,12 @@ bool CodeGen::generate(const std::vector<std::unique_ptr<Decl>> &decls) {
   }
 
   if (user_main->return_type.kind != TypeKind::Int64) {
-    cg_error(errs(), user_main, "main function must return int64");
+    cg_error(errs(), user_main, "main function must return int64", source_text);
     return false;
   }
 
   if (user_main->params.size() != 0 && user_main->params.size() != 2) {
-    cg_error(errs(), user_main, "main function must have 0 or 2 parameters (argc: int, argv: int8**)");
+    cg_error(errs(), user_main, "main function must have 0 or 2 parameters (argc: int, argv: int8**)", source_text);
     return false;
   }
   if (user_main->params.size() == 2) {
@@ -84,7 +84,7 @@ bool CodeGen::generate(const std::vector<std::unique_ptr<Decl>> &decls) {
     if (p0.type_ann.kind != TypeKind::Int64 ||
         p1.type_ann.kind != TypeKind::Int8 ||
         p1.type_ann.pointer_depth != 2) {
-      cg_error(errs(), user_main, "main parameters must be (argc: int, argv: int8**)");
+      cg_error(errs(), user_main, "main parameters must be (argc: int, argv: int8**)", source_text);
       return false;
     }
   }
@@ -293,7 +293,7 @@ bool CodeGen::monomorphize_and_codegen(FnDecl *template_decl,
         else
           type_key = mangle_ann(tp_type);
         if (type_impls.find({type_key, bound_trait}) == type_impls.end()) {
-          cg_error(errs(), template_decl, "type '" + type_key + "' does not implement trait '" + bound_trait + "' required by bound on '" + tp_name + "'");
+          cg_error(errs(), template_decl, "type '" + type_key + "' does not implement trait '" + bound_trait + "' required by bound on '" + tp_name + "'", source_text);
           return false;
         }
       }

@@ -227,7 +227,7 @@ std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
     while (cur_tok.type != TokenType::RParen && cur_tok.type != TokenType::Eof) {
       if (!call->args.empty()) {
         if (cur_tok.type != TokenType::Comma) {
-          set_error("expected ',' or ')' in argument list");
+          set_error("expected ',' or ')' in argument list", "separate function arguments with commas");
           return nullptr;
         }
         next_token();
@@ -591,7 +591,7 @@ std::unique_ptr<Expr> Parser::parse_primary() {
   if (cur_tok.type == TokenType::Lambda) {
     return parse_lambda_expr();
   }
-  set_error("expected expression");
+  set_error("expected expression", "you may need to add a value or function call here");
   return nullptr;
 }
 

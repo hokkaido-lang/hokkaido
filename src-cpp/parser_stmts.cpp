@@ -6,7 +6,7 @@
 
 std::vector<std::unique_ptr<Stmt>> Parser::parse_block() {
   if (cur_tok.type != TokenType::LBrace) {
-    set_error("expected '{'");
+    set_error("expected '{'", "function/struct/enum bodies must be wrapped in braces");
     return {};
   }
   next_token(); // consume '{'

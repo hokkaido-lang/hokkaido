@@ -260,7 +260,7 @@ int main(int argc, char *argv[]) {
       auto canonical = std::filesystem::weakly_canonical(filePath, ec);
       included_files->insert((ec ? filePath : canonical).string());
     }
-    Parser parser(lexer, filePath.string(), filePath.parent_path().string(), included_files, imported_packages);
+    Parser parser(lexer, filePath.string(), filePath.parent_path().string(), included_files, imported_packages, Content);
     auto decls = parser.parse_program();
 
     if (!parser.ok()) {
@@ -283,6 +283,7 @@ int main(int argc, char *argv[]) {
     }
 
     CodeGen cg(Context, *M, Builder, Freestanding);
+    cg.set_source_text(Content);
     if (!cg.generate(decls)) {
       return 1;
     }
