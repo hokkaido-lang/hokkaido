@@ -616,7 +616,7 @@ json::Value LSPServer::handle_initialize(const json::Object &params) {
     }},
     {"serverInfo", json::Object{
       {"name", "hok-lsp"},
-      {"version", "0.1.0"},
+      {"version", "0.22.0"},
     }},
   };
 }

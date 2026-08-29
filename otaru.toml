@@ -1,10 +1,10 @@
 [package]
 name = "hokkaido"
-version = "0.17.0"
+version = "0.22.0"
 authors = ["Jihoo"]
 
 [hokkaido]
-version = "0.1.0"
+version = "0.22.0"
 description = "Hokkaido programming language"
 
 # LLVM build configuration (replaces CMakeLists.txt)

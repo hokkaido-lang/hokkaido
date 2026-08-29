@@ -109,8 +109,10 @@ export PATH="$PWD/build:$PWD/otaru/target/release:$PATH"
 
 The `std` module is bundled with otaru and sapporo builds:
 
-- **`std::mem`** — Pure-memory operations (WASM-compatible): `mem_copy`, `mem_set`, `mem_zero`, `mem_eq`, `mem_swap`, `mem_find`, `mem_contains`
-- **`std::functional`** — Higher-order functions: `twice`, `thrice`, `compose`, `apply_n`, `fold_int`, `any_int`, `all_int`, `map_int_into`, `find_int`, `count_int`, `sum_ints`
+- **`std::mem`** — Pure-memory operations (WASM-compatible): `mem_copy`, `mem_set`, `mem_zero`, `mem_eq`, `mem_swap`, `mem_find_byte`
+- **`std::functional`** — Higher-order functions: `twice`, `thrice`, `compose_apply`, `apply_n`, `fold_int`, `reduce_int`
+- **`std::predicate`** — Array predicates: `any_int`, `all_int`, `find_int`, `count_int`
+- **`std::transform`** — Array transforms: `map_int_into`, `filter_int`, `sum_int`, `min_int`, `max_int`
 
 Import with `import "std"` in your `.hk` files.
 

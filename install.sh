@@ -145,12 +145,12 @@ print_summary() {
     info "Installed components:"
     command -v hokkaido >/dev/null && ok "  hokkaido  $(hokkaido --version 2>/dev/null || echo 'installed')"
     command -v otaru >/dev/null   && ok "  otaru     $(otaru --version 2>/dev/null || echo 'installed')"
-    command -v sapporo >/dev/null && ok "  sapporo   $(sapporo --version 2>/dev/null || echo 'installed')"
+    command -v hok-lsp >/dev/null && ok "  hok-lsp   $(hok-lsp --version 2>/dev/null || echo 'installed')"
     [ -d "$SHARE_DIR/std" ]      && ok "  std       $SHARE_DIR/std"
     echo ""
     info "Quick start:"
-    info "  otaru new myproject --wasm"
-    info "  sapporo new mywebapp"
+    info "  otaru new myproject"
+    info "  otaru new my-webapp --web"
     echo ""
 }
 
