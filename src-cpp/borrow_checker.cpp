@@ -404,10 +404,105 @@ bool NLLBorrowChecker::check_borrow_rules(CFG &cfg) {
 }
 
 // =========================================================================
+// Closure body checking
+// =========================================================================
+//
+// When we encounter a ClosureExpr during AST walk, check its body as a
+// separate function. Closures capture by value, so they get their own
+// independent borrow checking scope.
+
+bool NLLBorrowChecker::check_closures_in_expr(Expr *expr) {
+  if (!expr) return false;
+
+  if (auto *closure = dynamic_cast<ClosureExpr *>(expr)) {
+    NLLBorrowChecker inner;
+    if (!inner.check_body("<closure>", closure->body)) {
+      has_error_ = true;
+      error_msg_ = inner.error();
+      return true;
+    }
+    // Don't recurse into closure bodies — already checked
+    return false;
+  }
+
+  // Recurse into sub-expressions
+  if (auto *bin = dynamic_cast<BinaryExpr *>(expr)) {
+    if (check_closures_in_expr(bin->left.get())) return true;
+    if (check_closures_in_expr(bin->right.get())) return true;
+    return false;
+  }
+  if (auto *call = dynamic_cast<CallExpr *>(expr)) {
+    if (check_closures_in_expr(call->callee_expr.get())) return true;
+    for (auto &arg : call->args)
+      if (check_closures_in_expr(arg.get())) return true;
+    return false;
+  }
+  if (auto *assign = dynamic_cast<AssignExpr *>(expr)) {
+    if (check_closures_in_expr(assign->value.get())) return true;
+    return false;
+  }
+  if (auto *ifexpr = dynamic_cast<IfExpr *>(expr)) {
+    if (check_closures_in_expr(ifexpr->condition.get())) return true;
+    if (check_closures_in_expr(ifexpr->then_expr.get())) return true;
+    if (check_closures_in_expr(ifexpr->else_expr.get())) return true;
+    return false;
+  }
+  if (auto *mcall = dynamic_cast<MethodCallExpr *>(expr)) {
+    if (check_closures_in_expr(mcall->object.get())) return true;
+    for (auto &arg : mcall->args)
+      if (check_closures_in_expr(arg.get())) return true;
+    return false;
+  }
+  return false;
+}
+
+bool NLLBorrowChecker::check_closures_in_stmt(Stmt *stmt) {
+  if (!stmt) return false;
+
+  if (auto *expr_s = dynamic_cast<ExprStmt *>(stmt))
+    return check_closures_in_expr(expr_s->expr.get());
+  if (auto *let = dynamic_cast<LetStmt *>(stmt))
+    if (let->init_expr)
+      return check_closures_in_expr(let->init_expr.get());
+  if (auto *ret = dynamic_cast<ReturnStmt *>(stmt))
+    if (ret->value)
+      return check_closures_in_expr(ret->value.get());
+  if (auto *ifs = dynamic_cast<IfStmt *>(stmt)) {
+    if (check_closures_in_expr(ifs->condition.get())) return true;
+    for (auto &s : ifs->then_branch)
+      if (check_closures_in_stmt(s.get())) return true;
+    for (auto &s : ifs->else_branch)
+      if (check_closures_in_stmt(s.get())) return true;
+    return false;
+  }
+  if (auto *for_s = dynamic_cast<ForStmt *>(stmt)) {
+    if (for_s->init && check_closures_in_stmt(for_s->init.get())) return true;
+    if (for_s->condition && check_closures_in_expr(for_s->condition.get()))
+      return true;
+    if (for_s->update && check_closures_in_expr(for_s->update.get()))
+      return true;
+    for (auto &s : for_s->body)
+      if (check_closures_in_stmt(s.get())) return true;
+    return false;
+  }
+  if (auto *while_s = dynamic_cast<WhileStmt *>(stmt)) {
+    if (while_s->condition &&
+        check_closures_in_expr(while_s->condition.get()))
+      return true;
+    for (auto &s : while_s->body)
+      if (check_closures_in_stmt(s.get())) return true;
+    return false;
+  }
+  return false;
+}
+
+// =========================================================================
 // Public API
 // =========================================================================
 
-bool NLLBorrowChecker::check_fn(const std::string &fn_name, FnDecl *decl) {
+bool NLLBorrowChecker::check_body(
+    const std::string &name,
+    const std::vector<std::unique_ptr<Stmt>> &body) {
   has_error_ = false;
   error_msg_.clear();
   borrows.clear();
@@ -415,18 +510,26 @@ bool NLLBorrowChecker::check_fn(const std::string &fn_name, FnDecl *decl) {
   // Step 1: Build CFG
   CFG cfg;
   CFGBuilder builder(cfg);
-  builder.build(decl->body);
+  builder.build(body);
 
   // Step 2: Compute liveness
   cfg.compute_liveness();
 
-  // Step 3: Walk CFG nodes to find borrows and map them to nodes
+  // Step 3: Walk CFG nodes to find borrows and map them to nodes.
+  // When a ClosureExpr is found, check its body recursively.
   for (auto &node : cfg.nodes) {
     if (node.id == cfg.entry || node.id == cfg.exit) continue;
     if (node.stmt)
       collect_borrows(node.stmt, cfg, node.id);
     if (node.expr)
       find_borrows_in_expr(node.expr, node.id, "", borrows);
+  }
+
+  // Step 3b: Check closure bodies found during AST walk
+  for (auto &stmt : body) {
+    if (check_closures_in_stmt(stmt.get())) {
+      if (has_error_) return false;
+    }
   }
 
   // Step 4: Compute borrow lifetimes
@@ -439,4 +542,8 @@ bool NLLBorrowChecker::check_fn(const std::string &fn_name, FnDecl *decl) {
   }
 
   return true;
+}
+
+bool NLLBorrowChecker::check_fn(const std::string &fn_name, FnDecl *decl) {
+  return check_body(fn_name, decl->body);
 }

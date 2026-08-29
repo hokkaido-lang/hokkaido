@@ -273,7 +273,7 @@ int main(int argc, char *argv[]) {
       NLLBorrowChecker bc;
       for (auto &decl : decls) {
         if (auto *fn = dynamic_cast<FnDecl *>(decl.get())) {
-          if (!fn->is_extern && fn->type_params.empty()) {
+          if (!fn->is_extern) {
             if (!bc.check_fn(fn->name, fn)) {
               return 1;
             }

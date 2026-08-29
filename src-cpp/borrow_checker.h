@@ -43,6 +43,10 @@ private:
   void collect_borrows_expr(Expr *expr, CFG &cfg, int node_id,
                             const std::string &borrowed_var, bool is_mut);
 
+  // Check closure bodies found during AST walk
+  bool check_closures_in_stmt(Stmt *stmt);
+  bool check_closures_in_expr(Expr *expr);
+
   // After collecting borrows, compute lifetimes using liveness
   void compute_borrow_lifetimes(CFG &cfg);
 
@@ -52,6 +56,8 @@ private:
 public:
   NLLBorrowChecker() = default;
   bool check_fn(const std::string &fn_name, FnDecl *decl);
+  bool check_body(const std::string &name,
+                  const std::vector<std::unique_ptr<Stmt>> &body);
   bool ok() const { return !has_error_; }
   const std::string &error() const { return error_msg_; }
 };
