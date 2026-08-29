@@ -347,6 +347,23 @@ bool CodeGen::monomorphize_and_codegen(FnDecl *template_decl,
       for (auto &el : tup->elements)
         walk_expr(el.get());
     } else if (auto *ctor = dynamic_cast<ConstructorExpr *>(expr)) {
+      // If constructor has no type args but the struct is generic,
+      // infer type args from the struct template's type params.
+      // This allows `Pair { ... }` inside a generic fn body to work
+      // without explicit `Pair<A, B> { ... }`.
+      if (ctor->type_args.empty()) {
+        auto tmpl_it = struct_templates.find(ctor->variant_name);
+        if (tmpl_it != struct_templates.end()) {
+          for (auto &tp : tmpl_it->second->type_params) {
+            TypeAnnotation ta;
+            ta.kind = TypeKind::TypeParam;
+            ta.struct_name = tp;
+            ctor->type_args.push_back(ta);
+          }
+        }
+      }
+      for (auto &ta : ctor->type_args)
+        substitute_in(ta);
       for (auto &[_, fexpr] : ctor->fields)
         walk_expr(fexpr.get());
     } else if (auto *match = dynamic_cast<MatchExpr *>(expr)) {

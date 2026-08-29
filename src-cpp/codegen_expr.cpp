@@ -353,8 +353,34 @@ Value *CodeGen::eval_constructor(ConstructorExpr *ctor, Type *expected_type) {
 
   // Try struct constructor
   std::string struct_key = ctor->variant_name;
-  if (!ctor->type_args.empty())
+  if (!ctor->type_args.empty()) {
     struct_key = struct_mangled_name(ctor->variant_name, ctor->type_args);
+  } else {
+    // No type args — check if this is a generic struct
+    auto tmpl_it = struct_templates.find(ctor->variant_name);
+    if (tmpl_it != struct_templates.end()) {
+      // Try to find matching monomorphized struct via expected_type
+      if (expected_type && expected_type->isStructTy()) {
+        auto *expected_st = cast<StructType>(expected_type);
+        for (auto &[key, st] : struct_types) {
+          if (st == expected_st) {
+            struct_key = key;
+            break;
+          }
+        }
+      }
+      // If still no match, try first matching mangled name in struct_types
+      if (struct_key == ctor->variant_name) {
+        std::string prefix = ctor->variant_name + "$";
+        for (auto &[key, st] : struct_types) {
+          if (key.compare(0, prefix.size(), prefix) == 0) {
+            struct_key = key;
+            break;
+          }
+        }
+      }
+    }
+  }
   auto st_it = struct_types.find(struct_key);
   if (st_it != struct_types.end()) {
     StructType *st = st_it->second;

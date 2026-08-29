@@ -398,6 +398,63 @@ std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
       }
       next_token(); // consume '}'
       return ctor;
+    } else if (ident && cur_tok.type == TokenType::Less) {
+      // Generic function call: Name<Type>(args)
+      next_token(); // consume '<'
+
+      std::vector<TypeAnnotation> fn_type_args;
+      while (cur_tok.type != TokenType::Greater && cur_tok.type != TokenType::Shr
+             && cur_tok.type != TokenType::Eof) {
+        if (!fn_type_args.empty()) {
+          if (cur_tok.type != TokenType::Comma) {
+            set_error("expected ',' or '>' in type arguments");
+            return nullptr;
+          }
+          next_token();
+        }
+        fn_type_args.push_back(parse_type_annotation());
+        if (has_error) return nullptr;
+      }
+      if (cur_tok.type == TokenType::Shr) {
+        cur_tok.type = TokenType::Greater;
+      } else {
+        if (cur_tok.type != TokenType::Greater) {
+          set_error("expected '>' to close type arguments");
+          return nullptr;
+        }
+        next_token();
+      }
+
+      if (cur_tok.type != TokenType::LParen) {
+        set_error("expected '(' after type arguments in generic call");
+        return nullptr;
+      }
+      next_token(); // consume '('
+
+      auto call = make_expr<CallExpr>();
+      call->callee = ident->name;
+      call->type_args = std::move(fn_type_args);
+
+      while (cur_tok.type != TokenType::RParen && cur_tok.type != TokenType::Eof) {
+        if (!call->args.empty()) {
+          if (cur_tok.type != TokenType::Comma) {
+            set_error("expected ',' or ')' in arguments");
+            return nullptr;
+          }
+          next_token();
+        }
+        auto arg = parse_expr();
+        if (!arg) return nullptr;
+        call->args.push_back(std::move(arg));
+      }
+
+      if (cur_tok.type != TokenType::RParen) {
+        set_error("expected ')' to close arguments");
+        return nullptr;
+      }
+      next_token(); // consume ')'
+
+      left = std::move(call);
     }
   }
   return left;

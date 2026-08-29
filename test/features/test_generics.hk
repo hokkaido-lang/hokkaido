@@ -1,0 +1,46 @@
+package main
+
+fn identity<T>(x: T) -> T {
+    return x
+}
+
+fn add<T>(a: T, b: T) -> T {
+    return a + b
+}
+
+struct Pair<A, B> {
+    first: A
+    second: B
+}
+
+fn make_pair<A, B>(a: A, b: B) -> Pair<A, B> {
+    return Pair { first: a, second: b }
+}
+
+fn get_first<A, B>(p: Pair<A, B>) -> A {
+    return p.first
+}
+
+fn swap<A, B>(p: Pair<A, B>) -> Pair<B, A> {
+    return Pair { first: p.second, second: p.first }
+}
+
+fn main() -> int {
+    // Generic functions
+    let a: int = identity<int>(42)
+    let b: int = add<int>(10, 20)
+
+    // Generic structs
+    let p: Pair<int, int> = make_pair<int, int>(a, b)
+    let c: int = get_first<int, int>(p)
+
+    // Swap
+    let s: Pair<int, int> = swap<int, int>(p)
+    let d: int = s.first
+
+    // Constructor without explicit type args (inferred)
+    let q: Pair<int, int> = Pair { first: 100, second: 200 }
+    let e: int = q.first
+
+    return a + b + c + d + e
+}
