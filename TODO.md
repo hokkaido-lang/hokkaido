@@ -16,9 +16,9 @@
 - Colored output (ANSI escape codes, auto-detects terminal) ✅
 - `NO_COLOR` env var support ✅
 
-### NLL Borrow Checker
-- Replace lexical borrows with non-lexical lifetimes
-- Allow borrows to end at last use, not end of scope
+### ~~NLL Borrow Checker~~ ✅ DONE
+- Replace lexical borrows with non-lexical lifetimes ✅
+- Allow borrows to end at last use, not end of scope ✅
 - Support split borrows: `let (head, tail) = split_slice(&mut arr)`
 - Remove need for `let x; x = ...` workarounds
 

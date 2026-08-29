@@ -268,9 +268,9 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
-    // Run borrow checker on all function declarations
+    // Run NLL borrow checker on all function declarations
     {
-      BorrowChecker bc;
+      NLLBorrowChecker bc;
       for (auto &decl : decls) {
         if (auto *fn = dynamic_cast<FnDecl *>(decl.get())) {
           if (!fn->is_extern && fn->type_params.empty()) {

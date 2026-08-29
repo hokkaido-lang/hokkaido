@@ -354,11 +354,11 @@ atomic_op  ::= "xchg" | "add" | "sub" | "and" | "or" | "xor"
 
 ## 6. Borrow Checker
 
-**Decision:** Implement a lexical borrow checker with per-variable borrow tracking,
-enforcing standard Rust-like aliasing rules:
+**Decision:** Implement a non-lexical lifetime (NLL) borrow checker with
+per-variable borrow tracking, enforcing standard Rust-like aliasing rules:
 - One mutable reference XOR any number of shared references.
 - The original value is frozen (no read/write) while any borrow is active.
-- References must not outlive their referent (enforced by scope depth).
+- Borrows end at their last use point (not end of scope).
 
 The checker is a standalone AST-walking pass, run before code generation. It
 operates on `BorrowExpr` and `DerefExpr` AST nodes and `&T`/`&mut T` reference
@@ -369,7 +369,7 @@ types.
 | Option | Pros | Cons |
 |--------|------|------|
 | Lexical borrow checker | Simple implementation; fast (single pass); predictable error messages; matches Rust's borrow scoping for v1 | Conservative — borrows last until end of scope, not until last use (NLL); no support for reborrowing patterns |
-| Non-lexical lifetimes (NLL) | More precise; shorter borrow ranges; fewer false positives | Significantly more complex (requires dataflow analysis, liveness tracking); overkill for v1 |
+| **Non-lexical lifetimes (NLL)** | More precise; shorter borrow ranges; fewer false positives; borrows end at last use | Requires dataflow analysis (CFG + liveness) — more complex but still tractable |
 | No borrow checker — runtime refcounting | Simple compiler; familiar to GC-language users | Runtime overhead; refcount cycles; not zero-cost; breaks the "pay only for what you use" philosophy |
 
 A lexical checker provides immediate safety guarantees with minimal compiler
@@ -415,15 +415,20 @@ let y: int = x             // OK
 
 ### Implementation
 
-- `BorrowChecker` class with `active_borrows` map (`var_name -> Vec<BorrowEntry>`)
-  and `current_depth` counter.
-- `check_shared_borrow()` / `check_mut_borrow()`: validate against active borrows.
-- `register_shared_borrow()` / `register_mut_borrow()`: record with current depth.
-- `release_borrows_at_depth()`: called on scope exit.
-- `check_var_read()` / `check_var_write()`: validate against active borrows.
-- Expression walker dispatches on all expression types (not just borrows) to
-  check variable accesses against active borrows.
-- Defined in `src-cpp/borrow_checker.h` and `src-cpp/borrow_checker.cpp`.
+- `NLLBorrowChecker` class with CFG construction (`cfg.h`/`cfg.cpp`), iterative
+  liveness analysis, and per-borrow lifetime tracking.
+- **CFG Builder**: Flattens function bodies into basic blocks with edges for
+  branches, loops, and fall-through. Each node tracks gen/kill sets.
+- **Liveness Analysis**: Iterative backward dataflow on the CFG. Computes
+  `live_in`/`live_out` for each node — which variables are live (will be used).
+- **Borrow Lifetimes**: For `let r: &T = &x`, the borrow's lifetime is the
+  liveness range of `r` (the reference variable). For inline borrows
+  (`foo(&x)`), the borrow ends at the creation node.
+- **Borrow Checking**: For each CFG node, checks reads/writes against active
+  borrow regions. The borrow's creation node is excluded (creating a borrow
+  reads the variable — that's fine). Overlapping mutable borrows are rejected.
+- Defined in `src-cpp/borrow_checker.h`, `src-cpp/borrow_checker.cpp`,
+  `src-cpp/cfg.h`, and `src-cpp/cfg.cpp`.
 - Integrated into the compilation pipeline in `main.cpp` — run on all
   non-extern, non-generic function declarations before codegen.
 
@@ -435,8 +440,8 @@ let y: int = x             // OK
 - Closures (Phase 4): closures capture by value; borrow state save/restore is
   already implemented. Lexical closures that capture references (if added later)
   will need deeper borrow tracking through closure calls.
-- NLL (future): a flow-sensitive borrow checker can replace the lexical checker
-  with no surface-language changes.
+- NLL: ✅ DONE — the borrow checker uses CFG-based liveness analysis.
+  Borrows end at last use, not end of scope.
 
 ---
 
@@ -453,4 +458,4 @@ let y: int = x             // OK
 | 7 | Dynamic memory approach | Extern fn (`malloc`/`free`), not built-in syntax | Phase 3 (completed) |
 | 8 | Function types and HOFs | `fn(T1, T2) -> Ret` as opaque `i8*` pointer to closure struct; `&fn_name` for named-function values | `std/functional.hk` combined with Phase 4 (completed) |
 | 9 | Memory safety — regions + lifetime tracking | Stack-based bump-allocator region blocks (`region R { ... }`) with compile-time rejection of escaping region pointers (tracking through direct `let` assignment). `linear` keyword removed (it tracked variable names, not values — gave false confidence) | Regions: safe scoped memory with zero-cost compile-time escape detection. `std/mem.hk` provides safe memory operations (copy, set, zero, eq, swap). Heap allocation (`malloc`/`free` via FFI) remains inherently unsafe |
-| 10 | Borrow checker | Lexical borrow checker with per-variable borrow tracking, enforcing: one mutable XOR many shared; owner frozen while borrowed; references must not outlive their referent. Implemented as a standalone AST-walking pass run before code generation | Compile-time data race and use-after-free prevention for reference types (`&T`/`&mut T`). Independent of region lifetime tracking — regions handle scoped allocation safety, borrow checker handles aliasing discipline. Implemented in Phase 0. |
+| 10 | Borrow checker | NLL borrow checker with per-variable borrow tracking, enforcing: one mutable XOR many shared; owner frozen while borrowed; borrows end at last use (not end of scope). Implemented via CFG construction, iterative liveness analysis, and per-borrow lifetime tracking | Compile-time data race and use-after-free prevention for reference types (`&T`/`&mut T`). Independent of region lifetime tracking — regions handle scoped allocation safety, borrow checker handles aliasing discipline. |

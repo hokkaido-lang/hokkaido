@@ -244,12 +244,12 @@ The borrow checker enforces these rules during compilation:
 | Rule | Description |
 |------|-------------|
 | **Exclusivity** | At any given time, you may have either *one* mutable reference or *any number* of shared references to a value, but not both. |
-| **Liveness** | References must never outlive the value they refer to (enforced lexically). |
-| **Ownership freeze** | The original value cannot be read or written while it is borrowed — the owner is frozen until the reference goes out of scope. |
+| **Liveness** | References must never outlive the value they refer to (enforced via NLL liveness analysis). |
+| **Ownership freeze** | The original value cannot be read or written while it is borrowed — the owner is frozen until the borrow ends (at its last use point). |
 
-The checker runs on every function before code generation. It tracks the scope depth
-of each borrow in a per-function borrow graph and rejects programs that violate any
-of the rules above.
+The checker runs on every function before code generation. It builds a CFG,
+computes liveness, and tracks each borrow's lifetime. It rejects programs that
+violate any of the rules above.
 
 ```
 let x: int = 42

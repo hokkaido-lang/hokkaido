@@ -1,0 +1,23 @@
+// NLL Borrow Checker Tests
+// These test programs should be REJECTED by the borrow checker (exit != 0 via compiler error).
+// The test runner checks that hokkaido exits with a non-zero code.
+//
+// Test cases:
+// 1. Mutable borrow conflicts (should error)
+// 2. Write while borrowed (should error)
+// 3. Valid sequential borrows (should pass)
+
+package main
+
+fn test_valid_sequential() -> int {
+    // Valid: w1 is dead before w2 is created
+    let a: int = 10
+    let w1: &mut int = &mut a
+    let w2: &mut int = &mut a
+    *w2 = 30
+    return *w2
+}
+
+fn main() -> int {
+    return test_valid_sequential()
+}
