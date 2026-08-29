@@ -64,4 +64,13 @@ class Lexer {
 public:
   explicit Lexer(const std::string &src);
   Token next_token();
+
+  // Save/restore lexer position for speculative parsing (e.g. generic calls).
+  struct Pos {
+    size_t pos;
+    int line;
+    int col;
+  };
+  Pos save_pos() const { return {pos_, line_, col_}; }
+  void restore_pos(Pos p) { pos_ = p.pos; line_ = p.line; col_ = p.col; }
 };

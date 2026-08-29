@@ -36,6 +36,21 @@ class Parser {
   void skip_newlines();
   void set_error(const std::string &msg, const std::string &suggestion = "", int span = 1);
 
+  // Save/restore parser state for speculative parsing.
+  struct ParserState {
+    Lexer::Pos lex_pos;
+    Token saved_tok;
+    bool saved_error;
+  };
+  ParserState save_state() const {
+    return {lexer.save_pos(), cur_tok, has_error};
+  }
+  void restore_state(ParserState s) {
+    lexer.restore_pos(s.lex_pos);
+    cur_tok = std::move(s.saved_tok);
+    has_error = s.saved_error;
+  }
+
 public:
   Parser(Lexer &lex, std::string source_file, std::string base_dir,
          std::shared_ptr<std::set<std::string>> included_files = nullptr,

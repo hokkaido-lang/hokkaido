@@ -399,7 +399,10 @@ std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
       next_token(); // consume '}'
       return ctor;
     } else if (ident && cur_tok.type == TokenType::Less) {
-      // Generic function call: Name<Type>(args)
+      // Speculatively try: Generic function call: Name<Type>(args)
+      // Save state so we can backtrack if < is actually a comparison operator.
+      auto saved = save_state();
+
       next_token(); // consume '<'
 
       std::vector<TypeAnnotation> fn_type_args;
@@ -407,28 +410,35 @@ std::unique_ptr<Expr> Parser::parse_postfix(std::unique_ptr<Expr> left) {
              && cur_tok.type != TokenType::Eof) {
         if (!fn_type_args.empty()) {
           if (cur_tok.type != TokenType::Comma) {
-            set_error("expected ',' or '>' in type arguments");
-            return nullptr;
+            break; // not a generic call
           }
           next_token();
         }
-        fn_type_args.push_back(parse_type_annotation());
-        if (has_error) return nullptr;
-      }
-      if (cur_tok.type == TokenType::Shr) {
-        cur_tok.type = TokenType::Greater;
-      } else {
-        if (cur_tok.type != TokenType::Greater) {
-          set_error("expected '>' to close type arguments");
-          return nullptr;
+        TypeAnnotation ta = parse_type_annotation();
+        if (has_error) {
+          has_error = false;
+          restore_state(saved);
+          return left;
         }
-        next_token();
+        fn_type_args.push_back(ta);
       }
 
-      if (cur_tok.type != TokenType::LParen) {
-        set_error("expected '(' after type arguments in generic call");
-        return nullptr;
+      // Check for closing '>'
+      if (cur_tok.type == TokenType::Shr) {
+        cur_tok.type = TokenType::Greater;
+      } else if (cur_tok.type != TokenType::Greater) {
+        restore_state(saved);
+        // Fall through — < is a comparison operator
+        return left;
       }
+      next_token(); // consume '>'
+
+      // Must be followed by '(' for this to be a generic function call
+      if (cur_tok.type != TokenType::LParen) {
+        restore_state(saved);
+        return left;
+      }
+
       next_token(); // consume '('
 
       auto call = make_expr<CallExpr>();
