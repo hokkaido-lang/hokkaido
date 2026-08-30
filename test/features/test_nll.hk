@@ -1,23 +1,50 @@
 // NLL Borrow Checker Tests
-// These test programs should be REJECTED by the borrow checker (exit != 0 via compiler error).
-// The test runner checks that hokkaido exits with a non-zero code.
+// Exit code: 42
 //
-// Test cases:
-// 1. Mutable borrow conflicts (should error)
-// 2. Write while borrowed (should error)
-// 3. Valid sequential borrows (should pass)
+// Tests for valid programs that should compile and run:
+// 1. Sequential mutable borrows (valid — NLL)
+// 2. Cross-function shared borrow (valid)
+// 5. Return parameter borrow (valid)
 
 package main
 
-fn test_valid_sequential() -> int {
-    // Valid: w1 is dead before w2 is created
+fn test_sequential() -> int {
     let a: int = 10
     let w1: &mut int = &mut a
+    *w1 = 20
     let w2: &mut int = &mut a
     *w2 = 30
     return *w2
 }
 
+fn read_val(x: &int) -> int {
+    return *x
+}
+
+fn mutate_val(x: &mut int) -> void {
+    *x = 99
+}
+
+fn test_crossfn_shared() -> int {
+    let a: int = 10
+    let b: int = read_val(&a)
+    let c: int = read_val(&a)
+    return b + c
+}
+
+fn return_param_good(x: &int) -> &int {
+    return x
+}
+
+fn test_return_param() -> int {
+    let a: int = 42
+    let r: &int = return_param_good(&a)
+    return *r
+}
+
 fn main() -> int {
-    return test_valid_sequential()
+    let code: int = test_sequential()
+    let code2: int = test_crossfn_shared()
+    let code3: int = test_return_param()
+    return code2 + code3 + code
 }

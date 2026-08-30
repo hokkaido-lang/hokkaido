@@ -19,11 +19,49 @@ void NLLBorrowChecker::set_error(const std::string &msg, Expr *expr) {
 }
 
 // =========================================================================
-// Step 1: Walk AST to find borrow expressions and map them to CFG nodes
+// Cross-function lookup helpers
 // =========================================================================
 
-// For each CFG node, we scan its associated AST to find BorrowExpr nodes.
-// The Stmt* or Expr* stored in each CFGNode tells us which AST subtree to scan.
+void NLLBorrowChecker::set_declarations(
+    const std::vector<std::unique_ptr<Decl>> &decls) {
+  fn_decls.clear();
+  extern_decls.clear();
+  impl_decls.clear();
+  for (auto &decl : decls) {
+    if (auto *fn = dynamic_cast<FnDecl *>(decl.get())) {
+      if (fn->is_extern)
+        extern_decls[fn->name] = fn;
+      else
+        fn_decls[fn->name] = fn;
+    }
+    if (auto *impl = dynamic_cast<ImplDecl *>(decl.get())) {
+      impl_decls.push_back(impl);
+    }
+  }
+}
+
+FnDecl *NLLBorrowChecker::lookup_fn(const std::string &name) {
+  auto it = fn_decls.find(name);
+  if (it != fn_decls.end()) return it->second;
+  auto it2 = extern_decls.find(name);
+  if (it2 != extern_decls.end()) return it2->second;
+  return nullptr;
+}
+
+FnDecl *NLLBorrowChecker::lookup_method(const std::string &type_name,
+                                         const std::string &method_name) {
+  for (auto *impl : impl_decls) {
+    if (impl->type_name != type_name) continue;
+    for (auto &m : impl->methods) {
+      if (m->name == method_name) return m.get();
+    }
+  }
+  return nullptr;
+}
+
+// =========================================================================
+// Static helpers
+// =========================================================================
 
 static std::string root_var(Expr *expr) {
   if (!expr) return "";
@@ -40,179 +78,338 @@ static std::string root_var(Expr *expr) {
   return "";
 }
 
-static void find_borrows_in_expr(
-    Expr *expr, int node_id, const std::string &ref_var,
-    std::vector<NLLBorrowChecker::BorrowRegion> &borrows) {
-  if (!expr) return;
+static bool is_ref_type(const TypeAnnotation &ann) {
+  return ann.kind == TypeKind::Ref || ann.kind == TypeKind::MutRef;
+}
 
+static bool is_mut_ref_type(const TypeAnnotation &ann) {
+  return ann.kind == TypeKind::MutRef;
+}
+
+// =========================================================================
+// Step 1: Walk AST to find borrow expressions and map them to CFG nodes.
+//
+// For explicit borrows (&x, &mut x) found in the AST, register a
+// BorrowRegion. For CallExpr and MethodCallExpr, check callee parameter
+// types to register implicit borrows (cross-function checking).
+// =========================================================================
+
+void NLLBorrowChecker::collect_borrows_expr(
+    Expr *expr, int node_id, const std::string &ref_var) {
+  if (!expr || has_error_) return;
+
+  // --- Explicit borrow expression ---
   if (auto *borrow = dynamic_cast<BorrowExpr *>(expr)) {
     std::string var = root_var(borrow->operand.get());
     if (!var.empty()) {
-      NLLBorrowChecker::BorrowRegion br;
+      BorrowRegion br;
       br.var_name = var;
-      br.ref_var = ref_var; // empty for inline borrows
+      br.ref_var = ref_var;
       br.is_mut = borrow->is_mut;
       br.create_node = node_id;
-      br.end_node = node_id; // will be refined
+      br.end_node = node_id;
       br.expr = expr;
       borrows.push_back(br);
     }
-    // Don't recurse into BorrowExpr operand — we only want the top-level borrow
     return;
   }
 
-  // Recurse into sub-expressions (but NOT into nested borrows)
+  // --- Named function call: cross-function borrow checking ---
+  if (auto *call = dynamic_cast<CallExpr *>(expr)) {
+    // First, recurse into arguments to find explicit borrows
+    for (auto &arg : call->args)
+      collect_borrows_expr(arg.get(), node_id, ref_var);
+
+    // Then, check if callee takes &T/&mut T params → implicit borrows
+    if (!call->callee.empty()) {
+      if (FnDecl *callee = lookup_fn(call->callee)) {
+        size_t param_offset = 0;
+        for (size_t i = 0; i < call->args.size() && i + param_offset < callee->params.size(); i++) {
+          auto &param = callee->params[i + param_offset];
+          if (is_ref_type(param.type_ann)) {
+            std::string var = root_var(call->args[i].get());
+            if (!var.empty()) {
+              // Check if there's already an explicit borrow for this arg
+              bool has_explicit = false;
+              for (auto &br : borrows) {
+                if (br.var_name == var && br.create_node == node_id) {
+                  has_explicit = true;
+                  break;
+                }
+              }
+              if (!has_explicit) {
+                BorrowRegion br;
+                br.var_name = var;
+                br.ref_var = "";
+                br.is_mut = is_mut_ref_type(param.type_ann);
+                br.create_node = node_id;
+                br.end_node = node_id;
+                br.expr = call->args[i].get();
+                borrows.push_back(br);
+              }
+            }
+          }
+        }
+      }
+    }
+    return;
+  }
+
+  // --- Method call: self is implicitly borrowed ---
+  if (auto *mcall = dynamic_cast<MethodCallExpr *>(expr)) {
+    // Recurse into args first
+    for (auto &arg : mcall->args)
+      collect_borrows_expr(arg.get(), node_id, ref_var);
+
+    // Resolve the method's self parameter type
+    // We need the type of mcall->object, but we don't have type info here.
+    // Heuristic: look up all impls that have this method name.
+    // If the first param is &self → shared borrow; &mut self → mutable borrow.
+    for (auto *impl : impl_decls) {
+      for (auto &m : impl->methods) {
+        if (m->name == mcall->method_name && !m->params.empty()) {
+          auto &self_param = m->params[0];
+          if (is_ref_type(self_param.type_ann)) {
+            std::string var = root_var(mcall->object.get());
+            if (!var.empty()) {
+              BorrowRegion br;
+              br.var_name = var;
+              br.ref_var = "";
+              br.is_mut = is_mut_ref_type(self_param.type_ann);
+              br.create_node = node_id;
+              br.end_node = node_id;
+              br.expr = mcall->object.get();
+              borrows.push_back(br);
+            }
+          }
+        }
+      }
+    }
+
+    // Also recurse into object (for cases like foo().method())
+    collect_borrows_expr(mcall->object.get(), node_id, ref_var);
+    return;
+  }
+
+  // --- Recurse into sub-expressions ---
   if (auto *bin = dynamic_cast<BinaryExpr *>(expr)) {
-    find_borrows_in_expr(bin->left.get(), node_id, ref_var, borrows);
-    find_borrows_in_expr(bin->right.get(), node_id, ref_var, borrows);
+    collect_borrows_expr(bin->left.get(), node_id, ref_var);
+    collect_borrows_expr(bin->right.get(), node_id, ref_var);
     return;
   }
   if (auto *unary = dynamic_cast<UnaryExpr *>(expr)) {
-    find_borrows_in_expr(unary->operand.get(), node_id, ref_var, borrows);
-    return;
-  }
-  if (auto *call = dynamic_cast<CallExpr *>(expr)) {
-    for (auto &arg : call->args)
-      find_borrows_in_expr(arg.get(), node_id, ref_var, borrows);
+    collect_borrows_expr(unary->operand.get(), node_id, ref_var);
     return;
   }
   if (auto *assign = dynamic_cast<AssignExpr *>(expr)) {
-    find_borrows_in_expr(assign->value.get(), node_id, ref_var, borrows);
+    collect_borrows_expr(assign->value.get(), node_id, ref_var);
     return;
   }
   if (auto *compound = dynamic_cast<CompoundAssignExpr *>(expr)) {
-    find_borrows_in_expr(compound->value.get(), node_id, ref_var, borrows);
+    collect_borrows_expr(compound->value.get(), node_id, ref_var);
     return;
   }
   if (auto *deref = dynamic_cast<DerefExpr *>(expr)) {
-    find_borrows_in_expr(deref->operand.get(), node_id, ref_var, borrows);
+    collect_borrows_expr(deref->operand.get(), node_id, ref_var);
     return;
   }
   if (auto *sub = dynamic_cast<SubscriptExpr *>(expr)) {
-    find_borrows_in_expr(sub->array.get(), node_id, ref_var, borrows);
-    find_borrows_in_expr(sub->index.get(), node_id, ref_var, borrows);
+    collect_borrows_expr(sub->array.get(), node_id, ref_var);
+    collect_borrows_expr(sub->index.get(), node_id, ref_var);
     return;
   }
   if (auto *field = dynamic_cast<FieldAccessExpr *>(expr)) {
-    find_borrows_in_expr(field->object.get(), node_id, ref_var, borrows);
+    collect_borrows_expr(field->object.get(), node_id, ref_var);
     return;
   }
   if (auto *arr = dynamic_cast<ArrayLitExpr *>(expr)) {
     for (auto &el : arr->elements)
-      find_borrows_in_expr(el.get(), node_id, ref_var, borrows);
+      collect_borrows_expr(el.get(), node_id, ref_var);
     return;
   }
   if (auto *tup = dynamic_cast<TupleExpr *>(expr)) {
     for (auto &el : tup->elements)
-      find_borrows_in_expr(el.get(), node_id, ref_var, borrows);
+      collect_borrows_expr(el.get(), node_id, ref_var);
     return;
   }
   if (auto *ctor = dynamic_cast<ConstructorExpr *>(expr)) {
     for (auto &[_, fexpr] : ctor->fields)
-      find_borrows_in_expr(fexpr.get(), node_id, ref_var, borrows);
+      collect_borrows_expr(fexpr.get(), node_id, ref_var);
     return;
   }
   if (auto *ifexpr = dynamic_cast<IfExpr *>(expr)) {
-    find_borrows_in_expr(ifexpr->condition.get(), node_id, ref_var, borrows);
-    find_borrows_in_expr(ifexpr->then_expr.get(), node_id, ref_var, borrows);
-    find_borrows_in_expr(ifexpr->else_expr.get(), node_id, ref_var, borrows);
+    collect_borrows_expr(ifexpr->condition.get(), node_id, ref_var);
+    collect_borrows_expr(ifexpr->then_expr.get(), node_id, ref_var);
+    collect_borrows_expr(ifexpr->else_expr.get(), node_id, ref_var);
     return;
   }
-  if (auto *mcall = dynamic_cast<MethodCallExpr *>(expr)) {
-    for (auto &arg : mcall->args)
-      find_borrows_in_expr(arg.get(), node_id, ref_var, borrows);
+  if (auto *closure = dynamic_cast<ClosureExpr *>(expr)) {
+    // Closures capture by value — don't borrow from enclosing scope
     return;
   }
 }
 
-static void find_borrows_in_stmt(
-    Stmt *stmt, int node_id, const std::string &ref_var,
-    std::vector<NLLBorrowChecker::BorrowRegion> &borrows) {
+// =========================================================================
+// Statement walker for borrow collection
+// =========================================================================
+
+void NLLBorrowChecker::collect_borrows(Stmt *stmt, CFG &cfg, int node_id) {
   if (!stmt) return;
 
   if (auto *expr_s = dynamic_cast<ExprStmt *>(stmt)) {
-    find_borrows_in_expr(expr_s->expr.get(), node_id, ref_var, borrows);
+    collect_borrows_expr(expr_s->expr.get(), node_id, "");
     return;
   }
   if (auto *let = dynamic_cast<LetStmt *>(stmt)) {
     if (let->init_expr)
-      find_borrows_in_expr(let->init_expr.get(), node_id, let->name, borrows);
+      collect_borrows_expr(let->init_expr.get(), node_id, let->name);
     return;
   }
   if (auto *ret = dynamic_cast<ReturnStmt *>(stmt)) {
     if (ret->value)
-      find_borrows_in_expr(ret->value.get(), node_id, ref_var, borrows);
+      collect_borrows_expr(ret->value.get(), node_id, "");
     return;
   }
-  // IfStmt, ForStmt, WhileStmt, RegionStmt — recurse into bodies
   if (auto *ifs = dynamic_cast<IfStmt *>(stmt)) {
-    find_borrows_in_expr(ifs->condition.get(), node_id, ref_var, borrows);
+    collect_borrows_expr(ifs->condition.get(), node_id, "");
     for (auto &s : ifs->then_branch)
-      find_borrows_in_stmt(s.get(), node_id, ref_var, borrows);
+      collect_borrows(s.get(), cfg, node_id);
     for (auto &s : ifs->else_branch)
-      find_borrows_in_stmt(s.get(), node_id, ref_var, borrows);
+      collect_borrows(s.get(), cfg, node_id);
     return;
   }
   if (auto *for_s = dynamic_cast<ForStmt *>(stmt)) {
-    if (for_s->init)
-      find_borrows_in_stmt(for_s->init.get(), node_id, ref_var, borrows);
+    if (for_s->init) collect_borrows(for_s->init.get(), cfg, node_id);
     if (for_s->condition)
-      find_borrows_in_expr(for_s->condition.get(), node_id, ref_var, borrows);
+      collect_borrows_expr(for_s->condition.get(), node_id, "");
     if (for_s->update)
-      find_borrows_in_expr(for_s->update.get(), node_id, ref_var, borrows);
+      collect_borrows_expr(for_s->update.get(), node_id, "");
     for (auto &s : for_s->body)
-      find_borrows_in_stmt(s.get(), node_id, ref_var, borrows);
+      collect_borrows(s.get(), cfg, node_id);
     return;
   }
   if (auto *while_s = dynamic_cast<WhileStmt *>(stmt)) {
     if (while_s->condition)
-      find_borrows_in_expr(while_s->condition.get(), node_id, ref_var, borrows);
+      collect_borrows_expr(while_s->condition.get(), node_id, "");
     for (auto &s : while_s->body)
-      find_borrows_in_stmt(s.get(), node_id, ref_var, borrows);
+      collect_borrows(s.get(), cfg, node_id);
     return;
   }
   if (auto *region = dynamic_cast<RegionStmt *>(stmt)) {
     for (auto &s : region->body)
-      find_borrows_in_stmt(s.get(), node_id, ref_var, borrows);
+      collect_borrows(s.get(), cfg, node_id);
     return;
   }
 }
 
-void NLLBorrowChecker::collect_borrows(Stmt *stmt, CFG &cfg, int node_id) {
-  find_borrows_in_stmt(stmt, node_id, "", borrows);
+// =========================================================================
+// Closure body checking
+// =========================================================================
+
+bool NLLBorrowChecker::check_closures_in_expr(Expr *expr) {
+  if (!expr) return false;
+
+  if (auto *closure = dynamic_cast<ClosureExpr *>(expr)) {
+    NLLBorrowChecker inner;
+    inner.set_declarations(fn_decls.size() > 0
+        ? std::vector<std::unique_ptr<Decl>>() // can't move; share the maps
+        : std::vector<std::unique_ptr<Decl>>());
+    // Share declaration maps with inner checker
+    inner.fn_decls = fn_decls;
+    inner.extern_decls = extern_decls;
+    inner.impl_decls = impl_decls;
+    if (!inner.check_body("<closure>", closure->body)) {
+      has_error_ = true;
+      error_msg_ = inner.error();
+      return true;
+    }
+    return false;
+  }
+
+  if (auto *bin = dynamic_cast<BinaryExpr *>(expr)) {
+    if (check_closures_in_expr(bin->left.get())) return true;
+    if (check_closures_in_expr(bin->right.get())) return true;
+    return false;
+  }
+  if (auto *call = dynamic_cast<CallExpr *>(expr)) {
+    if (check_closures_in_expr(call->callee_expr.get())) return true;
+    for (auto &arg : call->args)
+      if (check_closures_in_expr(arg.get())) return true;
+    return false;
+  }
+  if (auto *assign = dynamic_cast<AssignExpr *>(expr)) {
+    if (check_closures_in_expr(assign->value.get())) return true;
+    return false;
+  }
+  if (auto *ifexpr = dynamic_cast<IfExpr *>(expr)) {
+    if (check_closures_in_expr(ifexpr->condition.get())) return true;
+    if (check_closures_in_expr(ifexpr->then_expr.get())) return true;
+    if (check_closures_in_expr(ifexpr->else_expr.get())) return true;
+    return false;
+  }
+  if (auto *mcall = dynamic_cast<MethodCallExpr *>(expr)) {
+    if (check_closures_in_expr(mcall->object.get())) return true;
+    for (auto &arg : mcall->args)
+      if (check_closures_in_expr(arg.get())) return true;
+    return false;
+  }
+  return false;
+}
+
+bool NLLBorrowChecker::check_closures_in_stmt(Stmt *stmt) {
+  if (!stmt) return false;
+
+  if (auto *expr_s = dynamic_cast<ExprStmt *>(stmt))
+    return check_closures_in_expr(expr_s->expr.get());
+  if (auto *let = dynamic_cast<LetStmt *>(stmt))
+    if (let->init_expr)
+      return check_closures_in_expr(let->init_expr.get());
+  if (auto *ret = dynamic_cast<ReturnStmt *>(stmt))
+    if (ret->value)
+      return check_closures_in_expr(ret->value.get());
+  if (auto *ifs = dynamic_cast<IfStmt *>(stmt)) {
+    if (check_closures_in_expr(ifs->condition.get())) return true;
+    for (auto &s : ifs->then_branch)
+      if (check_closures_in_stmt(s.get())) return true;
+    for (auto &s : ifs->else_branch)
+      if (check_closures_in_stmt(s.get())) return true;
+    return false;
+  }
+  if (auto *for_s = dynamic_cast<ForStmt *>(stmt)) {
+    if (for_s->init && check_closures_in_stmt(for_s->init.get())) return true;
+    if (for_s->condition && check_closures_in_expr(for_s->condition.get()))
+      return true;
+    if (for_s->update && check_closures_in_expr(for_s->update.get()))
+      return true;
+    for (auto &s : for_s->body)
+      if (check_closures_in_stmt(s.get())) return true;
+    return false;
+  }
+  if (auto *while_s = dynamic_cast<WhileStmt *>(stmt)) {
+    if (while_s->condition && check_closures_in_expr(while_s->condition.get()))
+      return true;
+    for (auto &s : while_s->body)
+      if (check_closures_in_stmt(s.get())) return true;
+    return false;
+  }
+  return false;
 }
 
 // =========================================================================
 // Step 2: Compute borrow lifetimes using liveness
 // =========================================================================
-//
-// For each borrow of variable `v`:
-//   - The borrow is created at `create_node`
-//   - The borrow's reference is "live" as long as the variable holding the
-//     reference is live. For simplicity, we use the liveness of the
-//     borrowed variable `v` itself, but bounded to start AFTER create_node.
-//   - The borrow ends at the last CFG node where `v` is live after create_node.
-//
-// This is conservative but correct: if `v` is live somewhere after the
-// borrow, we keep the borrow alive until that point. The key NLL benefit
-// is that borrows can end BEFORE scope exit.
 
 void NLLBorrowChecker::compute_borrow_lifetimes(CFG &cfg) {
   for (auto &br : borrows) {
-    // Determine which variable to track for lifetime:
-    // - If stored in a ref_var (let r = &a), track the ref_var's liveness
-    // - If inline (foo(&a)), borrow ends at creation node
     const std::string &track_var = br.ref_var.empty() ? br.var_name : br.ref_var;
 
     if (br.ref_var.empty()) {
-      // Inline borrow: the reference is consumed immediately.
-      // Borrow lifetime is just the creation node.
+      // Inline borrow: lifetime is just the creation node
       br.end_node = br.create_node;
       continue;
     }
 
     // Let-bound borrow: find last use of the reference variable
-    // after the creation node.
     int last = -1;
     for (auto &node : cfg.nodes) {
       if (node.id < br.create_node) continue;
@@ -228,16 +425,6 @@ void NLLBorrowChecker::compute_borrow_lifetimes(CFG &cfg) {
 // =========================================================================
 // Step 3: Check borrow rules at each program point
 // =========================================================================
-//
-// For each CFG node, we check:
-//   - If node N reads variable V, and there's an active borrow of V
-//     where create_node < N <= end_node, it's an error if the borrow is mut.
-//   - If node N writes variable V, and there's an active borrow of V
-//     where create_node < N <= end_node, it's an error.
-//   - If node N creates a borrow of V, the read of V at node N is NOT
-//     a conflict (that's the borrow creation itself).
-//   - Multiple mutable borrows of the same variable that overlap → error.
-//   - Shared + mutable borrow overlap → error.
 
 static void collect_var_uses(Expr *expr, std::set<std::string> &reads,
                              std::set<std::string> &writes,
@@ -321,7 +508,6 @@ static void collect_var_uses(Expr *expr, std::set<std::string> &reads,
 }
 
 bool NLLBorrowChecker::check_borrow_rules(CFG &cfg) {
-  // For each CFG node, gather reads and writes from the AST
   for (auto &node : cfg.nodes) {
     if (node.id == cfg.entry || node.id == cfg.exit) continue;
     if (!node.stmt && !node.expr) continue;
@@ -340,7 +526,6 @@ bool NLLBorrowChecker::check_borrow_rules(CFG &cfg) {
       }
     }
     if (node.expr) {
-      // For expr-only nodes (e.g. for-update)
       collect_var_uses(node.expr, reads, writes, false);
     }
 
@@ -348,9 +533,6 @@ bool NLLBorrowChecker::check_borrow_rules(CFG &cfg) {
     for (auto &var : reads) {
       for (auto &br : borrows) {
         if (br.var_name != var) continue;
-        // The borrow is active at this node if:
-        //   create_node < node.id <= end_node
-        // (create_node is excluded — that's the borrow creation itself)
         if (node.id > br.create_node && node.id <= br.end_node) {
           if (br.is_mut) {
             set_error("cannot use '" + var +
@@ -358,7 +540,6 @@ bool NLLBorrowChecker::check_borrow_rules(CFG &cfg) {
                       br.expr);
             return false;
           }
-          // Shared borrow: reads are OK
         }
       }
     }
@@ -383,13 +564,11 @@ bool NLLBorrowChecker::check_borrow_rules(CFG &cfg) {
       auto &a = borrows[i];
       auto &b = borrows[j];
       if (a.var_name != b.var_name) continue;
-      // Check if their lifetimes overlap
       int a_start = a.create_node + 1;
       int a_end = a.end_node;
       int b_start = b.create_node + 1;
       int b_end = b.end_node;
       if (a_start <= b_end && b_start <= a_end) {
-        // Lifetimes overlap
         if (a.is_mut || b.is_mut) {
           set_error("cannot borrow '" + a.var_name +
                         "' because it is also borrowed here",
@@ -404,96 +583,80 @@ bool NLLBorrowChecker::check_borrow_rules(CFG &cfg) {
 }
 
 // =========================================================================
-// Closure body checking
-// =========================================================================
+// Return-of-borrow checking
 //
-// When we encounter a ClosureExpr during AST walk, check its body as a
-// separate function. Closures capture by value, so they get their own
-// independent borrow checking scope.
+// When a function returns &T or &mut T, the returned reference borrows
+// from one of its arguments. We check that:
+//   1. The return expression is a BorrowExpr or a variable holding a reference
+//   2. The borrowed variable is still live at the return point
+//   3. The returned reference doesn't outlive its source
+//
+// Since we don't track lifetime parameters, we use a simple rule:
+//   - If the return type is &T or &mut T, the return expression must be
+//     a BorrowExpr (not just any value)
+//   - The borrowed variable must be a function parameter (not a local)
+//     since locals don't survive the function exit
+// =========================================================================
 
-bool NLLBorrowChecker::check_closures_in_expr(Expr *expr) {
-  if (!expr) return false;
+bool NLLBorrowChecker::check_return_borrows(
+    const std::string &fn_name, FnDecl *decl) {
+  if (!is_ref_type(decl->return_type)) return true; // not returning a reference
 
-  if (auto *closure = dynamic_cast<ClosureExpr *>(expr)) {
-    NLLBorrowChecker inner;
-    if (!inner.check_body("<closure>", closure->body)) {
-      has_error_ = true;
-      error_msg_ = inner.error();
-      return true;
+  // Find the return statement(s) in the body
+  for (auto &stmt : decl->body) {
+    if (auto *ret = dynamic_cast<ReturnStmt *>(stmt.get())) {
+      if (!ret->value) {
+        set_error("function '" + fn_name +
+                      "' returns a reference but has empty return",
+                  nullptr);
+        return false;
+      }
+      // Check that the return expression is a borrow or a parameter
+      if (auto *borrow = dynamic_cast<BorrowExpr *>(ret->value.get())) {
+        // return &x — check that x is a parameter
+        std::string var = root_var(borrow->operand.get());
+        bool is_param = false;
+        for (auto &p : decl->params) {
+          if (p.name == var) { is_param = true; break; }
+        }
+        if (!is_param) {
+          set_error("cannot return reference to local variable '" + var +
+                        "' — it will be dropped at function exit",
+                    ret->value.get());
+          return false;
+        }
+        // Check that the borrow is not mutable when the return type is shared
+        if (!borrow->is_mut && is_mut_ref_type(decl->return_type)) {
+          set_error("function returns &mut T but return expression is &" + var,
+                    ret->value.get());
+          return false;
+        }
+      } else if (auto *id = dynamic_cast<IdentExpr *>(ret->value.get())) {
+        // return x — check that x is a parameter with ref type
+        bool is_param = false;
+        for (auto &p : decl->params) {
+          if (p.name == id->name && is_ref_type(p.type_ann)) {
+            is_param = true;
+            break;
+          }
+        }
+        if (!is_param) {
+          set_error(
+              "cannot return reference to local '" + id->name +
+                  "' — only parameters can be returned as references",
+              ret->value.get());
+          return false;
+        }
+      } else {
+        set_error(
+            "function returns a reference but return expression is not "
+            "a borrow or parameter reference",
+            ret->value.get());
+        return false;
+      }
     }
-    // Don't recurse into closure bodies — already checked
-    return false;
   }
-
-  // Recurse into sub-expressions
-  if (auto *bin = dynamic_cast<BinaryExpr *>(expr)) {
-    if (check_closures_in_expr(bin->left.get())) return true;
-    if (check_closures_in_expr(bin->right.get())) return true;
-    return false;
-  }
-  if (auto *call = dynamic_cast<CallExpr *>(expr)) {
-    if (check_closures_in_expr(call->callee_expr.get())) return true;
-    for (auto &arg : call->args)
-      if (check_closures_in_expr(arg.get())) return true;
-    return false;
-  }
-  if (auto *assign = dynamic_cast<AssignExpr *>(expr)) {
-    if (check_closures_in_expr(assign->value.get())) return true;
-    return false;
-  }
-  if (auto *ifexpr = dynamic_cast<IfExpr *>(expr)) {
-    if (check_closures_in_expr(ifexpr->condition.get())) return true;
-    if (check_closures_in_expr(ifexpr->then_expr.get())) return true;
-    if (check_closures_in_expr(ifexpr->else_expr.get())) return true;
-    return false;
-  }
-  if (auto *mcall = dynamic_cast<MethodCallExpr *>(expr)) {
-    if (check_closures_in_expr(mcall->object.get())) return true;
-    for (auto &arg : mcall->args)
-      if (check_closures_in_expr(arg.get())) return true;
-    return false;
-  }
-  return false;
-}
-
-bool NLLBorrowChecker::check_closures_in_stmt(Stmt *stmt) {
-  if (!stmt) return false;
-
-  if (auto *expr_s = dynamic_cast<ExprStmt *>(stmt))
-    return check_closures_in_expr(expr_s->expr.get());
-  if (auto *let = dynamic_cast<LetStmt *>(stmt))
-    if (let->init_expr)
-      return check_closures_in_expr(let->init_expr.get());
-  if (auto *ret = dynamic_cast<ReturnStmt *>(stmt))
-    if (ret->value)
-      return check_closures_in_expr(ret->value.get());
-  if (auto *ifs = dynamic_cast<IfStmt *>(stmt)) {
-    if (check_closures_in_expr(ifs->condition.get())) return true;
-    for (auto &s : ifs->then_branch)
-      if (check_closures_in_stmt(s.get())) return true;
-    for (auto &s : ifs->else_branch)
-      if (check_closures_in_stmt(s.get())) return true;
-    return false;
-  }
-  if (auto *for_s = dynamic_cast<ForStmt *>(stmt)) {
-    if (for_s->init && check_closures_in_stmt(for_s->init.get())) return true;
-    if (for_s->condition && check_closures_in_expr(for_s->condition.get()))
-      return true;
-    if (for_s->update && check_closures_in_expr(for_s->update.get()))
-      return true;
-    for (auto &s : for_s->body)
-      if (check_closures_in_stmt(s.get())) return true;
-    return false;
-  }
-  if (auto *while_s = dynamic_cast<WhileStmt *>(stmt)) {
-    if (while_s->condition &&
-        check_closures_in_expr(while_s->condition.get()))
-      return true;
-    for (auto &s : while_s->body)
-      if (check_closures_in_stmt(s.get())) return true;
-    return false;
-  }
-  return false;
+  return true;
 }
 
 // =========================================================================
@@ -515,17 +678,16 @@ bool NLLBorrowChecker::check_body(
   // Step 2: Compute liveness
   cfg.compute_liveness();
 
-  // Step 3: Walk CFG nodes to find borrows and map them to nodes.
-  // When a ClosureExpr is found, check its body recursively.
+  // Step 3: Walk CFG nodes to find borrows
   for (auto &node : cfg.nodes) {
     if (node.id == cfg.entry || node.id == cfg.exit) continue;
     if (node.stmt)
       collect_borrows(node.stmt, cfg, node.id);
     if (node.expr)
-      find_borrows_in_expr(node.expr, node.id, "", borrows);
+      collect_borrows_expr(node.expr, node.id, "");
   }
 
-  // Step 3b: Check closure bodies found during AST walk
+  // Step 3b: Check closure bodies
   for (auto &stmt : body) {
     if (check_closures_in_stmt(stmt.get())) {
       if (has_error_) return false;
@@ -545,5 +707,10 @@ bool NLLBorrowChecker::check_body(
 }
 
 bool NLLBorrowChecker::check_fn(const std::string &fn_name, FnDecl *decl) {
+  // First check return-of-borrow validity
+  if (!check_return_borrows(fn_name, decl)) {
+    std::cerr << error_msg_ << "\n";
+    return false;
+  }
   return check_body(fn_name, decl->body);
 }

@@ -271,6 +271,7 @@ int main(int argc, char *argv[]) {
     // Run NLL borrow checker on all function declarations
     {
       NLLBorrowChecker bc;
+      bc.set_declarations(decls);
       for (auto &decl : decls) {
         if (auto *fn = dynamic_cast<FnDecl *>(decl.get())) {
           if (!fn->is_extern) {

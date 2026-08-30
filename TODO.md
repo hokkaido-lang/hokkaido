@@ -19,6 +19,9 @@
 ### ~~NLL Borrow Checker~~ ✅ DONE
 - Replace lexical borrows with non-lexical lifetimes ✅
 - Allow borrows to end at last use, not end of scope ✅
+- Cross-function borrow checking (shared/mut conflicts across fn boundaries) ✅
+- Closure capture borrow checking (recursive checking) ✅
+- Return-of-borrow validation (prevent returning local borrows) ✅
 - Support split borrows: `let (head, tail) = split_slice(&mut arr)`
 - Remove need for `let x; x = ...` workarounds
 

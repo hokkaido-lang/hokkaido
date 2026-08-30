@@ -408,8 +408,18 @@ let y: int = x             // OK
 - Borrows are tracked per variable name (not per memory location).
 - The root variable of a borrow chain is resolved by walking through field
   accesses, dereferences, and subscripts.
-- Closure bodies capture by value — borrow state is saved and restored around
-  closure calls (closures cannot borrow from their enclosing scope).
+- **Cross-function checking**: The borrow checker receives all program declarations
+  (`FnDecl`, `ImplDecl`) via `set_declarations()`. When a call expression passes a
+  borrowed value, the checker looks up the callee's parameter types and tracks
+  implicit borrows (shared/mut) accordingly.
+- **Method receiver checking**: For method calls (`obj.method()`), the checker
+  iterates impl declarations to find matching methods, checks the self parameter
+  type (`&self`/`&mut self`), and creates an implicit borrow of the receiver.
+- **Closure checking**: Closures are checked as separate functions. The checker
+  recursively walks closure bodies, sharing declaration maps with the parent.
+- **Return-of-borrow validation**: Functions returning `&T` may only return
+  references to their parameters. Returning a reference to a local variable is
+  rejected (it would be dangling after the function returns).
 - `region` blocks interact with the borrow checker only through `enter_scope`/
   `exit_scope` — region pointer tracking is a separate pass.
 
@@ -434,14 +444,15 @@ let y: int = x             // OK
 
 ### Impact on later phases
 
-- Generics (Phase 5): the borrow checker currently skips generic function
-  declarations. Once monomorphization produces concrete instances, those
-  instances should be checked.
-- Closures (Phase 4): closures capture by value; borrow state save/restore is
-  already implemented. Lexical closures that capture references (if added later)
-  will need deeper borrow tracking through closure calls.
+- Generics (Phase 5): Generic functions are now checked — the `type_params.empty()`
+  guard was removed. Monomorphized instances are checked when their source function
+  is processed.
+- Closures (Phase 4): Closures are checked recursively as separate functions.
+  Closure bodies receive the same NLL analysis as regular functions.
 - NLL: ✅ DONE — the borrow checker uses CFG-based liveness analysis.
   Borrows end at last use, not end of scope.
+- Cross-function: ✅ DONE — borrows passed to function calls are tracked.
+- Return safety: ✅ DONE — returning local borrows is rejected.
 
 ---
 
@@ -458,4 +469,4 @@ let y: int = x             // OK
 | 7 | Dynamic memory approach | Extern fn (`malloc`/`free`), not built-in syntax | Phase 3 (completed) |
 | 8 | Function types and HOFs | `fn(T1, T2) -> Ret` as opaque `i8*` pointer to closure struct; `&fn_name` for named-function values | `std/functional.hk` combined with Phase 4 (completed) |
 | 9 | Memory safety — regions + lifetime tracking | Stack-based bump-allocator region blocks (`region R { ... }`) with compile-time rejection of escaping region pointers (tracking through direct `let` assignment). `linear` keyword removed (it tracked variable names, not values — gave false confidence) | Regions: safe scoped memory with zero-cost compile-time escape detection. `std/mem.hk` provides safe memory operations (copy, set, zero, eq, swap). Heap allocation (`malloc`/`free` via FFI) remains inherently unsafe |
-| 10 | Borrow checker | NLL borrow checker with per-variable borrow tracking, enforcing: one mutable XOR many shared; owner frozen while borrowed; borrows end at last use (not end of scope). Implemented via CFG construction, iterative liveness analysis, and per-borrow lifetime tracking | Compile-time data race and use-after-free prevention for reference types (`&T`/`&mut T`). Independent of region lifetime tracking — regions handle scoped allocation safety, borrow checker handles aliasing discipline. |
+| 10 | Borrow checker | NLL borrow checker with per-variable borrow tracking, enforcing: one mutable XOR many shared; owner frozen while borrowed; borrows end at last use (not end of scope). Cross-function and closure checking. Return-of-borrow validation. Implemented via CFG construction, iterative liveness analysis, per-borrow lifetime tracking, and declaration-level analysis | Compile-time data race and use-after-free prevention for reference types (`&T`/`&mut T`). Independent of region lifetime tracking — regions handle scoped allocation safety, borrow checker handles aliasing discipline. |

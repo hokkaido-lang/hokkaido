@@ -246,10 +246,13 @@ The borrow checker enforces these rules during compilation:
 | **Exclusivity** | At any given time, you may have either *one* mutable reference or *any number* of shared references to a value, but not both. |
 | **Liveness** | References must never outlive the value they refer to (enforced via NLL liveness analysis). |
 | **Ownership freeze** | The original value cannot be read or written while it is borrowed — the owner is frozen until the borrow ends (at its last use point). |
+| **Cross-function** | Passing a borrowed value to a function is tracked — if the function takes `&mut`, it creates a mutable borrow visible to the caller. |
+| **Closure capture** | Closures that capture borrowed values are checked recursively. |
+| **Return safety** | Functions returning `&T` may only return references to their parameters, not local variables. |
 
 The checker runs on every function before code generation. It builds a CFG,
-computes liveness, and tracks each borrow's lifetime. It rejects programs that
-violate any of the rules above.
+computes liveness, tracks each borrow's lifetime, and checks cross-function
+calls and closure bodies. It rejects programs that violate any of the rules above.
 
 ```
 let x: int = 42
@@ -267,6 +270,37 @@ let x: int = 42
 }
 // `r` is no longer live here; `x` is usable again
 let y: int = x               // OK
+```
+
+Cross-function borrow checking:
+
+```
+fn mutate(x: &mut int) -> void { *x = 99 }
+
+fn main() -> int {
+    let a: int = 10
+    let r: &int = &a           // shared borrow of a
+    mutate(&mut a)             // ERROR: cannot borrow `a` because it is also borrowed here
+    let v: int = *r
+    return v
+}
+```
+
+Returning local borrows is rejected:
+
+```
+fn bad() -> &int {
+    let x: int = 42
+    return &x     // ERROR: cannot return reference to local variable 'x'
+}
+```
+
+Returning parameter borrows is allowed:
+
+```
+fn identity(x: &int) -> &int {
+    return x      // OK: x is a parameter
+}
 ```
 
 ### Region blocks
